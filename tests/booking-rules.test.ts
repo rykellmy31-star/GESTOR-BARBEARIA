@@ -1395,7 +1395,7 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
     PUBLIC_URL:"https://tigu.example.test"} as Env);
   const request=(envOverride:Env,path:string,cookie:string,method="GET",body:object={})=>
     app.request(path,{method,headers:{"content-type":"application/json",cookie},
-      ...(method==="GET"?{}:{body:JSON.stringify(body)})},envOverride);
+      ...(method==="GET"?{}:{body:JSON.stringify(body)})},envOverride,{waitUntil:()=>{},passThroughOnException:()=>{}} as ExecutionContext);
   it("gera Pix do Start e só libera após aprovação real reconsultada, sem duplicar meses",async()=>{
     const owner=await newOwner(),e=billingEnv();
     const url="/api/c/"+owner.slug+"/billing";
