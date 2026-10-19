@@ -64,3 +64,16 @@ Links de demonstração:
 Se a API funcional não responder, a visão geral do Superadmin real mostra uma explicação e um botão **Tentar novamente**, em vez de deixar a tela em branco.
 
 Os dados da `/preview` continuam exclusivamente fictícios. O GitHub Actions verifica o build, os testes e a presença dos elementos principais da agenda no bundle. A publicação efetiva depende da implantação do Cloudflare Pages.
+
+
+## Página de vendas com contato comercial configurável
+
+- No **Superadmin → Config. plataforma → Contato da página de vendas**, o responsável pode informar WhatsApp com DDI+DDD, e-mail opcional, título comercial e mensagem inicial para o WhatsApp.
+- O toggle **Exibir contato comercial** habilita/desabilita a publicação. O contato é guardado no D1 existente (tabela `platform_settings`), sem gravar o número no código ou exigir migração nova.
+- A API protegida `GET/PUT /api/super/marketing/contact` exige sessão de superadministrador. Mudanças são auditadas.
+- O endpoint público `GET /api/marketing/contact` retorna somente o contato marcado como publicado. Se estiver desligado, número e e-mail ficam ocultos.
+- Na página inicial de contratação, a seção surge abaixo dos planos quando o contato está publicado; WhatsApp usa `https://wa.me/` e mensagem codificada, e o e-mail usa `mailto:`.
+- A prévia **estática**, disponível em `/preview?tela=vendas`, mostra apenas o visual do atendimento, com botões desativados e **sem contato falso**.
+- **Importante:** a prévia de Cloudflare Pages sozinha não possui backend D1. Editar pelo superadministrador e propagar alterações à página comercial requer publicar o Tigu como Worker + D1 ou conectar um backend de homologação/produção de forma segura. Não alegar atualização dinâmica de contatos no Pages estático sem essa integração.
+- Testes automatizados verificam autenticação, isolamento do Superadmin, validação, publicação, persistência, ocultação e auditoria.
+
