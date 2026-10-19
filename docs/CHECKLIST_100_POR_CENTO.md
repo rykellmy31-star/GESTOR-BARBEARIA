@@ -127,7 +127,7 @@ Trabalhar exclusivamente em `audit/tigu-primeira-validacao`, reportar ao proprie
 - [x] Apenas a mutação vencedora altera slots, versão e notificações do atendimento.
 - [x] Snapshot antigo de mensagem não cancela nem programa o lembrete de uma versão mais recente.
 - [x] Claim de envio revalida empresa, assinatura, plano, cota e versão; operações perdedoras preservam os créditos do envio assumido.
-- [x] Validação HTTP reproduzível em Worker/D1/R2 locais: 24 verificações, incluindo vencimento do teste grátis e cancelamento público preservado.
+- [x] Validação HTTP reproduzível em Worker/D1/R2 locais: 28 verificações, incluindo upload protegido, privacidade HTTP, vencimento do teste grátis e cancelamento público preservado.
 - [x] Migrações 0001–0010 aplicadas em banco local novo e isolado.
 - [ ] Aplicar migrações 0009 e 0010 no banco remoto autorizado; não implantadas nesta rodada.
 - [ ] Conferir a interface em navegador funcional; download e instalação de navegador bloqueados no ambiente atual.
@@ -138,3 +138,12 @@ Trabalhar exclusivamente em `audit/tigu-primeira-validacao`, reportar ao proprie
 - [x] `staging:prepare` valida o contrato completo antes de criar o arquivo; templates inseguros não deixam configuração gravada.
 - [x] Opções adicionais de observabilidade são rejeitadas pelo contrato de homologação.
 - [x] Regressões locais cobrem a colisão de UUID e a recusa de preparação sem efeitos no disco; nenhuma operação remota executada.
+
+## Rodada de uploads e privacidade HTTP
+
+- [x] Corpo do upload limitado durante a leitura, mesmo sem Content-Length ou com valor subestimado; imagem limitada a 5 MiB.
+- [x] Assinaturas de JPEG, PNG, WebP e AVIF conferidas antes da gravação no R2; nomes aleatórios criptográficos.
+- [x] Imagens entregues com nosniff e sandbox; tipo ativo legado convertido em application/octet-stream.
+- [x] Respostas da API com no-store, nosniff e no-referrer, incluindo rejeições e erros.
+- [x] HTML compilado impede envio de referrer; erros de produção não retornam instruções de desenvolvimento.
+- [ ] Conferência visual das imagens em navegador e homologação HTTPS continuam pendentes; validação da assinatura não equivale a decodificação completa de imagem.

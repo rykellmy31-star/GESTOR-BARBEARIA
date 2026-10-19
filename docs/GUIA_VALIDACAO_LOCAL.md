@@ -17,7 +17,8 @@ npm run test:local-e2e
 - criação de profissional e serviço, disponibilidade, reserva, remarcação e cancelamento;
 - criação de produto, pedido, reserva de estoque e devolução no cancelamento;
 - login do Superadmin, cadastro assistido e proteção da última conta administrativa;
-- indisponibilidade de Pix real durante todo o teste.
+- indisponibilidade de Pix real durante todo o teste;
+- upload de foto pelo R2 local, recusa de formato falso, proteção de cache da API e política de referrer da página.
 
 O processo encerra o Worker e remove seus dados temporários ao terminar. Não cria recursos na Cloudflare nem utiliza o banco de desenvolvimento habitual. As credenciais geradas pertencem somente ao teste e não são exibidas.
 
