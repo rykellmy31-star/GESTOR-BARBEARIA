@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Bot, Building2, Coins, FileClock, LayoutDashboard, LogOut, Tag, Receipt, Scissors, Settings, Users, Handshake } from "lucide-react";
+import { Bot, Building2, Coins, FileClock, LayoutDashboard, LogOut, Tag, Receipt, Scissors, Settings, Users, Handshake, CreditCard } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
 
 const links = [
@@ -9,6 +9,7 @@ const links = [
   { to: "users", label: "Usuários", icon: Users },
   { to: "wallets", label: "Carteiras", icon: Coins },
   { to: "topups", label: "Recargas & estornos", icon: Receipt },
+  { to: "subscription-invoices", label: "Mensalidades Pix", icon: CreditCard },
   { to: "pricing", label: "Precificação", icon: Tag },
   { to: "messages", label: "Fila global", icon: Bot },
   { to: "audit", label: "Auditoria", icon: FileClock },
