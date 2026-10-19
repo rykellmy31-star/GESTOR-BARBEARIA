@@ -717,6 +717,7 @@ const connectSchema = z.object({
   coexistence: z.enum(["unknown", "enabled", "not_eligible"]).default("unknown"),
 });
 adminRouter.post("/whatsapp/connect", async (c) => {
+  if (c.env.TIGU_STAGING === "1") return err(c, "Conexão com WhatsApp real indisponível na homologação. Use apenas o provedor de demonstração.", 403);
   const parsed = connectSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
   const db = P(c); const id = cid(c);
@@ -756,12 +757,14 @@ adminRouter.post("/whatsapp/connect", async (c) => {
 });
 
 adminRouter.post("/whatsapp/embedded/state", async (c) => {
+  if (c.env.TIGU_STAGING === "1") return err(c, "Conexão com WhatsApp real indisponível na homologação. Use apenas o provedor de demonstração.", 403);
   const available = Boolean(c.env.WHATSAPP_APP_ID && c.env.WHATSAPP_APP_SECRET_FOR_OAUTH && c.env.WHATSAPP_EMBEDDED_CONFIG_ID);
   if (!available) return err(c, "Embedded Signup ainda não está provisionado para esta instância da plataforma (WHATSAPP_APP_ID/APP_SECRET/CONFIG_ID). Conecte manualmente com os IDs do painel da Meta ou fale com o suporte Tigu — veja docs/WHATSAPP.md.", 501);
   return json(c, { ok: true, app_id: c.env.WHATSAPP_APP_ID, config_id: c.env.WHATSAPP_EMBEDDED_CONFIG_ID });
 });
 
 adminRouter.post("/whatsapp/embedded/exchange", async (c) => {
+  if (c.env.TIGU_STAGING === "1") return err(c, "Conexão com WhatsApp real indisponível na homologação. Use apenas o provedor de demonstração.", 403);
   const parsed = z.object({ code: z.string().min(10), config_id: z.string().min(1) }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "code/config_id obrigatórios", 400);
   const res = await exchangeEmbeddedSignupCode(c.env, parsed.data.code, parsed.data.config_id);
