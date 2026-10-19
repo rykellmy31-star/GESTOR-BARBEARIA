@@ -360,6 +360,91 @@ superRouter.post("/messages/run-cron", async (c) => {
   return json(c, out);
 });
 
+/**
+ * Conciliação OPERACIONAL de envio incerto. Exclusivo do superadmin.
+ * Confirmar aceite exige ID verificável da Meta; nunca reenviar automaticamente.
+ */
+superRouter.post("/messages/:id/resolve", async (c) => {
+  const parsed = z.discriminatedUnion("decision", [
+    z.object({
+      decision: z.literal("not_sent"),
+      justification: z.string().trim().min(20).max(500),
+    }),
+    z.object({
+      decision: z.literal("confirmed_sent"),
+      provider_message_id: z.string().trim().min(12).max(500).regex(/^wamid[.][A-Za-z0-9._:-]+$/),
+      justification: z.string().trim().min(20).max(500),
+    }),
+  ]).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return err(c, "Informe uma decisão válida, justificativa detalhada e, se confirmado, o ID real da mensagem Meta.", 422);
+
+  const db = c.env.DB;
+  const id = idParam(c);
+  if (!Number.isSafeInteger(id) || id <= 0) return err(c, "Mensagem inválida", 400);
+  const d = parsed.data;
+  const job = await db.prepare(
+    `SELECT id, company_id, status, provider_msg_id, price_cents, reserved_cents,
+       captured_at, refunded_at, capture_on, last_error, last_attempt_at
+     FROM message_jobs WHERE id=?1`
+  ).bind(id).first<{
+    id: number; company_id: number; status: string; provider_msg_id: string;
+    price_cents: number; reserved_cents: number; captured_at: string | null;
+    refunded_at: string | null; capture_on: "sent" | "delivered";
+    last_error: string; last_attempt_at: string | null;
+  }>();
+  if (!job) return err(c, "Mensagem não encontrada", 404);
+  const uncertain = job.status === "sending" && !job.provider_msg_id &&
+    (job.last_error.startsWith("Envio sem confirmação") ||
+     job.last_error.startsWith("Pendente de conferência") ||
+     Boolean(job.last_attempt_at && Date.parse(job.last_attempt_at) <= Date.now() - 10 * 60_000));
+  if (!uncertain) return err(c, "Esta mensagem não está em revisão por envio indeterminado.", 409);
+
+  if (d.decision === "not_sent") {
+    if (job.captured_at) return err(c, "Esta mensagem já tem cobrança registrada: concilie o lançamento antes.", 409);
+    if (job.reserved_cents > 0) {
+      const { releaseJobReservation } = await import("../lib/wallet");
+      if (!await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents))
+        return err(c, "Falha ao liberar créditos; nenhuma confirmação aplicada.", 503);
+    }
+    const result = await db.prepare(
+      `UPDATE message_jobs SET status='failed', last_error=?1, next_attempt_at=NULL, updated_at=?2
+       WHERE id=?3 AND company_id=?4 AND status='sending' AND provider_msg_id=''`
+    ).bind("Conciliação manual: envio NÃO confirmado; " + d.justification, nowIso(), id, job.company_id).run();
+    if (!result.meta?.changes) return err(c, "O envio foi alterado por outra operação. Atualize o painel.", 409);
+    await audit(db, c.get("user"), "message.resolve.not_sent", "message_job", id,
+      { decision: "not_sent", justification: d.justification }, { companyId: job.company_id, scope: "platform" });
+    return json(c, { ok: true, status: "failed", credited: false });
+  }
+
+  // Confirmar somente após conferir um identificador real no provedor.
+  const alreadyUsed = await db.prepare(
+    `SELECT id FROM message_jobs WHERE provider_msg_id=?1 AND id<>?2`
+  ).bind(d.provider_message_id, id).first();
+  if (alreadyUsed) return err(c, "Este identificador já está atribuído a outra mensagem.", 409);
+  if (job.refunded_at || (job.price_cents > 0 && job.reserved_cents < job.price_cents))
+    return err(c, "A reserva financeira não está íntegra; precisa de conciliação individual.", 409);
+
+  const result = await db.prepare(
+    `UPDATE message_jobs SET status='sent', provider_msg_id=?1, sent_at=COALESCE(sent_at,?2),
+      last_error='', next_attempt_at=NULL, updated_at=?2
+     WHERE id=?3 AND company_id=?4 AND status='sending' AND provider_msg_id=''`
+  ).bind(d.provider_message_id, nowIso(), id, job.company_id).run();
+  if (!result.meta?.changes) return err(c, "O envio foi alterado por outra operação. Atualize o painel.", 409);
+  await audit(db, c.get("user"), "message.resolve.confirmed_sent", "message_job", id,
+    { decision: "confirmed_sent", provider_message_id: d.provider_message_id, justification: d.justification },
+    { companyId: job.company_id, scope: "platform" });
+
+  // Captura somente se a política da barbearia cobra no aceite.
+  // Se cobrar na entrega, o webhook futuro fará a captura.
+  let captured = false;
+  if (job.capture_on === "sent") {
+    const { captureJobCharge } = await import("../lib/wallet");
+    captured = await captureJobCharge(db, job.company_id, job.id, job.price_cents);
+    if (!captured) return err(c, "Envio confirmado, mas a cobrança precisa de conciliação: verifique o extrato.", 503);
+  }
+  return json(c, { ok: true, status: "sent", captured });
+});
+
 // ── auditoria global ─────────────────────────────────────────────────────────
 superRouter.get("/audit", async (c) => {
   const scope = c.req.query("scope") || "";
