@@ -57,7 +57,10 @@ export async function createSubscriptionPix(
     let pending=summary.invoice;
     if (pending.status==="pending" && pending.expires_at &&
         pending.expires_at<=nowIso() && pending.provider_payment_id) {
-      const checked=await confirmSubscriptionPix(env,pending.provider_payment_id);
+      let checked: Awaited<ReturnType<typeof confirmSubscriptionPix>>;
+      try { checked=await confirmSubscriptionPix(env,pending.provider_payment_id); }
+      catch { return {ok:false,status:503,
+        message:"Mercado Pago não respondeu. Não gere outro Pix antes de confirmar o anterior."}; }
       if (!checked.ok) return {ok:false,status:409,
         message:"Não foi possível confirmar o Pix anterior no Mercado Pago. Verifique a fatura antes de solicitar outro."};
       if (checked.status==="paid") return {ok:false,status:409,
@@ -103,10 +106,21 @@ export async function createSubscriptionPix(
     // depois de o pagamento ter sido criado. Exige conciliação assistida.
     return {ok:false,status:503,message:"Não foi possível confirmar a criação do Pix. Contate o suporte antes de tentar novamente."};
   }
-  if (!payment.ok || !payment.qrCodeText || !payment.providerPaymentId) {
+  if (!payment.ok) {
+    if (payment.uncertain) return {ok:false,status:503,
+      message:"A resposta do Mercado Pago não chegou. Não gere outra fatura: solicite a verificação pelo suporte."};
     await db.prepare("UPDATE subscription_invoices SET status='failed',updated_at=?2 WHERE id=?1 AND status='creating'")
       .bind(inv.id,nowIso()).run();
-    return {ok:false,status:502,message:"Não foi possível gerar o código Pix. Tente novamente ou procure o suporte."};
+    return {ok:false,status:502,message:"Mercado Pago recusou a geração do Pix. Tente novamente ou procure o suporte."};
+  }
+  if (!payment.qrCodeText || !payment.providerPaymentId) {
+    // Gateway pode ter gerado uma cobrança sem retornar QR para exibir.
+    // Guarda o id possível, mas NÃO permite gerar Pix duplicado.
+    if (payment.providerPaymentId) {
+      await db.prepare("UPDATE subscription_invoices SET provider_payment_id=?1,updated_at=?2 WHERE id=?3 AND status='creating'")
+        .bind(payment.providerPaymentId,nowIso(),inv.id).run();
+    }
+    return {ok:false,status:503,message:"Pix criado com resposta incompleta. Solicite auxílio ao suporte antes de tentar novamente."};
   }
   const expires=payment.expiresAt || new Date(Date.now()+60*60_000).toISOString().replace(/\.\d{3}Z$/,"Z");
   await db.prepare(`UPDATE subscription_invoices SET
