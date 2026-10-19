@@ -10,7 +10,7 @@ import { nowIso } from "./utils";
 export interface PaymentProvider {
   kind: "mercadopago" | "mock";
   createPixPayment(inp: { amountCents: number; externalReference: string; description: string; payerEmail: string }): Promise<
-    { ok: true; providerPaymentId: string; qrCodeText: string; qrCodeBase64: string; expiresAt: string | null } | { ok: false; error: string }
+    { ok: true; providerPaymentId: string; qrCodeText: string; qrCodeBase64: string; expiresAt: string | null } | { ok: false; error: string; uncertain?: boolean }
   >;
   getPaymentStatus(providerPaymentId: string): Promise<{ status: string; detail?: Record<string, unknown> }>;
 }
@@ -51,7 +51,8 @@ export function mpProvider(env: Env): PaymentProvider {
           expiresAt: data.point_of_interaction?.transaction_data?.expires_in ? new Date(data.point_of_interaction.transaction_data.expires_in).toISOString().replace(/\.\d{3}Z$/, "Z") : null,
         };
       } catch (e) {
-        return { ok: false, error: String(e) };
+        // Uma falha de rede não prova que o gateway deixou de criar o Pix.
+        return { ok: false, error: String(e), uncertain: true };
       }
     },
     async getPaymentStatus(id) {
