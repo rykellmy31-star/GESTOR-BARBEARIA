@@ -109,11 +109,11 @@ export function pickPaymentProvider(env: Env, demo: boolean): { provider: Paymen
 export async function verifyMpWebhookSignature(secret: string, xSignature: string | null, xRequestId: string | null, dataId: string): Promise<boolean> {
   if (!secret) return false; // sem segredo → rota dev pode aceitar; produção recusa (chamador decide)
   if (!xSignature) return false;
-  const parts = Object.fromEntries(xSignature.split(";").map((kv) => kv.split("=") as [string, string]));
+  const parts = Object.fromEntries(xSignature.split(/[;,]/).map((kv) => kv.trim().split("=") as [string, string]));
   const ts = parts.ts ?? "";
   const v1 = parts.v1 ?? "";
   if (!ts || !v1) return false;
-  const manifest = `id:${dataId};request-id:${xRequestId ?? ""};ts:${ts};`;
+  const manifest = `id:${dataId.toLowerCase()};request-id:${xRequestId ?? ""};ts:${ts};`;
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(manifest));
   const hex = [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
