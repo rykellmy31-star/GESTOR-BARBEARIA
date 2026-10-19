@@ -1484,7 +1484,7 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
 
   it("impede QR real em homologação e não permite faturar empresa de outro dono",async()=>{
     const a=await newOwner("a"),b=await newOwner("b");
-    const e=billingEnv(),st={...e,TIGU_STAGING:"1",APP_ENV:"production"} as Env;
+    const e=billingEnv(),st={...e,TIGU_STAGING:"1"} as Env;
     const fetchMock=vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("rede proibida"));
     try {
       const blocked=await request(st,"/api/c/"+a.slug+"/billing/pix",a.cookie,"POST");
