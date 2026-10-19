@@ -5,7 +5,7 @@
   "description": "Tigu — plataforma SaaS multiempresa de agendamento, loja e WhatsApp para barbearias (Cloudflare Workers + D1 + R2).",
   "type": "module",
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22.12"
   },
   "scripts": {
     "dev": "concurrently -k -n api,web -c yellow,cyan \"npm:dev:api\" \"npm:dev:web\"",
@@ -42,8 +42,9 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.12.0",
-    "@cloudflare/workers-types": "^4.20250121.0",
+    "@cloudflare/vitest-plugin": "1.4.5",
+    "@cloudflare/workers-types": "5.20261019.1",
+    "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^22.20.5",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
@@ -51,11 +52,11 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
     "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.16",
+    "tailwindcss": "4.3.3",
     "tsx": "^4.19.2",
     "typescript": "~5.7.2",
     "vite": "^6.0.5",
-    "vitest": "~3.2.7",
-    "wrangler": "4.57.0"
+    "vitest": "4.1.11",
+    "wrangler": "4.151.2"
   }
 }

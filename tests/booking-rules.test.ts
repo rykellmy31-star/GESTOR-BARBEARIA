@@ -4,7 +4,7 @@
 // idempotência, cancelamento público com liberação do slot, bloqueio pela
 // barbearia e ISOLAMENTO multi-tenant (RBAC no servidor).
 // ============================================================================
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin/types" />
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import type { Env } from "../api/types";

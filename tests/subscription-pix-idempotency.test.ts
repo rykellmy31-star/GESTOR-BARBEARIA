@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin/types" />
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { confirmSubscriptionPix } from "../api/lib/subscription-billing";
 import type { Env } from "../api/types";

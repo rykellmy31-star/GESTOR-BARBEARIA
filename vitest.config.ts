@@ -1,17 +1,13 @@
-import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
+import { defineConfig } from "vitest/config";
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
 
-export default defineWorkersConfig({
+export default defineConfig({
+  plugins: [cloudflareTest({ wrangler: { configPath: "./wrangler.jsonc" } })],
   test: {
     isolate: false,
+    fileParallelism: false,
+    maxWorkers: 1,
     testTimeout: 30000,
     include: ["tests/**/*.test.ts"],
-    poolOptions: {
-      workers: {
-        singleWorker: true,
-        // storage compartilhado entre testes (o pool faria snapshot por teste)
-        isolatedStorage: false,
-        wrangler: { configPath: "./wrangler.jsonc" },
-      },
-    },
   },
 });

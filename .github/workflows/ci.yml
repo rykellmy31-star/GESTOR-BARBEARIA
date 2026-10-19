@@ -23,8 +23,8 @@ jobs:
           cache: npm
       - name: Instalar dependencias
         run: npm ci
-      - name: Auditar dependencias de producao
-        run: npm audit --omit=dev --audit-level=high
+      - name: Auditar todas as dependencias
+        run: npm audit --audit-level=moderate
       - name: Validar sintaxe dos scripts de homologacao
         run: |
           node --check scripts/staging.mjs

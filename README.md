@@ -30,6 +30,8 @@ Stack: **React 18 + Vite + Tailwind** (front), **Hono** no **Cloudflare Workers*
 
 ## Rodando em 4 comandos
 
+Requer Node.js 22.12 ou superior. O CI utiliza Node 22.
+
 ```bash
 npm install
 npm run db:reset:local          # D1 local zerado + migrations (ou: npx wrangler d1 migrations apply tigu-db --local)
@@ -97,7 +99,7 @@ api/            Hono no Worker
   routes/       auth · public · admin (tenant) · barber · super · webhooks · uploads
 src/            SPA React (rotas por empresa; base da API derivada da URL → mesmo build serve N tenants)
 migrations/     D1 (0001_init.sql — 70 statements, idempotentes)
-tests/          vitest-pool-workers (regras críticas no runtime real)
+tests/          @cloudflare/vitest-plugin (regras críticas no runtime real)
 scripts/        create-super · setup-demo · smoke · smoke-money · reset-local-db
 ```
 
