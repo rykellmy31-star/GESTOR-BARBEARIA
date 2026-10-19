@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import type { ShopSettings } from "./types";
 
-export interface CompanyRef { slug: string; name: string; role: string; plan: string; status?: string }
+export interface CompanyRef { slug: string; name: string; role: string; plan: string; status?: string; subscription_status?: "trial" | "active" | "past_due" | "cancelled"; trial_end?: string | null; price_cents_month?: number }
 export interface TiguUser { id: number; name: string; email: string; platform_role: "user" | "superadmin"; companies?: CompanyRef[]; must_change_password?: boolean }
 
 /** config pública da empresa (tema injetado no CSS) — só existe sob /c/:slug */
