@@ -12,6 +12,7 @@ export const leadRequestSchema = z.object({
   plan_code: z.enum(["pro", "scale"]),
   message: z.string().trim().max(600).default(""),
   consent: z.literal(true),
+  turnstile_token: z.string().max(2048).default(""),
   website: z.string().max(120).default(""), // honeypot: clientes legítimos não preenchem
 }).strict();
 
