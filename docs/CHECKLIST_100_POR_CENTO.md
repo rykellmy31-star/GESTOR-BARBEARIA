@@ -32,7 +32,9 @@
 - [ ] Configurar credenciais e webhook reais do Mercado Pago, testar Pix aprovado, estornado, atrasado e conciliado em banco real.
 - [x] Permitir que o Superadmin altere preços e limites de Start/Pro/Scale no D1; a página pública lê os valores atuais do backend.
 - [x] Formulário para solicitar contratação Pro/Scale, consentimento explícito, registro no D1, prevenção de duplicidade e lista de interessados restrita ao Superadmin.
-- [ ] Antes de abrir o formulário ao público, configurar proteção antibot adicional (Turnstile/WAF) e política de retenção de contatos LGPD.
+- [x] Verificar token Cloudflare Turnstile no Worker, sem enviar contatos em produção quando as chaves não estiverem configuradas.
+- [ ] Configurar Turnstile por domínio no Cloudflare e testar o formulário publicado; incluir regras WAF quando necessário.
+- [ ] Definir política de retenção/exclusão de interessados conforme LGPD antes de atender dados reais.
 - [ ] Implementar contratação e cobrança recorrente efetiva dos planos. **Alterar o preço no cadastro não gera boleto, Pix recorrente nem cobrança automática.**
 - [ ] Reconciliar valores cobrados ao cliente, custos Meta e margem da plataforma com relatórios financeiros auditáveis.
 
