@@ -25,6 +25,11 @@ jobs:
         run: npm ci
       - name: Auditar dependencias de producao
         run: npm audit --omit=dev --audit-level=high
+      - name: Validar sintaxe dos scripts de homologacao
+        run: |
+          node --check scripts/staging.mjs
+          node --check scripts/create-super.mjs
+          node -e "const fs=require('node:fs');const j=JSON.parse(fs.readFileSync('wrangler.staging.template.jsonc','utf8'));if(j.name!=='tigu-staging'||j.vars.TIGU_STAGING!=='1'||j.vars.APP_ENV!=='production'||j.triggers.crons.length!==0)process.exit(1)"
       - name: Verificar tipos
         run: npm run check:types
       - name: Gerar dist antes dos testes Workers
