@@ -1087,3 +1087,70 @@ describe("Solicitações comerciais sem cobrança ou ativação", () => {
     expect(subscriptions?.n).toBe(0);
   });
 });
+
+
+describe("Cloudflare Turnstile no atendimento comercial", () => {
+  const data = (email: string, turnstile_token = "") => ({
+    contact_name: "Joana Teste", company_name: "Barbearia Verificacao",
+    email, phone: "5573999999999", plan_code: "pro",
+    message: "Desejo informações", consent: true, website: "", turnstile_token,
+  });
+  const request = (environment: Env, body: object) =>
+    app.request("/api/marketing/leads", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }, environment);
+
+  it("não expõe segredo nem habilita pedidos em produção sem chaves", async () => {
+    const production = { ...env, DB: db, APP_ENV: "production", SESSION_SECRET: "test-only-secret",
+      SALES_TURNSTILE_SECRET: undefined, SALES_TURNSTILE_SITE_KEY: undefined } as Env;
+    const conf = await app.request("/api/marketing/lead-config", {}, production);
+    expect(await conf.json()).toMatchObject({ required: true, enabled: false, site_key: null });
+    const response = await request(production, data("sem-chave-" + Date.now() + "@tigu.test"));
+    expect(response.status).toBe(503);
+  });
+
+  it("rejeita desafio ausente ou inválido sem gravar contatos", async () => {
+    const production = { ...env, DB: db, APP_ENV: "production", SESSION_SECRET: "test-only-secret",
+      SALES_TURNSTILE_SECRET: "private-test-secret", SALES_TURNSTILE_SITE_KEY: "public-test-site-key" } as Env;
+    const conf = await app.request("/api/marketing/lead-config", {}, production);
+    const dataConfig: any = await conf.json();
+    expect(dataConfig).toMatchObject({ required: true, enabled: true, site_key: "public-test-site-key" });
+    expect(JSON.stringify(dataConfig)).not.toContain("private-test-secret");
+    const email = "desafio-invalido-" + Date.now() + "@tigu.test";
+    expect((await request(production, data(email))).status).toBe(422);
+    const calls = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ success: false }), { status: 200,
+        headers: { "content-type": "application/json" } })
+    );
+    try {
+      const rejected = await request(production, data(email, "token-invalido"));
+      expect(rejected.status).toBe(422);
+      expect(calls).toHaveBeenCalledTimes(1);
+      const [url, options] = calls.mock.calls[0];
+      expect(String(url)).toBe("https://challenges.cloudflare.com/turnstile/v0/siteverify");
+      expect(String(options?.body)).toContain("secret=private-test-secret");
+      const count = await db.prepare("SELECT COUNT(*) n FROM sales_leads WHERE email=?1")
+        .bind(email).first<{ n: number }>();
+      expect(count?.n).toBe(0);
+    } finally { calls.mockRestore(); }
+  });
+
+  it("registra pedido somente após validação bem-sucedida do provedor", async () => {
+    const production = { ...env, DB: db, APP_ENV: "production", SESSION_SECRET: "test-only-secret",
+      SALES_TURNSTILE_SECRET: "private-test-secret", SALES_TURNSTILE_SITE_KEY: "public-test-site-key" } as Env;
+    const email = "desafio-aprovado-" + Date.now() + "@tigu.test";
+    const calls = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ success: true }), { status: 200,
+        headers: { "content-type": "application/json" } })
+    );
+    try {
+      const response = await request(production, data(email, "token-de-teste-validado"));
+      expect(response.status).toBe(201);
+      expect(calls).toHaveBeenCalledTimes(1);
+      const count = await db.prepare("SELECT COUNT(*) n FROM sales_leads WHERE email=?1")
+        .bind(email).first<{ n: number }>();
+      expect(count?.n).toBe(1);
+    } finally { calls.mockRestore(); }
+  });
+});
