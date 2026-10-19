@@ -200,7 +200,7 @@ export async function cancelBooking(ctx: BookingMutationCtx, bookingId: number, 
   ]);
   if(results[0].meta.changes!==1) return {ok:false,message:"Este agendamento foi alterado em outra operação. Atualize a agenda antes de cancelar.",status:409};
   // cancela lembretes/confirmações pendentes + libera reservas
-  await cancelPendingJobs(db, companyId, b.id, null, "agendamento cancelado");
+  await cancelPendingJobs(db,companyId,b.id,null,"agendamento cancelado",undefined,b.schedule_version+1);
   await audit(db, ctx.user ?? null, "cancel", "booking", b.id, { code: b.code, via: opts.actorRole, reason: opts.reason ?? "" }, { companyId });
   return { ok: true };
 }
@@ -249,7 +249,7 @@ export async function rescheduleBooking(
     throw e;
   }
   // re-programação: cancela jobs antigos (qualquer kind) e agenda novo lembrete
-  await cancelPendingJobs(db, companyId, b.id, null, "remarcado");
+  await cancelPendingJobs(db,companyId,b.id,null,"remarcado",undefined,b.schedule_version+1);
   const full = await db
     .prepare(`SELECT b.id, b.code, b.customer_name, b.customer_phone, b.whatsapp_optin, b.status, b.starts_at, b.schedule_version, br.name AS barber_name, s.name AS service_name
                FROM bookings b JOIN barbers br ON br.id=b.barber_id LEFT JOIN services s ON s.id=b.service_id WHERE b.id=?1`)

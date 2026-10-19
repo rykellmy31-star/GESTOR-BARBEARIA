@@ -75,13 +75,17 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
   const now = inp.now ?? new Date();
   try {
     const startMs = Date.parse(booking.starts_at);
-    const vRow = await db.prepare(`SELECT schedule_version FROM bookings WHERE id = ?1 AND company_id = ?2`).bind(booking.id, companyId).first<{ schedule_version: number }>();
-    const version = vRow?.schedule_version ?? 1;
+    const vRow = await db.prepare(`SELECT schedule_version,starts_at,status FROM bookings WHERE id=?1 AND company_id=?2`).bind(booking.id,companyId)
+      .first<{schedule_version:number;starts_at:string;status:string}>();
+    if(!vRow || !["pendente","confirmado"].includes(vRow.status) || Date.parse(vRow.starts_at)!==startMs ||
+      (booking.schedule_version!==undefined && booking.schedule_version!==vRow.schedule_version))
+      return {ok:true,status:"skipped",reason:"agendamento alterado; snapshot obsoleto"};
+    const version=vRow.schedule_version;
 
     // Remarcação invalida versões antigas, mas nunca cancela a mensagem
     // da própria versão quando o agendamento é processado novamente.
     const currentIdempotencyKey = `booking-${booking.id}-${kind}-v${version}`;
-    await cancelPendingJobs(db, companyId, booking.id, kind, "reagendado ou remarcado", currentIdempotencyKey);
+    await cancelPendingJobs(db, companyId, booking.id, kind, "reagendado ou remarcado", currentIdempotencyKey,version);
 
     if (booking.status !== "pendente" && booking.status !== "confirmado") return { ok: true, status: "skipped", reason: "agendamento não está ativo" };
     if (startMs <= now.getTime()) return { ok: true, status: "skipped", reason: "início já passou" };
@@ -125,7 +129,9 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
           (company_id, kind, booking_id, to_phone, template_code, language, payload_json,
            status, scheduled_at, fire_deadline, price_cents, cost_cents, capture_on, max_attempts,
            idempotency_key, demo, created_at, updated_at)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,'scheduled',?8,?9,?10,?11,?12,?13,?14,?15,?16,?16)`
+         SELECT ?1,?2,?3,?4,?5,?6,?7,'scheduled',?8,?9,?10,?11,?12,?13,?14,?15,?16,?16
+         FROM bookings b WHERE b.id=?3 AND b.company_id=?1 AND b.status IN('pendente','confirmado')
+         AND b.schedule_version=?17 AND b.starts_at=?18`
       )
       .bind(
         companyId,
@@ -153,10 +159,13 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
         Number(platform.msg_max_attempts),
         idem,
         company?.demo ?? 0,
-        nowIso()
+        nowIso(),version,vRow.starts_at
       )
       .run();
-    if (!ins.meta?.changes) return { ok: true, status: "scheduled", reason: "job já existia (idempotente)" };
+    if (!ins.meta?.changes) {
+      const existing=await db.prepare("SELECT id FROM message_jobs WHERE company_id=?1 AND idempotency_key=?2").bind(companyId,idem).first();
+      return existing?{ok:true,status:"scheduled",reason:"job já existia (idempotente)"}:{ok:true,status:"skipped",reason:"agendamento alterado antes de programar a mensagem"};
+    }
     const jobId = ins.meta.last_row_id as number;
 
     // reserva do saldo (adianta conflito p/ o dono da barbearia já no agendamento)
@@ -194,23 +203,27 @@ function notifyIfNoRecent(db: D1Database, companyId: number, kind: "billing" | "
 /** Cancela jobs pendentes do agendamento (e libera reservas). */
 export async function cancelPendingJobs(
   db: D1Database, companyId: number, bookingId: number,
-  kind: MessageKind | null, reason: string, exceptIdempotencyKey?: string
+  kind: MessageKind | null, reason: string, exceptIdempotencyKey?: string,beforeVersion?:number
 ): Promise<void> {
   const kindF = kind ? " AND kind = ?3" : "";
   const exceptF = exceptIdempotencyKey ? ` AND idempotency_key <> ?${kind ? 4 : 3}` : "";
+  const args:unknown[]=[companyId,bookingId,...(kind?[kind]:[]),...(exceptIdempotencyKey?[exceptIdempotencyKey]:[])];
+  const versionFilter=beforeVersion===undefined?"":` AND (idempotency_key NOT GLOB 'booking-[0-9]*-*-v[0-9]*'
+    OR CAST(substr(idempotency_key,instr(idempotency_key,'-v')+2) AS INTEGER) < ?${args.length+1})`;
+  if(beforeVersion!==undefined)args.push(beforeVersion);
   const { results } = await db
     .prepare(
       `SELECT id, reserved_cents FROM message_jobs
-       WHERE company_id = ?1 AND booking_id = ?2${kindF}${exceptF} AND status IN ('scheduled','blocked_funds')`
+       WHERE company_id = ?1 AND booking_id = ?2${kindF}${exceptF}${versionFilter} AND status IN ('scheduled','blocked_funds')`
     )
-    .bind(companyId, bookingId, ...(kind ? [kind] : []), ...(exceptIdempotencyKey ? [exceptIdempotencyKey] : []))
+    .bind(...args)
     .all<{ id: number; reserved_cents: number }>();
   for (const j of results) {
-    await db
-      .prepare(`UPDATE message_jobs SET status='cancelled', last_error=?1, updated_at=?2 WHERE id=?3 AND status IN ('scheduled','blocked_funds')`)
-      .bind(reason, nowIso(), j.id)
+    const changed=await db
+      .prepare(`UPDATE message_jobs SET status='cancelled', last_error=?1, updated_at=?2 WHERE id=?3 AND company_id=?4 AND status IN ('scheduled','blocked_funds')`)
+      .bind(reason, nowIso(), j.id,companyId)
       .run();
-    if (j.reserved_cents > 0) await releaseJobReservation(db, companyId, j.id, j.reserved_cents);
+    if (changed.meta.changes===1) await releaseJobReservation(db, companyId, j.id, j.reserved_cents);
   }
 }
 
@@ -281,6 +294,7 @@ interface MessageJobRow {
   last_error: string;
   company_status: string;
   company_demo: number;
+  idempotency_key:string;
 }
 
 async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: DispatchResult): Promise<void> {
@@ -289,21 +303,23 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
 
   // 1) prazo? agendamento cancelado/passado? → descarta e libera reserva
   const bookingActive = job.booking_id
-    ? await db.prepare(`SELECT status, whatsapp_optin FROM bookings WHERE id = ?1 AND company_id = ?2`).bind(job.booking_id, job.company_id).first<{ status: string; whatsapp_optin: number }>()
+    ? await db.prepare(`SELECT status,whatsapp_optin,schedule_version FROM bookings WHERE id=?1 AND company_id=?2`).bind(job.booking_id, job.company_id).first<{status:string;whatsapp_optin:number;schedule_version:number}>()
     : null;
+  const versionMatch=job.idempotency_key.match(/^booking-(\d+)-[^-]+-v(\d+)$/);
+  const obsolete=!!versionMatch && Number(versionMatch[1])===job.booking_id && Number(versionMatch[2])!==bookingActive?.schedule_version;
   const dead = now.getTime() > Date.parse(job.fire_deadline);
-  if (dead || (job.booking_id != null && (!bookingActive || (bookingActive.status !== "pendente" && bookingActive.status !== "confirmado")))) {
-    await db
+  if (dead || obsolete || (job.booking_id != null && (!bookingActive || (bookingActive.status !== "pendente" && bookingActive.status !== "confirmado")))) {
+    const changed=await db
       .prepare(`UPDATE message_jobs SET status='skipped', skip_reason=?1, last_error=?1, updated_at=?2 WHERE id=?3 AND status IN ('scheduled','blocked_funds')`)
-      .bind(dead ? "fora do prazo de envio" : "agendamento cancelado/encerrado", nowIso(), job.id)
+      .bind(dead?"fora do prazo de envio":obsolete?"versão antiga do agendamento":"agendamento cancelado/encerrado",nowIso(),job.id)
       .run();
-    if (job.reserved_cents > 0) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
+    if (changed.meta.changes===1) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
     out.skipped++;
     return;
   }
   if (bookingActive && !bookingActive.whatsapp_optin) {
-    await db.prepare(`UPDATE message_jobs SET status='skipped', skip_reason='cliente sem opt-in', updated_at=?1 WHERE id=?2`).bind(nowIso(), job.id).run();
-    if (job.reserved_cents > 0) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
+    const changed=await db.prepare(`UPDATE message_jobs SET status='skipped',skip_reason='cliente sem opt-in',updated_at=?1 WHERE id=?2 AND status IN('scheduled','blocked_funds')`).bind(nowIso(),job.id).run();
+    if (changed.meta.changes===1) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
     out.skipped++;
     return;
   }
@@ -357,7 +373,11 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
 
   // 4) claim (um só worker vence)
   const claim = await db
-    .prepare(`UPDATE message_jobs SET status='sending', attempts=attempts+1, last_attempt_at=?1, updated_at=?1 WHERE id=?2 AND status IN ('scheduled','blocked_funds')`)
+    .prepare(`UPDATE message_jobs SET status='sending',attempts=attempts+1,last_attempt_at=?1,updated_at=?1
+      WHERE id=?2 AND status IN('scheduled','blocked_funds') AND (booking_id IS NULL OR EXISTS(
+        SELECT 1 FROM bookings b WHERE b.id=message_jobs.booking_id AND b.company_id=message_jobs.company_id
+        AND b.status IN('pendente','confirmado') AND (message_jobs.idempotency_key NOT GLOB 'booking-[0-9]*-*-v[0-9]*'
+          OR message_jobs.idempotency_key='booking-'||b.id||'-'||message_jobs.kind||'-v'||b.schedule_version)))`)
     .bind(nowIso(), job.id)
     .run();
   if (!claim.meta?.changes) return;
