@@ -42,7 +42,7 @@ authRouter.post("/login", async (c) => {
   return json(c, {
     user: { ...publicUser({ id: u.id, name: u.name, email: u.email, platform_role: u.platform_role }), must_change_password: u.must_change_password === 1 },
     companies,
-    next: u.platform_role === "superadmin" ? "/superadmin" : companies.length === 1 ? `/c/${companies[0].slug}/admin` : companies.length ? "/selecionar" : "/comecar",
+    next: u.must_change_password === 1 ? "/alterar-senha" : u.platform_role === "superadmin" ? "/superadmin" : companies.length === 1 ? `/c/${companies[0].slug}/admin` : companies.length ? "/selecionar" : "/comecar",
   });
 });
 
