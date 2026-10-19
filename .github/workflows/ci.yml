@@ -30,6 +30,9 @@ jobs:
           node --check scripts/staging.mjs
           node --check scripts/create-super.mjs
           node -e "const fs=require('node:fs');const j=JSON.parse(fs.readFileSync('wrangler.staging.template.jsonc','utf8'));if(j.name!=='tigu-staging'||j.vars.TIGU_STAGING!=='1'||j.vars.APP_ENV!=='production'||j.triggers.crons.length!==0)process.exit(1)"
+          node scripts/staging.mjs prepare --database-id 00000000-0000-4000-8000-000000000001
+          node scripts/staging.mjs validate
+          rm wrangler.staging.jsonc
       - name: Verificar tipos
         run: npm run check:types
       - name: Gerar dist antes dos testes Workers
