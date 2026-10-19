@@ -2,6 +2,7 @@ import type { Env } from "../types";
 import { nowIso } from "./utils";
 import { mpProvider } from "./payments";
 import { audit } from "./audit";
+import { listPublicPlans } from "./plans";
 
 export interface SubscriptionInvoice {
   id: number;
@@ -28,11 +29,11 @@ export async function billingSummary(db: D1Database, companyId: number) {
     plan_code: string;status:string;period_end:string|null;started_at:string;name:string;price_cents_month:number
   }>();
   const invoice = await db.prepare(pendingSql).bind(companyId).first<SubscriptionInvoice>();
-  return { subscription, invoice };
+  return { subscription, invoice, plans: await listPublicPlans(db) };
 }
 
 export async function createSubscriptionPix(
-  env: Env, companyId: number, payerEmail: string
+  env: Env, companyId: number, payerEmail: string, selectedPlan: "free" | "pro" | "scale"
 ): Promise<{ ok: true; invoice: SubscriptionInvoice } | { ok: false; status: number; message: string }> {
   if (env.TIGU_STAGING === "1" || env.PAYMENTS_MOCK === "1")
     return { ok:false, status:503, message:"Pagamentos Pix reais desativados nesta homologação." };
@@ -41,12 +42,21 @@ export async function createSubscriptionPix(
   const db=env.DB;
   const summary=await billingSummary(db,companyId);
   const sub=summary.subscription;
-  if (!sub || !Number.isInteger(sub.price_cents_month) || sub.price_cents_month<=0)
+  if (!sub) return {ok:false,status:404,message:"Assinatura não encontrada."};
+  const plan=summary.plans.find(p=>p.code===selectedPlan);
+  if (!plan || !Number.isInteger(plan.price_cents_month) || plan.price_cents_month<=0)
     return {ok:false,status:422,message:"Plano ou preço mensal inválido."};
+  const rank:Record<string,number>={free:0,pro:1,scale:2};
+  // Upgrades são permitidos imediatamente; downgrades só depois do vencimento.
+  if(sub.status==="active" && sub.period_end && sub.period_end>nowIso() &&
+      rank[selectedPlan]<rank[sub.plan_code])
+    return {ok:false,status:422,message:"A redução do plano poderá ser solicitada depois do vencimento atual."};
   if (summary.invoice) {
     if (summary.invoice.status==="pending" && summary.invoice.expires_at &&
         summary.invoice.expires_at <= nowIso())
       return {ok:false,status:409,message:"Existe um Pix vencido. Verifique seu pagamento antes de solicitar outro."};
+    if(summary.invoice.plan_code!==selectedPlan)
+      return {ok:false,status:409,message:"Já existe um Pix para outro plano. Aguarde a confirmação ou vencimento da fatura."};
     return {ok:true,invoice:summary.invoice};
   }
   const code = "TIGU-SUB-" + crypto.randomUUID();
@@ -56,7 +66,7 @@ export async function createSubscriptionPix(
     await db.prepare(`INSERT INTO subscription_invoices
       (company_id,code,plan_code,amount_cents,status,created_at,updated_at)
       VALUES (?1,?2,?3,?4,'creating',?5,?5)`)
-      .bind(companyId,code,sub.plan_code,sub.price_cents_month,date).run();
+      .bind(companyId,code,selectedPlan,plan.price_cents_month,date).run();
   } catch {
     return {ok:false,status:409,message:"Já existe uma cobrança em criação. Atualize esta página."};
   }
@@ -65,8 +75,8 @@ export async function createSubscriptionPix(
   if (!inv) return {ok:false,status:503,message:"Não foi possível gerar uma fatura."};
   // A chave idempotente é o próprio código da fatura, nunca um valor do cliente.
   const payment=await mpProvider(env).createPixPayment({
-    amountCents:sub.price_cents_month,externalReference:code,
-    description:`Assinatura mensal Tigu ${sub.name}`,payerEmail
+    amountCents:plan.price_cents_month,externalReference:code,
+    description:`Assinatura mensal Tigu ${plan.name}`,payerEmail
   });
   if (!payment.ok || !payment.qrCodeText || !payment.providerPaymentId) {
     await db.prepare("UPDATE subscription_invoices SET status='failed',updated_at=?2 WHERE id=?1 AND status='creating'")
@@ -111,21 +121,22 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
   // D1.batch é transacional: somente uma confirmação de uma fatura aberta
   // atualiza o período. Repetir Webhook/Poll jamais acrescenta outros meses.
   const changes=await db.batch([
-    db.prepare(`UPDATE subscriptions SET status='active',
+    db.prepare(`UPDATE subscriptions SET status='active',plan_code=?3,
       period_end=strftime('%Y-%m-%dT%H:%M:%SZ',
         CASE WHEN period_end IS NOT NULL AND period_end>?1 THEN period_end ELSE ?1 END,
         '+1 month'),
-      updated_at=?1 WHERE company_id=?2 AND plan_code=?3 AND EXISTS(
+      updated_at=?1 WHERE company_id=?2 AND EXISTS(
         SELECT 1 FROM subscription_invoices WHERE id=?4 AND company_id=?2
         AND plan_code=?3 AND status IN ('pending','expired'))`)
       .bind(at,inv.company_id,inv.plan_code,inv.id),
     db.prepare(`UPDATE subscription_invoices SET status='paid',paid_at=?1,updated_at=?1
-      WHERE id=?2 AND status IN ('pending','expired')
-      AND plan_code=(SELECT plan_code FROM subscriptions WHERE company_id=?3)`)
-      .bind(at,inv.id,inv.company_id),
+      WHERE id=?2 AND status IN ('pending','expired')`)
+      .bind(at,inv.id),
   ]);
   const activated=changes[0].meta.changes===1 && changes[1].meta.changes===1;
   if (!activated) return {ok:false,status:"conflict",activated:false};
+  await db.prepare("UPDATE companies SET plan_code=?1,updated_at=?2 WHERE id=?3")
+    .bind(inv.plan_code,at,inv.company_id).run();
   await audit(db,null,"subscription.pix_confirmed","subscription_invoice",inv.id,
     {plan_code:inv.plan_code,amount_cents:inv.amount_cents},{companyId:inv.company_id,scope:"platform"});
   return {ok:true,status:"paid",activated:true};
