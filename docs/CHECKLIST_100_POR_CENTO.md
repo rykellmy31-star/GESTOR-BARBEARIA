@@ -43,6 +43,7 @@
 - [x] Start por R$ 19,99/mês depois de 15 dias grátis; novos cadastros têm término registrado no D1, com bloqueio de novas operações ao expirar e aviso no painel. Sem cobrança automática.
 - [x] Página de assinatura permite escolher Start, Pro ou Scale e solicitar upgrade por Pix; o plano só é alterado após verificação real do pagamento (sem pró-rata ou débito automático).
 - [x] Faturas da assinatura registradas separadamente da recarga de WhatsApp e verificadas por referência, valor, moeda, método e id do Mercado Pago.
+- [x] Painel de mensalidades Pix no Superadmin: indicadores, busca literal por código/barbearia, filtros e destaque de cobranças travadas, sem botões de liberação manual.
 - [x] Migração 0004 preserva preços Start já personalizados e concede tolerância a testes legados sem data final.
 - [x] Formulário para solicitar contratação Pro/Scale, consentimento explícito, registro no D1, prevenção de duplicidade e lista de interessados restrita ao Superadmin.
 - [x] Verificar token Cloudflare Turnstile no Worker, sem enviar contatos em produção quando as chaves não estiverem configuradas.
