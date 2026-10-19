@@ -90,7 +90,7 @@ function TrialStatusBanner({ end, cents }: { end: string; cents: number }) {
       <p className="mt-1 text-xs leading-relaxed text-zinc-400">
         {expired
           ? `Novas operações estão pausadas. O Start custa ${price}/mês. Acesse Assinatura e Pix para pagar e continuar.`
-          : `Após o prazo, o Start custa ${price}/mês, mediante ativação assistida.`}
+          : `Após o prazo, escolha Start, Pro ou Scale e pague a mensalidade via Pix para continuar. O Start custa ${price}/mês.`}
         {" "}A cobrança só acontece quando você gerar e pagar um Pix.
       </p>
     </div>
