@@ -45,3 +45,13 @@
 - Código foi modificado **somente** na branch de auditoria do repositório `GESTOR-BARBEARIA`.
 - A branch `main` e o projeto CR Jornada não foram alterados.
 - Build e testes automatizados aprovados não substituem validação comercial, financeira e de entrega real do WhatsApp.
+
+## Etapa 3 — isolamento de webhooks e lembretes (19/10/2026)
+
+- Recebimento de status da Meta exige `metadata.phone_number_id` conhecido e pertencente à mesma empresa do `message_jobs`. Eventos que apontem para outra empresa não modificam o job nem o saldo.
+- Webhooks de entrega são idempotentes. Eventos de falha atrasados não rebaixam mensagens já entregues/lidas.
+- Mensagem recebida do cliente NÃO define `whatsapp_optin=1` nem `lgpd_consent_at` automaticamente.
+- A migração `0002_whatsapp_identity.sql` estabelece unicidade de `phone_number_id` não vazio entre empresas. Não alterar ou pular a migração ao preparar produção; bancos com identidades duplicadas precisam ser saneados.
+- Novos testes verificam identidade do número entre empresas, webhook duplicado, status fora de ordem, opt-in explícito, programação exatamente 60 min antes, reagendamento idempotente, troca de versão e cancelamento com liberação de reserva.
+- **GitHub Actions: 21/21 testes aprovados**, verificação TypeScript e build aprovados.
+- Ainda faltam testes reais de entrega no provedor, revisão dos tokens de integração, simulação de perda/timeout de webhook e auditoria de consentimento no fluxo de cadastro público.
