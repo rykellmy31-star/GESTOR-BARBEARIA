@@ -131,10 +131,13 @@ export async function createBooking(ctx: BookingMutationCtx, input: z.infer<type
     const msg = String((e as Error)?.message ?? e);
     if (msg.includes("UNIQUE constraint failed: booking_slots")) return { ok: false, message: "Ops! Este horário acabou de ser reservado por outra pessoa. Escolha outro horário.", status: 409 };
     if (msg.includes("UNIQUE constraint failed: bookings.idempotency_key")) {
-      const dup = await db.prepare(`SELECT * FROM bookings WHERE idempotency_key = ?1`).bind(input.idempotencyKey).first<Record<string, unknown> & { id: number; starts_at: string; cancel_token: string; allowed_cancel_until: string; code: string; ends_at: string }>();
+      const dup = await db.prepare(`SELECT * FROM bookings WHERE idempotency_key = ?1 AND company_id = ?2`).bind(input.idempotencyKey, companyId).first<Record<string, unknown> & { id: number; starts_at: string; cancel_token: string; allowed_cancel_until: string; code: string; ends_at: string }>();
       if (dup) {
         return { ok: true, bookingId: dup.id, code: dup.code, startsAt: dup.starts_at, endsAt: dup.ends_at, reused: true, cancelToken: dup.cancel_token, allowedCancelUntil: dup.allowed_cancel_until, messaging: null, confirmMessaging: null };
       }
+      // A chave pode existir em outra empresa: nunca retornar sua reserva
+      // nem seu token de cancelamento ao solicitante atual.
+      return { ok: false, message: "Não foi possível reutilizar esta chave. Atualize a página e tente novamente.", status: 409 };
     }
     throw e;
   }
