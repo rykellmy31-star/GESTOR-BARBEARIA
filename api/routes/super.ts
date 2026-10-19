@@ -283,9 +283,11 @@ superRouter.get("/subscription-invoices", async (c) => {
         i.expires_at,i.paid_at,i.created_at,i.updated_at
       FROM subscription_invoices i JOIN companies c ON c.id=i.company_id
       WHERE (?1='' OR i.status=?1)
-        AND (?2='' OR c.name LIKE ?3 OR c.slug LIKE ?3 OR i.code LIKE ?3)
+        AND (?2='' OR instr(lower(c.name),lower(?2))>0
+          OR instr(lower(c.slug),lower(?2))>0
+          OR instr(lower(i.code),lower(?2))>0)
       ORDER BY i.created_at DESC,i.id DESC LIMIT 100`)
-      .bind(status,query,`%${query}%`).all(),
+      .bind(status,query).all(),
     db.prepare(`SELECT
       COUNT(*) AS total,
       COALESCE(SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END),0) AS paid_count,
