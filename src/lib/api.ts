@@ -25,50 +25,6 @@ function apiPrefix(): string {
   return "/api";
 }
 
-async function request<T = any>(path: string, init: RequestInit = {}): Promise<T> {
-  const url = path.startsWith("/api/") || path.startsWith("http") ? path : `${apiPrefix()}${path}`;
-  const res = await fetch(url, {
-    credentials: "same-origin",
-    ...init,
-    headers: { "content-type": "application/json", ...(init.headers || {}) },
-  });
-  const text = await res.text();
-  let body: any = null;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!res.ok) {
-    const e: ApiError = Object.assign(new Error(body?.error || `Erro ${res.status}`), {
-      status: res.status,
-      details: body?.details,
-    });
-    throw e;
-  }
-  return body as T;
-}
-
-export const api = {
-  get: <T = any>(path: string, signal?: AbortSignal) => request<T>(path, { method: "GET", signal }),
-  post: <T = any>(path: string, data?: unknown) => request<T>(path, { method: "POST", body: data === undefined ? undefined : JSON.stringify(data) }),
-  put: <T = any>(path: string, data?: unknown) => request<T>(path, { method: "PUT", body: JSON.stringify(data) }),
-  patch: <T = any>(path: string, data?: unknown) => request<T>(path, { method: "PATCH", body: JSON.stringify(data) }),
-  del: <T = any>(path: string, data?: unknown) => request<T>(path, { method: "DELETE", body: data === undefined ? undefined : JSON.stringify(data) }),
-  /** upload p/ o painel da barbearia (R2) */
-  upload: async (file: File): Promise<string> => {
-    const fd = new FormData();
-    fd.append("file", file);
-    const base = apiPrefix();
-    const res = await fetch(`${base}/admin/upload`, { method: "POST", body: fd, credentials: "same-origin" });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(body?.error || "Falha no upload"), { status: res.status });
-    return body.url as string;
-  },
-};
-
-export function cartKey(): string {
-  return `tigu_cart_${currentCompanySlug() ?? "default"}`;
-}
-export function cartEvent(): string {
-  return "tigu:cart";
-}
 
 /**
  * Normaliza URLs explícitas de módulos sem duplicar `/super` ou `/auth`.
