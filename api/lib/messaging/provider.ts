@@ -26,7 +26,7 @@ export interface ProviderConnectionRow {
 }
 
 export interface ProviderContext {
-  env: { GRAPH_API_VERSION?: string; APP_ENV?: string; SESSION_SECRET?: string; MSG_ENC_KEY?: string; WHATSAPP_MOCK?: string;
+  env: { GRAPH_API_VERSION?: string; APP_ENV?: string; TIGU_STAGING?: string; SESSION_SECRET?: string; MSG_ENC_KEY?: string; WHATSAPP_MOCK?: string;
          WHATSAPP_APP_ID?: string; WHATSAPP_APP_SECRET_FOR_OAUTH?: string; WHATSAPP_EMBEDDED_CONFIG_ID?: string };
   db: D1Database;
   conn: ProviderConnectionRow;
@@ -88,6 +88,7 @@ export function graphBase(env: ProviderContext["env"]): string {
 export const metaProvider: Provider = {
   kind: "meta_cloud",
   async status(ctx) {
+    if (ctx.env.TIGU_STAGING === "1") return { ok: false, error: "Meta real bloqueada na homologação." };
     const token = await decryptSecret(ctx.env, ctx.conn?.access_token_enc || "");
     if (!ctx.conn?.phone_number_id || !token) return { ok: false, error: "Credenciais incompletas — reconecte o WhatsApp." };
     try {
@@ -102,6 +103,7 @@ export const metaProvider: Provider = {
     }
   },
   async sendTemplate(ctx, input) {
+    if (ctx.env.TIGU_STAGING === "1") return { accepted: false, permanent: true, error: "Meta real bloqueada na homologação." };
     const token = await decryptSecret(ctx.env, ctx.conn.access_token_enc || "");
     if (!ctx.conn.phone_number_id || !token) return { accepted: false, permanent: true, error: "Conexão WhatsApp sem credenciais" };
     const body = {
@@ -138,6 +140,7 @@ export const metaProvider: Provider = {
     }
   },
   async listTemplates(ctx) {
+    if (ctx.env.TIGU_STAGING === "1") return { ok: false, error: "Meta real bloqueada na homologação." };
     if (!ctx.conn.waba_id) return { ok: false, error: "WABA não vinculada" };
     const token = await decryptSecret(ctx.env, ctx.conn.access_token_enc || "");
     if (!token) return { ok: false, error: "Sem token" };
@@ -255,6 +258,8 @@ export function mockAllowed(ctx: { env: { WHATSAPP_MOCK?: string }; demo: boolea
 }
 
 export async function resolveProvider(ctx: Omit<ProviderContext, "conn"> & { conn: ProviderConnectionRow | null }): Promise<{ provider: Provider | null; error?: string }> {
+  if (ctx.env.TIGU_STAGING === "1" && ctx.conn?.provider !== "mock")
+    return { provider: null, error: "Meta Cloud API real desativada no ambiente de homologação." };
   if (!ctx.conn || ctx.conn.status === "disconnected") return { provider: null, error: "WhatsApp não conectado a esta barbearia." };
   if (ctx.conn.provider === "mock") {
     if (!mockAllowed(ctx)) return { provider: null, error: "Provedor mock desabilitado neste ambiente." };
