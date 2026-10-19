@@ -67,7 +67,9 @@ webhooksRouter.post("/mercadopago", async (c) => {
   // responde 200 já; o processamento re-consulta o gateway (fonte da verdade)
   c.executionCtx.waitUntil(
     confirmTopupFromProvider(c.env, dataId, "webhook")
-      .then((res) => db.prepare(`UPDATE payment_webhook_events SET processed=1 WHERE event_uid=?1`).bind(uid).run())
+      .then((res) => res.ok && res.status === "paid"
+        ? db.prepare(`UPDATE payment_webhook_events SET processed=1 WHERE event_uid=?1`).bind(uid).run()
+        : undefined)
       .catch((e) => console.error("[mp-webhook]", String(e)))
   );
   void ins;
