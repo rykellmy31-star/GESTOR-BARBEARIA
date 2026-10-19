@@ -756,3 +756,72 @@ describe("Tigu homologação: isolamento contra integrações reais", () => {
     }
   });
 });
+
+describe("Página de vendas: contato gerenciado exclusivamente pelo superadmin", () => {
+  it("não publica contato sem permissão e exige dados válidos", async () => {
+    const initial = await api("/api/marketing/contact");
+    expect(initial.status).toBe(200);
+    expect(initial.body.contact.enabled).toBe(false);
+    expect(initial.body.contact.whatsapp).toBe("");
+
+    const payload = {
+      enabled: true,
+      whatsapp: "+55 (73) 99999-9999",
+      email: "contato@tigu.test",
+      title: "Quer tirar dúvidas antes de contratar o Tigu?",
+      message: "Olá, gostaria de conhecer os planos do Tigu!",
+    };
+    expect((await api("/api/super/marketing/contact", { method: "PUT", body: JSON.stringify(payload) })).status).toBe(401);
+    expect((await api("/api/super/marketing/contact", { method: "PUT", body: JSON.stringify(payload) }, cookieA)).status).toBe(403);
+    expect((await api("/api/super/marketing/contact", {}, cookieA)).status).toBe(403);
+    expect((await api("/api/marketing/contact")).body.contact.enabled).toBe(false);
+
+    const createdAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    const adminMail = "marketing-super-" + Date.now() + "@tigu.test";
+    const superInsert = await db.prepare(
+      "INSERT INTO users (platform_role,name,email,password_hash,active,created_at) VALUES ('superadmin','Admin Tigu',?1,?2,1,?3)"
+    ).bind(adminMail, await hashPassword(PW), createdAt).run();
+    const superId = superInsert.meta.last_row_id as number;
+    const login = await api("/api/auth/login", {
+      method: "POST", body: JSON.stringify({ email: adminMail, password: PW }),
+    });
+    expect(login.status).toBe(200);
+    const cookie = login.cookie!;
+    const invalid = await api("/api/super/marketing/contact", {
+      method: "PUT", body: JSON.stringify({ ...payload, whatsapp: "123", email: "", title: "Teste válido" }),
+    }, cookie);
+    expect(invalid.status).toBe(422);
+    const noContact = await api("/api/super/marketing/contact", {
+      method: "PUT", body: JSON.stringify({ ...payload, whatsapp: "", email: "" }),
+    }, cookie);
+    expect(noContact.status).toBe(422);
+
+    const saved = await api("/api/super/marketing/contact", {
+      method: "PUT", body: JSON.stringify(payload),
+    }, cookie);
+    expect(saved.status).toBe(200);
+    expect(saved.body.contact.whatsapp).toBe("5573999999999");
+    expect(saved.body.contact.email).toBe("contato@tigu.test");
+
+    const visible = await api("/api/marketing/contact");
+    expect(visible.status).toBe(200);
+    expect(visible.body.contact).toMatchObject({
+      enabled: true, whatsapp: "5573999999999", email: "contato@tigu.test"
+    });
+    const persisted = await api("/api/super/marketing/contact", {}, cookie);
+    expect(persisted.body.contact.title).toBe(payload.title);
+    const log = await db.prepare(
+      "SELECT COUNT(*) AS n FROM audit_log WHERE user_id=?1 AND action='platform.marketing_contact'"
+    ).bind(superId).first<{ n: number }>();
+    expect(log?.n).toBe(1);
+
+    const disabled = await api("/api/super/marketing/contact", {
+      method: "PUT", body: JSON.stringify({ ...saved.body.contact, enabled: false }),
+    }, cookie);
+    expect(disabled.status).toBe(200);
+    const hidden = await api("/api/marketing/contact");
+    expect(hidden.body.contact).toMatchObject({ enabled: false, whatsapp: "", email: "" });
+    const adminStillHasSavedValue = await api("/api/super/marketing/contact", {}, cookie);
+    expect(adminStillHasSavedValue.body.contact.whatsapp).toBe("5573999999999");
+  });
+});
