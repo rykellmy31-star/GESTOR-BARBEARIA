@@ -21,7 +21,7 @@ export function RegisterPage() {
     setErr("");
     try {
       const res = await register.mutateAsync({ company_name: f.shop.trim(), name: f.name.trim(), email: f.email.trim(), password: f.password, phone: f.phone.trim() });
-      toast.push("ok", "Barbearia criada! Bem-vindo à Tigu.");
+      toast.push("ok", "Teste grátis do Tigu iniciado por 15 dias! Nenhuma cobrança agora.");
       navigate(res.next, { replace: true });
     } catch (e: any) {
       setErr(e.message || "Não foi possível concluir o cadastro");
@@ -37,7 +37,7 @@ export function RegisterPage() {
         </Link>
         <div className="grid gap-8 lg:grid-cols-[1.2fr_1fr]">
           <div className="card-luxe rounded-2xl border border-line bg-panel p-6 sm:p-8">
-            <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-[var(--c-gold)]">Onboarding · passo {step + 1} de 2</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-[var(--c-gold)]">Teste grátis por 15 dias · passo {step + 1} de 2</p>
             <h1 className="mt-2 font-display text-2xl text-zinc-50">{step === 0 ? "Como se chama a sua barbearia?" : "Crie o seu acesso de dono"}</h1>
             {step === 0 ? (
               <div className="mt-6 space-y-4">
@@ -53,7 +53,7 @@ export function RegisterPage() {
                 <Field label="Repita a senha"><Input type="password" value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} /></Field>
                 {err && <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{err}</p>}
                 <Button className="btn-gold w-full justify-center py-3" disabled={!can2 || register.isPending} onClick={submit}>
-                  {register.isPending ? <Loader2 size={16} className="animate-spin" /> : <Rocket size={16} />} Criar minha barbearia
+                  {register.isPending ? <Loader2 size={16} className="animate-spin" /> : <Rocket size={16} />} Iniciar teste grátis de 15 dias
                 </Button>
                 <button className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300" onClick={() => setStep(0)}>← voltar</button>
               </div>
@@ -70,7 +70,7 @@ export function RegisterPage() {
               <li className="flex gap-2"><Check size={16} className="mt-0.5 shrink-0 text-[var(--c-gold)]" /> Lembretes de WhatsApp 1h antes — só com o seu número autorizado</li>
             </ul>
             <p className="mt-6 rounded-xl border border-line bg-ink-soft p-4 text-xs leading-relaxed text-zinc-400">
-              Plano gratuito para começar. O WhatsApp é ativado no plano Pro, com créditos por mensagem — você só paga pelo que enviar.
+              Seu teste do Tigu Start é gratuito durante 15 dias, sem cadastrar cartão. Depois, o Start custa R$ 19,99/mês e depende de ativação comercial — nenhuma cobrança automática é realizada. O WhatsApp é ativado no plano Pro, com créditos por mensagem.
               Precisa conectar o número oficial? A equipe Tigu acompanha a verificação na Meta (docs/WHATSAPP.md).
             </p>
             <p className="mt-4 text-xs text-zinc-500">Já tem conta? <Link className="font-semibold text-[var(--c-gold)] hover:underline" to="/login">Entrar</Link></p>
