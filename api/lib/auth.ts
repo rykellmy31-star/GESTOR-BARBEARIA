@@ -92,6 +92,7 @@ export const requireSuper = factory.createMiddleware(async (c, next) => {
   const u = await currentUser(c);
   if (!u) return err(c, "Não autenticado.", 401);
   if (u.platform_role !== "superadmin") return err(c, "Acesso restrito à plataforma Tigu.", 403);
+  if (u.must_change_password) return err(c, "Troque a senha provisória antes de acessar o Superadmin.", 403);
   c.set("user", u);
   await next();
 });
