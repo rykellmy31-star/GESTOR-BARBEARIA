@@ -108,8 +108,8 @@ authRouter.post("/register", async (c) => {
       db.prepare(`INSERT INTO company_memberships (company_id,user_id,role,active,created_at)
                   SELECT c.id,u.id,'owner',1,?3 FROM companies c JOIN users u ON u.email=?2 WHERE c.slug=?1`)
         .bind(slug, email, at),
-      db.prepare(`INSERT INTO subscriptions (company_id,plan_code,status,started_at,updated_at)
-                  SELECT id,'free','trial',?2,?2 FROM companies WHERE slug=?1`)
+      db.prepare(`INSERT INTO subscriptions (company_id,plan_code,status,started_at,period_end,updated_at)
+                  SELECT id,'free','trial',?2,strftime('%Y-%m-%dT%H:%M:%SZ',?2,'+15 days'),?2 FROM companies WHERE slug=?1`)
         .bind(slug, at),
       db.prepare(`INSERT INTO wallets (company_id,updated_at)
                   SELECT id,?2 FROM companies WHERE slug=?1`)
