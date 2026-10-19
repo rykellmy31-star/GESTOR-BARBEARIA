@@ -43,3 +43,24 @@ O rodapé compartilhado exibe **Sistema desenvolvido por Carlos Rykellmy Santos 
 O menu da suíte `/superadmin` também foi alinhado com as rotas reais (`overview`, `companies`, `users`, `wallets`, `topups`, `pricing`, `messages`, `audit`, `settings`). Esta correção não muda o menu da prévia estática, que já é independente e funcional sem backend.
 
 O GitHub Actions confere que o build `dist/assets` contém o crédito de autoria. Isso valida os artefatos gerados pelo GitHub, não confirma por si só que o Pages terminou de publicá-los.
+
+
+## Agenda responsiva e navegação direta
+
+A prévia estática foi aprimorada para acompanhamento pelo celular:
+
+- Em telas pequenas, agendamentos aparecem em **cartões**, com cliente, horário, serviço, barbeiro e situação, sem rolagem horizontal.
+- Na seção **Agenda**, é possível filtrar os registros fictícios por barbeiro usando botões acessíveis.
+- A tela selecionada fica registrada em `?tela=`, permitindo abrir links diretos e manter a seleção depois de atualizar o navegador.
+
+Links de demonstração:
+
+- Superadmin fictício: `/preview`
+- Agenda: `/preview?tela=agenda`
+- WhatsApp: `/preview?tela=mensagens`
+- Carteira de créditos: `/preview?tela=carteira`
+- Loja: `/preview?tela=loja`
+
+Se a API funcional não responder, a visão geral do Superadmin real mostra uma explicação e um botão **Tentar novamente**, em vez de deixar a tela em branco.
+
+Os dados da `/preview` continuam exclusivamente fictícios. O GitHub Actions verifica o build, os testes e a presença dos elementos principais da agenda no bundle. A publicação efetiva depende da implantação do Cloudflare Pages.
