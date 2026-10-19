@@ -25,6 +25,7 @@ webhooksRouter.get("/whatsapp", async (c) => {
 });
 
 webhooksRouter.post("/whatsapp", async (c) => {
+  if (c.env.TIGU_STAGING === "1") return c.json({ error: "Webhooks Meta reais estão desativados na homologação." }, 403);
   const raw = await c.req.text();
   const secret = c.env.WHATSAPP_APP_SECRET || "";
   if (secret) {
@@ -46,6 +47,7 @@ webhooksRouter.post("/whatsapp", async (c) => {
 });
 
 webhooksRouter.post("/mercadopago", async (c) => {
+  if (c.env.TIGU_STAGING === "1") return c.json({ error: "Webhooks Pix reais estão desativados na homologação." }, 403);
   const raw = await c.req.text();
   let body: { type?: string; data?: { id?: string }; action?: string } = {};
   try { body = JSON.parse(raw); } catch { return c.json({ ok: true }); }
