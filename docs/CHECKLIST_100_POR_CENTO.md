@@ -98,3 +98,13 @@ Trabalhar exclusivamente em `audit/tigu-primeira-validacao`, reportar ao proprie
 - [x] Cadastro assistido completo em uma transação, com teste de 15 dias e senha provisória apresentada ao Superadmin.
 - [x] Reset e desativação pelo Superadmin revogam sessões e códigos antigos.
 - [ ] Conferência visual da janela de acesso provisório na homologação autorizada.
+
+## Rodada de agenda e proteção de acessos
+
+- [x] Fusos reconhecidos pelo runtime e horários reais validados no servidor.
+- [x] Ordem de abertura/fechamento e expediente/pausa verificada, inclusive em edição parcial.
+- [x] Edições concorrentes dos horários não combinam expedientes incompatíveis.
+- [x] Vínculos do Superadmin exigem conta ativa e profissional ativo da empresa selecionada.
+- [x] Migração 0007 protege a última conta Superadmin ativa contra desativação, rebaixamento e exclusão; transações recusadas preservam os acessos.
+- [x] Migrações 0001–0007 executadas em banco local isolado.
+- [ ] Aplicar a migração 0007 no banco remoto correto após autorização; proteção ainda não implantada remotamente.
