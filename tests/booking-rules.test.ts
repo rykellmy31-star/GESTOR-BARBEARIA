@@ -945,3 +945,54 @@ describe("Troca obrigatória de senha após reset do suporte", () => {
     expect((await api("/api/super/settings", {}, provisionalCookie)).status).toBe(401);
   });
 });
+
+
+describe("Planos comerciais com preço dinâmico e permissão de Superadmin", () => {
+  it("consulta planos publicamente, restringe edição e publica alteração real do D1", async () => {
+    const publicResult = await api("/api/marketing/plans");
+    expect(publicResult.status).toBe(200);
+    expect(publicResult.body.automatic_billing).toBe(false);
+    expect(publicResult.body.plans.map((p: any) => p.code)).toEqual(["free","pro","scale"]);
+    const pro = publicResult.body.plans.find((p: any) => p.code === "pro");
+    expect(pro.price_cents_month).toBeGreaterThan(0);
+    const changed = {
+      name: pro.name,
+      price_cents_month: pro.price_cents_month + 200,
+      max_barbers: pro.max_barbers,
+      max_messages_month: pro.max_messages_month,
+      whatsapp_enabled: pro.whatsapp_enabled === 1,
+      store_enabled: pro.store_enabled === 1,
+    };
+    expect((await api("/api/super/plans/pro", {method:"PUT",body:JSON.stringify(changed)})).status).toBe(401);
+    expect((await api("/api/super/plans/pro", {method:"PUT",body:JSON.stringify(changed)},cookieA)).status).toBe(403);
+    expect((await api("/api/marketing/plans")).body.plans.find((p: any) => p.code === "pro").price_cents_month)
+      .toBe(pro.price_cents_month);
+
+    const at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    const email = "plan-admin-" + Date.now() + "@tigu.test";
+    await db.prepare("INSERT INTO users (platform_role,name,email,password_hash,active,created_at) VALUES ('superadmin','Plan admin',?1,?2,1,?3)")
+      .bind(email, await hashPassword(PW), at).run();
+    const login = await api("/api/auth/login", {method:"POST",body:JSON.stringify({email,password:PW})});
+    expect(login.status).toBe(200);
+    const cookie = login.cookie!;
+    const free = publicResult.body.plans.find((p:any)=>p.code==="free");
+    expect((await api("/api/super/plans/free",{method:"PUT",body:JSON.stringify({
+      name:free.name,price_cents_month:500,max_barbers:free.max_barbers,
+      max_messages_month:free.max_messages_month,whatsapp_enabled:false,store_enabled:true
+    })},cookie)).status).toBe(422);
+    expect((await api("/api/super/plans/pro",{method:"PUT",body:JSON.stringify({...changed,max_barbers:0})},cookie)).status).toBe(422);
+    try {
+      const saved = await api("/api/super/plans/pro",{method:"PUT",body:JSON.stringify(changed)},cookie);
+      expect(saved.status).toBe(200);
+      expect(saved.body.plan.price_cents_month).toBe(changed.price_cents_month);
+      const visible = await api("/api/marketing/plans");
+      expect(visible.body.plans.find((p:any)=>p.code==="pro").price_cents_month).toBe(changed.price_cents_month);
+      expect((await api("/api/super/plans",{},cookie)).body.plans.length).toBe(3);
+      const row = await db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='platform.plan_update' AND entity_id='pro'")
+        .first<{n:number}>();
+      expect(row?.n).toBeGreaterThanOrEqual(1);
+    } finally {
+      await api("/api/super/plans/pro",{method:"PUT",body:JSON.stringify({...changed,price_cents_month:pro.price_cents_month})},cookie);
+    }
+  });
+});
