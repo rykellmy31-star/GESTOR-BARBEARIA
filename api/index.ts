@@ -18,6 +18,8 @@ import { adminRouter } from "./routes/admin";
 import { barberRouter } from "./routes/barber";
 import { superRouter } from "./routes/super";
 import { webhooksRouter } from "./routes/webhooks";
+import { billingRouter } from "./routes/billing";
+import { reconcileSubscriptionPix } from "./lib/subscription-billing";
 import { uploadsRouter } from "./routes/uploads";
 import { originGuard } from "./lib/auth";
 import { processDueJobs } from "./lib/messaging/jobs";
@@ -98,6 +100,7 @@ app.post("/api/marketing/leads", async (c) => {
 app.route("/api/auth", authRouter);
 app.route("/api/super", superRouter);
 app.route("/api/webhooks", webhooksRouter);
+app.route("/api/c/:slug/billing", billingRouter);
 app.route("/api/c/:slug/admin", adminRouter);
 app.route("/api/c/:slug/painel", barberRouter);
 app.route("/api/c/:slug/barber", barberRouter); // alias p/ o app do painel do profissional
@@ -132,6 +135,7 @@ export default {
           // e recuperando pagamentos aprovados que perderam o webhook.
           if (new Date().getUTCMinutes() % 10 === 0) {
             await reconcilePendingTopups(env, 20);
+            await reconcileSubscriptionPix(env, 20);
           }
         } catch (e) {
           console.error("[cron]", String(e));
