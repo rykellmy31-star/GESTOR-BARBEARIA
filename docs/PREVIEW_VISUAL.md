@@ -77,3 +77,13 @@ Os dados da `/preview` continuam exclusivamente fictícios. O GitHub Actions ver
 - **Importante:** a prévia de Cloudflare Pages sozinha não possui backend D1. Editar pelo superadministrador e propagar alterações à página comercial requer publicar o Tigu como Worker + D1 ou conectar um backend de homologação/produção de forma segura. Não alegar atualização dinâmica de contatos no Pages estático sem essa integração.
 - Testes automatizados verificam autenticação, isolamento do Superadmin, validação, publicação, persistência, ocultação e auditoria.
 
+
+
+## Planos de contratação editáveis
+
+- No Superadmin, em **Config. plataforma → Planos e valores da página de vendas**, é possível editar preços em centavos, número máximo de profissionais, limite mensal de mensagens e a disponibilidade de WhatsApp e loja.
+- A API pública `GET /api/marketing/plans` consulta a tabela `plans` no D1; somente o Superadmin pode alterar registros via `PUT /api/super/plans/:code`. Cada alteração é auditada.
+- O plano `free` continua com mensalidade zero. Limites alterados na tabela `plans` podem afetar assinaturas existentes imediatamente; revisar impactos antes de salvar.
+- No Cloudflare Pages **sem backend**, a página inicial identifica os três preços de referência como **ilustrativos**. A prévia `/preview?tela=vendas` mostra cartões de exemplo, sem compra habilitada.
+- Atualizar preços **não implementa cobrança de assinaturas**: os planos pagos dependem de confirmação/ativação assistida e integração de pagamento recorrente.
+- Testes cobrem consulta pública, autorização do Superadmin, edição, rejeição de alterações inválidas e atualização dos valores devolvidos pela API.
