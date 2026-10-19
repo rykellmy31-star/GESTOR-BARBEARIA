@@ -30,7 +30,8 @@
 ### Pagamentos e assinatura (dependências externas)
 
 - [ ] Configurar credenciais e webhook reais do Mercado Pago, testar Pix aprovado, estornado, atrasado e conciliado em banco real.
-- [ ] Definir e implementar cobrança recorrente dos planos de contratação (Start/Pro/Scale). **A cobrança de assinatura ainda não é automática.**
+- [x] Permitir que o Superadmin altere preços e limites de Start/Pro/Scale no D1; a página pública lê os valores atuais do backend.
+- [ ] Implementar contratação e cobrança recorrente efetiva dos planos. **Alterar o preço no cadastro não gera boleto, Pix recorrente nem cobrança automática.**
 - [ ] Reconciliar valores cobrados ao cliente, custos Meta e margem da plataforma com relatórios financeiros auditáveis.
 
 ### WhatsApp e conformidade
