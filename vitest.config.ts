@@ -4,7 +4,8 @@ import { cloudflareTest } from "@cloudflare/vitest-plugin";
 export default defineConfig({
   plugins: [cloudflareTest({ wrangler: { configPath: "./wrangler.jsonc" } })],
   test: {
-    isolate: false,
+    // Cada arquivo precisa de banco e módulos próprios, independentemente da ordem.
+    isolate: true,
     fileParallelism: false,
     maxWorkers: 1,
     testTimeout: 30000,

@@ -391,7 +391,8 @@ adminRouter.put("/barbers/:id", async (c) => {
   const b = await db.prepare(`SELECT id,work_days,work_start,work_end,break_start,break_end FROM barbers WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<BarberRow>();
   if (!b) return err(c, "Barbeiro não encontrado", 404);
   const d = parsed.data as Record<string, unknown>;
-  if (Object.keys(barberScheduleFields).some((key) => key in d)) {
+  const scheduleChanged = Object.keys(barberScheduleFields).some((key) => key in d);
+  if (scheduleChanged) {
     const schedule = barberScheduleSchema.safeParse({ ...b, work_days: safeArr(b.work_days), ...d });
     if (!schedule.success) return err(c, "Expediente inválido", 422, schedule.error.flatten().fieldErrors);
   }
@@ -402,10 +403,16 @@ adminRouter.put("/barbers/:id", async (c) => {
   if ("work_days" in d) { sets.push("work_days = ?"); binds.push(JSON.stringify(d.work_days)); }
   if ("active" in d) { sets.push("active = ?"); binds.push(d.active ? 1 : 0); }
   if (sets.length) {
+    // Só grava sobre o expediente que foi validado; outra edição exige nova leitura.
+    const scheduleGuard = scheduleChanged ? "AND work_days=? AND work_start=? AND work_end=? AND break_start=? AND break_end=?" : "";
+    const expectedSchedule = scheduleChanged ? [b.work_days,b.work_start,b.work_end,b.break_start,b.break_end] : [];
     const updated=await db.prepare(`UPDATE barbers SET ${sets.join(", ")} WHERE id=? AND company_id=?
-      AND (?=0 OR active=1 OR ${barberCapacitySql("barbers.company_id")})`)
-      .bind(...binds,b.id,id,d.active===true?1:0).run();
-    if (updated.meta.changes!==1) return err(c,"O limite de profissionais ativos do plano foi atingido.",402);
+      AND (?=0 OR active=1 OR ${barberCapacitySql("barbers.company_id")}) ${scheduleGuard}`)
+      .bind(...binds,b.id,id,d.active===true?1:0,...expectedSchedule).run();
+    if (updated.meta.changes!==1) {
+      if (scheduleChanged) return err(c,"A equipe foi alterada em outra operação ou atingiu o limite do plano. Atualize a página antes de salvar os horários.",409);
+      return err(c,"O limite de profissionais ativos do plano foi atingido.",402);
+    }
   }
   if ("service_ids" in d) await syncBarberServices(db, id, b.id, (d.service_ids as number[]) ?? []);
   return json(c, { ok: true });

@@ -70,4 +70,18 @@ describe("validação da configuração de agenda",()=>{
     expect(await f.count()).toBe(0);
     expect((await f.create("Correto")).status).toBe(200);
   });
+  it("edições simultâneas não combinam um início e um fim incompatíveis",async()=>{
+    const f=await fixture();
+    const response=await f.request("/barbers",{name:"Expediente concorrente",...schedule,break_start:"00:00",break_end:"00:00"});
+    expect(response.status).toBe(200);
+    const {id}=await response.json() as {id:number};
+    const responses=await Promise.all([
+      f.request(`/barbers/${id}`,{work_start:"17:00"},"PUT"),
+      f.request(`/barbers/${id}`,{work_end:"10:00"},"PUT"),
+    ]);
+    expect(responses.filter(r=>r.status===200)).toHaveLength(1);
+    expect(responses.filter(r=>[409,422].includes(r.status))).toHaveLength(1);
+    const saved=await db.prepare("SELECT work_start,work_end FROM barbers WHERE id=?1").bind(id).first<{work_start:string;work_end:string}>();
+    expect(saved!.work_start < saved!.work_end).toBe(true);
+  });
 });
