@@ -20,7 +20,10 @@ billingRouter.get("/status",async c=>{
 
 billingRouter.post("/pix",async c=>{
   if(!owner(c)) return err(c,"Apenas o proprietário pode contratar o plano.",403);
-  const result=await createSubscriptionPix(c.env,cid(c),c.get("user").email);
+  const parsed=z.object({plan_code:z.enum(["free","pro","scale"])}).strict()
+    .safeParse(await c.req.json().catch(()=>null));
+  if(!parsed.success) return err(c,"Selecione Start, Pro ou Scale para gerar o Pix.",422);
+  const result=await createSubscriptionPix(c.env,cid(c),c.get("user").email,parsed.data.plan_code);
   if(!result.ok) return err(c,result.message,result.status as 409|422|502|503);
   return json(c,{invoice:result.invoice});
 });
