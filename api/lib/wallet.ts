@@ -34,40 +34,100 @@ export async function reserveForJob(
   companyId: number,
   jobId: number,
   priceCents: number,
-  allowNegative: boolean
+  _allowNegative: boolean
 ): Promise<{ ok: boolean; reason?: "insufficient_funds" }> {
-  const guard = allowNegative ? `1 = 1` : `balance_cents - reserved_cents >= ?1`;
-  const res = await db
-    .prepare(`UPDATE wallets SET reserved_cents = reserved_cents + ?1, updated_at = ?2 WHERE company_id = ?3 AND ${guard}`)
-    .bind(priceCents, nowIso(), companyId)
-    .run();
-  if (!res.meta?.changes) return { ok: false, reason: "insufficient_funds" };
-  await db
-    .prepare(
-      `INSERT OR IGNORE INTO wallet_transactions (company_id, type, amount_cents, balance_after, reserved_after, ref_type, ref_id, idempotency_key, note, created_at)
-       SELECT ?1,'reserve',0,w.balance_cents,w.reserved_cents,'message_job','job-'||?2,?3,'Reserva p/ envio agendado',?4 FROM wallets w WHERE w.company_id=?1`
-    )
-    .bind(companyId, jobId, `reserve:job-${jobId}`, nowIso())
-    .run();
-  return { ok: true };
+  if (!Number.isInteger(priceCents) || priceCents < 0) return { ok: false, reason: "insufficient_funds" };
+  if (priceCents === 0) return { ok: true };
+  const job = await db.prepare(
+    `SELECT reserved_cents, status, captured_at, refunded_at, price_cents FROM message_jobs WHERE id=?1 AND company_id=?2`
+  ).bind(jobId, companyId).first<{ reserved_cents: number; status: string; captured_at: string | null; refunded_at: string | null; price_cents: number }>();
+  if (!job || job.price_cents !== priceCents || job.captured_at || job.refunded_at ||
+      !["scheduled", "blocked_funds"].includes(job.status)) {
+    return { ok: false, reason: "insufficient_funds" };
+  }
+  if (job.reserved_cents === priceCents) return { ok: true };
+  if (job.reserved_cents !== 0) return { ok: false, reason: "insufficient_funds" };
+
+  await ensureWallet(db, companyId);
+  const now = nowIso();
+  const idem = `reserve:job-${jobId}`;
+  try {
+    // Batch D1 transacional. O lançamento UNIQUE é o gate contra duplo reserve;
+    // wallet CHECK provoca rollback caso não exista saldo livre.
+    await db.batch([
+      db.prepare(
+        `INSERT INTO wallet_transactions (company_id,type,amount_cents,balance_after,reserved_after,
+         ref_type,ref_id,idempotency_key,note,created_at)
+         SELECT ?1,'reserve',0,w.balance_cents,w.reserved_cents,'message_job',?2,?3,
+         'Reserva de créditos para lembrete',?4
+         FROM wallets w JOIN message_jobs j ON j.id=?5 AND j.company_id=w.company_id
+         WHERE w.company_id=?1 AND j.reserved_cents=0 AND j.captured_at IS NULL
+         AND j.refunded_at IS NULL AND j.status IN ('scheduled','blocked_funds')`
+      ).bind(companyId, `job-${jobId}`, idem, now, jobId),
+      db.prepare(
+        `UPDATE wallets SET reserved_cents=CASE
+         WHEN EXISTS (SELECT 1 FROM wallet_transactions WHERE idempotency_key=?1)
+         THEN reserved_cents+?2 ELSE -1 END, updated_at=?3 WHERE company_id=?4`
+      ).bind(idem, priceCents, now, companyId),
+      db.prepare(
+        `UPDATE message_jobs SET reserved_cents=?1,reservation_key=?2,updated_at=?3
+         WHERE id=?4 AND company_id=?5 AND reserved_cents=0 AND status IN ('scheduled','blocked_funds')`
+      ).bind(priceCents, idem, now, jobId, companyId),
+      db.prepare(
+        `UPDATE wallet_transactions SET
+         balance_after=(SELECT balance_cents FROM wallets WHERE company_id=?1),
+         reserved_after=(SELECT reserved_cents FROM wallets WHERE company_id=?1)
+         WHERE company_id=?1 AND idempotency_key=?2`
+      ).bind(companyId, idem),
+    ]);
+    return { ok: true };
+  } catch {
+    const current = await db.prepare(`SELECT reserved_cents FROM message_jobs WHERE id=?1 AND company_id=?2`)
+      .bind(jobId, companyId).first<{ reserved_cents: number }>();
+    if (current?.reserved_cents === priceCents) return { ok: true };
+    return { ok: false, reason: "insufficient_funds" };
+  }
 }
 
-/** Libera reserva sem cobrar (falha permanente / cancelado antes do envio). */
-export async function releaseJobReservation(db: D1Database, companyId: number, jobId: number, priceCents: number): Promise<boolean> {
+/** Libera reserva com lançamento e saldo na mesma transação. */
+export async function releaseJobReservation(db: D1Database, companyId: number, jobId: number, _priceCents: number): Promise<boolean> {
+  const job = await db.prepare(
+    `SELECT reserved_cents FROM message_jobs WHERE id=?1 AND company_id=?2
+     AND captured_at IS NULL AND refunded_at IS NULL`
+  ).bind(jobId, companyId).first<{ reserved_cents: number }>();
+  if (!job || job.reserved_cents <= 0) return false;
+
   const now = nowIso();
-  const gate = await db
-    .prepare(`UPDATE message_jobs SET refunded_at = ?1 WHERE id = ?2 AND refunded_at IS NULL AND reserved_cents > 0 AND captured_at IS NULL`)
-    .bind(now, jobId)
-    .run();
-  if (!gate.meta?.changes) return false;
-  await db.batch([
-    db.prepare(`UPDATE wallets SET reserved_cents = MAX(0, reserved_cents - ?1), updated_at = ?2 WHERE company_id = ?3`).bind(priceCents, now, companyId),
-    db.prepare(
-      `INSERT OR IGNORE INTO wallet_transactions (company_id, type, amount_cents, balance_after, reserved_after, ref_type, ref_id, idempotency_key, note, created_at)
-       SELECT ?1,'release',0,w.balance_cents,w.reserved_cents,'message_job','job-'||?2,?3,'Reserva liberada sem cobrança',?4 FROM wallets w WHERE w.company_id=?1`
-    ).bind(companyId, jobId, `release:job-${jobId}`, now),
-  ]);
-  return true;
+  const idem = `release:job-${jobId}`;
+  try {
+    await db.batch([
+      db.prepare(
+        `INSERT INTO wallet_transactions (company_id,type,amount_cents,balance_after,reserved_after,
+         ref_type,ref_id,idempotency_key,note,created_at)
+         SELECT ?1,'release',0,w.balance_cents,w.reserved_cents,'message_job',?2,?3,
+         'Reserva liberada sem cobrança',?4
+         FROM wallets w JOIN message_jobs j ON j.id=?5 AND j.company_id=w.company_id
+         WHERE w.company_id=?1 AND j.reserved_cents>0 AND j.captured_at IS NULL AND j.refunded_at IS NULL`
+      ).bind(companyId, `job-${jobId}`, idem, now, jobId),
+      db.prepare(
+        `UPDATE wallets SET reserved_cents=CASE
+         WHEN EXISTS (SELECT 1 FROM wallet_transactions WHERE idempotency_key=?1)
+         THEN reserved_cents-?2 ELSE -1 END, updated_at=?3 WHERE company_id=?4`
+      ).bind(idem, job.reserved_cents, now, companyId),
+      db.prepare(
+        `UPDATE message_jobs SET reserved_cents=0,refunded_at=?1,updated_at=?1
+         WHERE id=?2 AND company_id=?3 AND captured_at IS NULL AND refunded_at IS NULL`
+      ).bind(now, jobId, companyId),
+      db.prepare(
+        `UPDATE wallet_transactions SET balance_after=(SELECT balance_cents FROM wallets WHERE company_id=?1),
+         reserved_after=(SELECT reserved_cents FROM wallets WHERE company_id=?1)
+         WHERE company_id=?1 AND idempotency_key=?2`
+      ).bind(companyId, idem),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Captura a cobrança (consume) de um job aceito. Idempotente via captured_at + chave. */
