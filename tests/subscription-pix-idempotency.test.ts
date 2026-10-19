@@ -165,4 +165,21 @@ describe("regressão D1: confirmação Pix idempotente", () => {
     }
   });
 
+  it("preserva a fatura pendente quando a API do gateway falha", async () => {
+    const now = "2026-10-19T17:00:00Z";
+    await db.prepare("INSERT INTO companies (id,slug,name,status,plan_code,created_at,updated_at) VALUES (9014,'billing-gateway-test','Billing Gateway Test','active','free',?1,?1)").bind(now).run();
+    await db.prepare("INSERT INTO subscriptions (company_id,plan_code,status,period_end,updated_at) VALUES (9014,'free','trial','2026-10-20T17:00:00Z',?1)").bind(now).run();
+    await db.prepare("INSERT INTO subscription_invoices (id,company_id,code,plan_code,amount_cents,status,provider_payment_id) VALUES (9014,9014,'TIGU-TEST-9014','pro',4990,'pending','9014')").run();
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch",vi.fn().mockRejectedValue(new Error("temporary network outage")));
+    try {
+      const result = await confirmSubscriptionPix({...env,DB:db,MP_ACCESS_TOKEN:"test-token",TIGU_STAGING:"0"} as Env,"9014");
+      expect(result).toMatchObject({ok:false,status:"gateway_unavailable",activated:false});
+      expect((await db.prepare("SELECT status FROM subscription_invoices WHERE id=9014").first<{status:string}>())?.status).toBe("pending");
+      expect((await db.prepare("SELECT status FROM subscriptions WHERE company_id=9014").first<{status:string}>())?.status).toBe("trial");
+    } finally {
+      vi.stubGlobal("fetch",original);
+    }
+  });
+
 });
