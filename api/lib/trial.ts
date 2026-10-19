@@ -1,4 +1,4 @@
-/** Assinaturas pagas são ativadas manualmente; nenhuma cobrança é feita aqui. */
+/** Regras de acesso de testes e assinaturas confirmadas; este módulo não gera cobranças. */
 export const START_TRIAL_DAYS = 15;
 
 export interface SubscriptionAccess {

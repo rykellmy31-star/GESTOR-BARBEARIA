@@ -86,4 +86,57 @@ describe("mensagens seguem a versão atual do atendimento",()=>{
     expect((await f.jobs()).results[0]).toMatchObject({status:"sending",reserved_cents:10});
     expect(await db.prepare("SELECT reserved_cents FROM wallets WHERE company_id=?1").bind(f.companyId).first("reserved_cents")).toBe(10);
   });
+  it.each(["expired","suspended"])("não envia mensagens automáticas com acesso %s",async mode=>{
+    const f=await fixture();await f.schedule();
+    if(mode==="expired")await db.prepare("UPDATE subscriptions SET period_end='2000-01-01T00:00:00Z' WHERE company_id=?1").bind(f.companyId).run();
+    else await db.prepare("UPDATE companies SET status='suspended' WHERE id=?1").bind(f.companyId).run();
+    const send=vi.spyOn(mockProvider,"sendTemplate");
+    try {
+      await processDueJobs(f.e,{companyId:f.companyId,now:f.due});
+      expect(send).not.toHaveBeenCalled();
+      expect((await f.jobs()).results[0]).toMatchObject({status:"skipped",reserved_cents:0});
+      expect(await db.prepare("SELECT reserved_cents FROM wallets WHERE company_id=?1").bind(f.companyId).first("reserved_cents")).toBe(0);
+    } finally {send.mockRestore();}
+  });
+  it("claim recusa downgrade que ocorreu após consultar o plano",async()=>{
+    const f=await fixture();await f.schedule();
+    const proxy=beforeRunDatabase(sql=>sql.includes("UPDATE message_jobs SET status='sending',attempts"),async()=>{
+      await db.prepare("UPDATE subscriptions SET plan_code='free' WHERE company_id=?1").bind(f.companyId).run();
+    });
+    const send=vi.spyOn(mockProvider,"sendTemplate");
+    try {
+      await processDueJobs({...f.e,DB:proxy},{companyId:f.companyId,now:f.due});
+      expect(send).not.toHaveBeenCalled();expect((await f.jobs()).results[0].status).toBe("scheduled");
+      await processDueJobs(f.e,{companyId:f.companyId,now:f.due});
+      expect((await f.jobs()).results[0]).toMatchObject({status:"skipped",reserved_cents:0});
+    } finally {send.mockRestore();}
+  });
+  it("cota mensal é conferida novamente no claim contando envios assumidos",async()=>{
+    const f=await fixture();await f.schedule();const job=(await f.jobs()).results[0];
+    const plan=`quota-${crypto.randomUUID()}`;
+    await db.prepare("INSERT INTO plans(code,name,price_cents_month,max_barbers,max_messages_month,whatsapp_enabled) VALUES (?1,'Cota local',1999,10,1,1)").bind(plan).run();
+    await db.prepare("UPDATE subscriptions SET plan_code=?1 WHERE company_id=?2").bind(plan,f.companyId).run();
+    const proxy=beforeRunDatabase(sql=>sql.includes("UPDATE message_jobs SET status='sending',attempts"),async()=>{
+      await db.prepare(`INSERT INTO message_jobs(company_id,kind,booking_id,to_phone,template_code,payload_json,status,scheduled_at,fire_deadline,price_cents,cost_cents,idempotency_key,last_attempt_at)
+        SELECT company_id,'manual',NULL,to_phone,template_code,'{}','sending',scheduled_at,fire_deadline,0,0,?1,?2 FROM message_jobs WHERE id=?3`)
+        .bind(`occupied-${crypto.randomUUID()}`,f.due.toISOString().replace(/\.\d{3}Z$/,"Z"),job.id).run();
+    });
+    const send=vi.spyOn(mockProvider,"sendTemplate");
+    try {
+      await processDueJobs({...f.e,DB:proxy},{companyId:f.companyId,now:f.due});
+      expect(send).not.toHaveBeenCalled();
+      expect((await f.jobs()).results[0]).toMatchObject({status:"scheduled",reserved_cents:10});
+      expect(await db.prepare("SELECT lifetime_charged_cents FROM wallets WHERE company_id=?1").bind(f.companyId).first("lifetime_charged_cents")).toBe(0);
+    } finally {send.mockRestore();}
+  });
+  it("restrição do plano não sobrescreve envio que outro Worker já assumiu",async()=>{
+    const f=await fixture();await f.schedule();const job=(await f.jobs()).results[0];
+    await db.prepare("UPDATE subscriptions SET plan_code='free' WHERE company_id=?1").bind(f.companyId).run();
+    const proxy=beforeRunDatabase(sql=>sql.includes("skip_reason='plano sem WhatsApp'"),async()=>{
+      await db.prepare("UPDATE message_jobs SET status='sending' WHERE id=?1").bind(job.id).run();
+    });
+    await processDueJobs({...f.e,DB:proxy},{companyId:f.companyId,now:f.due});
+    expect((await f.jobs()).results[0]).toMatchObject({status:"sending",reserved_cents:10});
+    expect(await db.prepare("SELECT reserved_cents FROM wallets WHERE company_id=?1").bind(f.companyId).first("reserved_cents")).toBe(10);
+  });
 });

@@ -185,18 +185,18 @@ async function tryReserve(db: D1Database, companyId: number, jobId: number, pric
   if (!res.ok) {
     await db.batch([
       db.prepare(`UPDATE message_jobs SET status='blocked_funds', last_error='saldo insuficiente', updated_at=?1 WHERE id=?2 AND status='scheduled'`).bind(nowIso(), jobId),
-      notifyIfNoRecent(db, companyId, "billing", "Saldo de créditos baixo", "Um lembrete de WhatsApp ficou na fila por falta de créditos. Faça uma recarga para não perder envios."),
+      notifyIfNoRecent(db, companyId, "billing", "Saldo de créditos baixo", "Um lembrete de WhatsApp ficou na fila por falta de créditos. Faça uma recarga para não perder envios.",true),
     ]);
     return false;
   }
   return true;
 }
 
-function notifyIfNoRecent(db: D1Database, companyId: number, kind: "billing" | "message" | "connection", title: string, body: string): D1PreparedStatement {
+function notifyIfNoRecent(db: D1Database, companyId: number, kind: "billing" | "message" | "connection", title: string, body: string,afterChange=false): D1PreparedStatement {
   return db.prepare(
     `INSERT INTO notifications (company_id, audience, title, body, kind)
      SELECT ?1,'admin',?2,?3,?4
-     WHERE NOT EXISTS (SELECT 1 FROM notifications WHERE company_id=?1 AND kind=?4 AND created_at > strftime('%Y-%m-%dT%H:%M:%SZ','now','-6 hours'))`
+     WHERE ${afterChange?"changes()=1 AND ":""} NOT EXISTS (SELECT 1 FROM notifications WHERE company_id=?1 AND kind=?4 AND created_at > strftime('%Y-%m-%dT%H:%M:%SZ','now','-6 hours'))`
   ).bind(companyId, title, body, kind);
 }
 
@@ -326,27 +326,33 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
 
   // 2) plano & conexão (re-validados no disparo)
   const plan = await db
-    .prepare(`SELECT p.whatsapp_enabled, p.max_messages_month, c.demo FROM plans p JOIN subscriptions s ON s.plan_code = p.code JOIN companies c ON c.id = s.company_id WHERE s.company_id = ?1`)
+    .prepare(`SELECT p.whatsapp_enabled,p.max_messages_month,c.demo,c.status AS company_status,s.status AS subscription_status,s.period_end FROM plans p JOIN subscriptions s ON s.plan_code = p.code JOIN companies c ON c.id = s.company_id WHERE s.company_id = ?1`)
     .bind(job.company_id)
-    .first<{ whatsapp_enabled: number; max_messages_month: number; demo: number }>();
+    .first<{whatsapp_enabled:number;max_messages_month:number;demo:number;company_status:string;subscription_status:string;period_end:string|null}>();
   const payload = JSON.parse(job.payload_json || "{}") as { manual?: boolean };
   const isManual = Boolean(payload.manual);
+  if(plan?.company_status!=="active" || (!isManual && (!plan || !["trial","active"].includes(plan.subscription_status) || !plan.period_end || Date.parse(plan.period_end)<=now.getTime()))) {
+    const changed=await db.prepare(`UPDATE message_jobs SET status='skipped',skip_reason='empresa ou assinatura sem acesso para envio',updated_at=?1
+      WHERE id=?2 AND status IN('scheduled','blocked_funds')`).bind(nowIso(),job.id).run();
+    if(changed.meta.changes===1)await releaseJobReservation(db,job.company_id,job.id,job.reserved_cents);
+    out.skipped++;return;
+  }
   if (!isManual && plan && plan.whatsapp_enabled !== 1) {
-    await db.prepare(`UPDATE message_jobs SET status='skipped', skip_reason='plano sem WhatsApp', updated_at=?1 WHERE id=?2`).bind(nowIso(), job.id).run();
-    if (job.reserved_cents > 0) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
+    const changed=await db.prepare(`UPDATE message_jobs SET status='skipped',skip_reason='plano sem WhatsApp',updated_at=?1 WHERE id=?2 AND status IN('scheduled','blocked_funds')`).bind(nowIso(),job.id).run();
+    if (changed.meta.changes===1) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
     out.skipped++;
     return;
   }
   if (!isManual && plan && plan.max_messages_month > 0) {
     const monthStart = `${now.toISOString().slice(0, 7)}-01T00:00:00Z`;
     const used = await db
-      .prepare(`SELECT COUNT(*) AS n FROM message_jobs WHERE company_id = ?1 AND captured_at IS NOT NULL AND captured_at >= ?2`)
+      .prepare(`SELECT COUNT(*) AS n FROM message_jobs WHERE company_id=?1 AND (captured_at>=?2 OR (status='sending' AND last_attempt_at>=?2))`)
       .bind(job.company_id, monthStart)
       .first<{ n: number }>();
     if ((used?.n ?? 0) >= plan.max_messages_month) {
       await db.batch([
-        db.prepare(`UPDATE message_jobs SET status='blocked_funds', last_error='limite mensal do plano atingido', next_attempt_at=strftime('%Y-%m-%dT%H:%M:%SZ','now','+3600 seconds'), updated_at=?1 WHERE id=?2`).bind(nowIso(), job.id),
-        notifyIfNoRecent(db, job.company_id, "billing", "Limite mensal de mensagens do plano atingido", "Os envios ficarão em espera até o próximo ciclo ou upgrade do plano."),
+        db.prepare(`UPDATE message_jobs SET status='blocked_funds', last_error='limite mensal do plano atingido', next_attempt_at=strftime('%Y-%m-%dT%H:%M:%SZ','now','+3600 seconds'), updated_at=?1 WHERE id=?2 AND status IN('scheduled','blocked_funds')`).bind(nowIso(), job.id),
+        notifyIfNoRecent(db, job.company_id, "billing", "Limite mensal de mensagens do plano atingido", "Os envios ficarão em espera até o próximo ciclo ou upgrade do plano.",true),
       ]);
       out.blocked++;
       return;
@@ -355,7 +361,7 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
   const conn = await getConnection(db, job.company_id);
   if (!conn || conn.status !== "connected") {
     await db
-      .prepare(`UPDATE message_jobs SET last_error='conexão WhatsApp inativa', next_attempt_at=strftime('%Y-%m-%dT%H:%M:%SZ','now','+300 seconds'), updated_at=?1 WHERE id=?2`)
+      .prepare(`UPDATE message_jobs SET last_error='conexão WhatsApp inativa', next_attempt_at=strftime('%Y-%m-%dT%H:%M:%SZ','now','+300 seconds'), updated_at=?1 WHERE id=?2 AND status IN('scheduled','blocked_funds')`)
       .bind(nowIso(), job.id)
       .run();
     out.blocked++;
@@ -377,8 +383,15 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
       WHERE id=?2 AND status IN('scheduled','blocked_funds') AND (booking_id IS NULL OR EXISTS(
         SELECT 1 FROM bookings b WHERE b.id=message_jobs.booking_id AND b.company_id=message_jobs.company_id
         AND b.status IN('pendente','confirmado') AND (message_jobs.idempotency_key NOT GLOB 'booking-[0-9]*-*-v[0-9]*'
-          OR message_jobs.idempotency_key='booking-'||b.id||'-'||message_jobs.kind||'-v'||b.schedule_version)))`)
-    .bind(nowIso(), job.id)
+          OR message_jobs.idempotency_key='booking-'||b.id||'-'||message_jobs.kind||'-v'||b.schedule_version)))
+      AND EXISTS(SELECT 1 FROM companies c WHERE c.id=message_jobs.company_id AND c.status='active')
+      AND (?3=1 OR EXISTS(SELECT 1 FROM subscriptions s JOIN plans p ON p.code=s.plan_code
+        WHERE s.company_id=message_jobs.company_id AND s.status IN('trial','active') AND julianday(s.period_end)>julianday(?1)
+        AND p.whatsapp_enabled=1 AND (p.max_messages_month<=0 OR (
+          SELECT count(*) FROM message_jobs j WHERE j.company_id=message_jobs.company_id
+          AND (j.captured_at>=?4 OR (j.status='sending' AND j.last_attempt_at>=?4))
+        )<p.max_messages_month)))`)
+    .bind(isoZ(now),job.id,isManual?1:0,`${now.toISOString().slice(0,7)}-01T00:00:00Z`)
     .run();
   if (!claim.meta?.changes) return;
 

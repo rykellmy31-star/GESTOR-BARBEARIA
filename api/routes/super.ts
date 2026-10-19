@@ -61,7 +61,7 @@ superRouter.get("/overview", async (c) => {
     },
     usage_by_day: usage.results,
     topups,
-    note_revenue: "Receita de RECORRÊNCIA (planos) não entra aqui — cobrança de planos é manual/externa nesta fase; veja subscriptions.",
+    note_revenue: "A receita dos planos não entra neste quadro. Consulte Mensalidades Pix para acompanhar cobranças e confirmações de pagamento.",
   });
 });
 
