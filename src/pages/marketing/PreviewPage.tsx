@@ -235,6 +235,30 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
         </div>
         <p className="mt-3 text-xs text-zinc-500">Valores da demonstração: Start R$ 19,99/mês após 15 dias de teste grátis. O Superadmin pode alterar os preços no sistema funcional. Nenhum plano é cobrado automaticamente.</p>
       </Panel>
+      <Panel title="Após os 15 dias: escolha seu plano" aside={<Tag tone="gold">Exemplo visual</Tag>}>
+        <div className="rounded-xl border border-amber-400/25 bg-amber-400/5 px-4 py-3 text-sm text-zinc-200">
+          <p className="font-semibold text-[#e8ca66]">Seu teste grátis terminou!</p>
+          <p className="mt-1 text-xs text-zinc-400">Escolha como deseja continuar. Nenhum dado da barbearia será apagado.</p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {[
+            ["Start","R$ 19,99","Até 2 profissionais"],
+            ["Pro","R$ 49,90","Até 6 profissionais"],
+            ["Scale","R$ 129,90","Profissionais ilimitados"],
+          ].map(([name,price,detail])=>(
+            <div key={name} className={`rounded-xl border p-4 ${name==="Pro"?"border-[#d4af37] bg-[#d4af37]/10":"border-[#39323a] bg-[#101014]"}`}>
+              <p className="text-sm font-semibold text-zinc-100">{name}</p>
+              <p className="mt-2 text-xl font-semibold text-[#e8ca66]">{price}<span className="text-xs text-zinc-400">/mês</span></p>
+              <p className="mt-2 text-xs text-zinc-400">{detail}</p>
+              <p className="mt-3 text-[11px] text-zinc-500">{name==="Pro"?"Plano de exemplo selecionado":"Outra opção disponível"}</p>
+            </div>
+          ))}
+        </div>
+        <button type="button" disabled className="mt-4 w-full cursor-not-allowed rounded-xl bg-[#d4af37]/70 px-5 py-3 text-sm font-semibold text-[#16120b] opacity-80">
+          Gerar Pix do plano escolhido (simulação)
+        </button>
+        <p className="mt-2 text-xs leading-relaxed text-zinc-500">No sistema funcional, o cliente poderá trocar para um plano superior durante a assinatura. A mudança só acontece após a confirmação do Pix pelo Mercado Pago, com os dias atuais preservados. Botão desativado neste preview.</p>
+      </Panel>
       <Panel title="Como o visitante encontrará seu contato" aside={<Tag tone="gold">Demonstração visual</Tag>}>
         <div className="rounded-2xl border border-[#d4af37]/40 bg-[#111115] p-6 text-center sm:p-10">
           <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#d4af37]">Atendimento comercial</p>
