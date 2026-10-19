@@ -14,6 +14,7 @@ import { ensureWallet, getWallet, manualAdjustment, resolveUncertainNotSent } fr
 import { confirmTopupFromProvider } from "../lib/topup";
 import { loadPlatformSettings, setPlatformSetting, platformSettingKeys, type PlatformKey } from "../lib/settings";
 import { DEFAULT_SETTINGS } from "../lib/settings";
+import { loadSalesContact, saveSalesContact, salesContactSchema } from "../lib/marketing";
 import { processDueJobs } from "../lib/messaging/jobs";
 import { randomHex } from "../lib/utils";
 
@@ -335,6 +336,23 @@ superRouter.put("/settings", async (c) => {
   await setPlatformSetting(c.env.DB, parsed.data.key, parsed.data.value);
   await audit(c.env.DB, c.get("user"), "platform.setting", "platform_settings", parsed.data.key, parsed.data, { companyId: null, scope: "platform" });
   return json(c, { ok: true });
+});
+
+// ── contato comercial da página de vendas (somente superadmin) ──────────────
+superRouter.get("/marketing/contact", async (c) =>
+  json(c, { contact: await loadSalesContact(c.env.DB) })
+);
+
+superRouter.put("/marketing/contact", async (c) => {
+  const parsed = salesContactSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return err(c, "Dados de contato inválidos.", 422, parsed.error.flatten().fieldErrors);
+  await saveSalesContact(c.env.DB, parsed.data);
+  // Auditoria registra quais campos mudaram, sem copiar contatos para logs desnecessários.
+  await audit(c.env.DB, c.get("user"), "platform.marketing_contact", "platform_settings", "sales_contact",
+    { enabled: parsed.data.enabled, whatsapp_configured: Boolean(parsed.data.whatsapp), email_configured: Boolean(parsed.data.email) },
+    { companyId: null, scope: "platform" }
+  );
+  return json(c, { ok: true, contact: parsed.data });
 });
 
 // ── fila de mensagens global (ops) ──────────────────────────────────────────
