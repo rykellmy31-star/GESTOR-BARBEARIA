@@ -14,6 +14,7 @@ declare module "cloudflare:test" {
 }
 import schema0001 from "../migrations/0001_init.sql";
 import schema0002 from "../migrations/0002_whatsapp_identity.sql";
+import schema0003 from "../migrations/0003_sales_leads.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
@@ -61,6 +62,7 @@ function nextWorkday(offsetDays = 1): string {
 beforeAll(async () => {
   await runSqlScript(schema0001);
   await runSqlScript(schema0002);
+  await runSqlScript(schema0003);
   const hash = await hashPassword(PW);
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   await db.batch([
@@ -994,5 +996,94 @@ describe("Planos comerciais com preço dinâmico e permissão de Superadmin", ()
     } finally {
       await api("/api/super/plans/pro",{method:"PUT",body:JSON.stringify({...changed,price_cents_month:pro.price_cents_month})},cookie);
     }
+  });
+});
+
+
+describe("Solicitações comerciais sem cobrança ou ativação", () => {
+  it("exige consentimento e não aceita Start nem dados incorretos", async () => {
+    const base = {
+      contact_name:"Cliente Interessado",company_name:"Barbearia Comercial",
+      email:"interessado@tigu.test",phone:"5573999999999",plan_code:"pro",message:"Gostaria de mais detalhes.",
+      consent:true,website:""
+    };
+    for (const patch of [
+      {consent:false},{plan_code:"free"},{phone:"1"},{email:"invalido"},{contact_name:""},
+    ]) {
+      const result=await api("/api/marketing/leads",{
+        method:"POST",body:JSON.stringify({...base,...patch})
+      });
+      expect(result.status).toBe(422);
+    }
+    expect((await api("/api/marketing/leads",{
+      method:"POST",body:JSON.stringify({...base,website:"propaganda.example"})
+    })).status).toBe(201);
+    const rows=await db.prepare("SELECT COUNT(*) n FROM sales_leads WHERE email=?1")
+      .bind(base.email).first<{n:number}>();
+    expect(rows?.n).toBe(0);
+  });
+
+  it("grava pedido com preço vigente, controla duplicidade e rate limit persistente", async () => {
+    const email="lead-" + Date.now() + "@tigu.test";
+    const body=JSON.stringify({
+      contact_name:"Ana Pessoa",company_name:"Barbearia Ana",email,phone:"(73) 99999-9999",
+      plan_code:"pro",message:"Quero conhecer o Tigu Pro",consent:true,website:""
+    });
+    const first=await api("/api/marketing/leads",{method:"POST",body});
+    expect(first.status).toBe(201);
+    expect(first.body.reference).toBeGreaterThan(0);
+    const row=await db.prepare("SELECT * FROM sales_leads WHERE id=?1").bind(first.body.reference).first<any>();
+    const plan=await db.prepare("SELECT price_cents_month FROM plans WHERE code='pro'").first<any>();
+    expect(row.status).toBe("new");
+    expect(row.plan_code).toBe("pro");
+    expect(row.price_snapshot_cents).toBe(plan.price_cents_month);
+    expect(row.email).toBe(email);
+    expect(row.phone).toBe("73999999999");
+    expect(row.consent_at).toMatch(/^\\d{4}-/);
+    expect((await api("/api/marketing/leads",{method:"POST",body})).status).toBe(409);
+    for (let n=0;n<3;n++) expect((await api("/api/marketing/leads",{method:"POST",body})).status).toBe(409);
+    expect((await api("/api/marketing/leads",{method:"POST",body})).status).toBe(429);
+    const count=await db.prepare("SELECT COUNT(*) n FROM sales_leads WHERE email=?1").bind(email).first<{n:number}>();
+    expect(count?.n).toBe(1);
+  });
+
+  it("somente Superadmin vê e atualiza contato, sem ativar assinatura", async () => {
+    const email="pedido-" + Date.now() + "@tigu.test";
+    const posted=await api("/api/marketing/leads",{method:"POST",body:JSON.stringify({
+      contact_name:"Marcos Cliente",company_name:"Barbearia Novo Cliente",email,
+      phone:"5573998888777",plan_code:"scale",message:"Gostaria de saber sobre planos.",consent:true,website:""
+    })});
+    expect(posted.status).toBe(201);
+    const id=posted.body.reference;
+    expect((await api("/api/super/leads")).status).toBe(401);
+    expect((await api("/api/super/leads",{},cookieA)).status).toBe(403);
+    expect((await api("/api/super/leads/"+id,{method:"PATCH",body:JSON.stringify({status:"contacted",internal_note:"ligar"})},cookieA)).status).toBe(403);
+    const adminEmail="super-leads-" + Date.now() + "@tigu.test";
+    await db.prepare("INSERT INTO users(platform_role,name,email,password_hash,active,created_at) VALUES('superadmin','Gestor Comercial',?1,?2,1,?3)")
+      .bind(adminEmail,await hashPassword(PW),new Date().toISOString()).run();
+    const login=await api("/api/auth/login",{method:"POST",body:JSON.stringify({email:adminEmail,password:PW})});
+    expect(login.status).toBe(200);
+    const cookie=login.cookie!;
+    const listing=await api("/api/super/leads?status=new",{},cookie);
+    expect(listing.status).toBe(200);
+    expect(listing.body.leads.some((r:any)=>r.id===id&&r.email===email)).toBe(true);
+    const patch=await api("/api/super/leads/"+id,{method:"PATCH",body:JSON.stringify({
+      status:"negotiating",internal_note:"Enviar apresentação e proposta comercial."
+    })},cookie);
+    expect(patch.status).toBe(200);
+    expect((await api("/api/super/leads?status=negotiating&q=Novo",{},cookie))
+      .body.leads.some((r:any)=>r.id===id)).toBe(true);
+    expect((await api("/api/super/leads/"+id,{method:"PATCH",body:JSON.stringify({
+      status:"paid",internal_note:"não é cobrança"
+    })},cookie)).status).toBe(422);
+    const saved=await db.prepare("SELECT status,internal_note FROM sales_leads WHERE id=?1")
+      .bind(id).first<{status:string;internal_note:string}>();
+    expect(saved?.status).toBe("negotiating");
+    expect(saved?.internal_note).toContain("proposta");
+    const auditRow=await db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='sales_lead.update' AND entity_id=?1")
+      .bind(String(id)).first<{n:number}>();
+    expect(auditRow?.n).toBe(1);
+    const subscriptions=await db.prepare("SELECT COUNT(*) n FROM subscriptions WHERE plan_code='scale'").first<{n:number}>();
+    expect(subscriptions?.n).toBe(0);
   });
 });
