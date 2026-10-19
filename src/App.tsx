@@ -24,6 +24,7 @@ import { RecoverPage } from "./pages/auth/RecoverPage";
 import { CompanyPickerPage } from "./pages/auth/CompanyPickerPage";
 import { LandingPage } from "./pages/marketing/LandingPage";
 import { PreviewPage } from "./pages/marketing/PreviewPage";
+import { DeveloperCredit } from "./components/layout/DeveloperCredit";
 import { SuperLayout } from "./pages/super/SuperLayout";
 import { SuperOverview } from "./pages/super/OverviewPage";
 import { SuperCompanies } from "./pages/super/CompaniesPage";
@@ -80,7 +81,8 @@ function NoAccess({ what }: { what: string }) {
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <Routes>
       {/* plataforma */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/preview" element={<PreviewPage />} />
@@ -135,6 +137,8 @@ export default function App() {
       <Route path="/admin" element={<Navigate to="/login" replace />} />
       <Route path="/painel" element={<Navigate to="/login" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+      <DeveloperCredit />
+    </>
   );
 }
