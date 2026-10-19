@@ -74,6 +74,28 @@ const adminNav = [
   { to: "demonstracao", label: "Demonstração", icon: Sparkles },
 ];
 
+/** A data vem da assinatura no D1, nunca de um contador artificial no navegador. */
+function TrialStatusBanner({ end, cents }: { end: string; cents: number }) {
+  const remainingMs = new Date(end).getTime() - Date.now();
+  const valid = Number.isFinite(remainingMs);
+  const expired = !valid || remainingMs <= 0;
+  const days = expired ? 0 : Math.ceil(remainingMs / 86_400_000);
+  const price = (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return (
+    <div role="status" className="mb-5 rounded-xl border border-[var(--c-gold)]/40 bg-[var(--c-gold)]/10 px-4 py-3 text-sm text-zinc-200">
+      <p className="font-semibold text-[var(--c-gold)]">
+        {expired ? "Seus 15 dias de teste grátis terminaram" : `Teste grátis por 15 dias · ${days} dia(s) restante(s)`}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-zinc-400">
+        {expired
+          ? `Novas operações estão pausadas. O Start custa ${price}/mês. Entre em contato com o suporte Tigu para ativar.`
+          : `Após o prazo, o Start custa ${price}/mês, mediante ativação assistida.`}
+        {" "}Nenhuma cobrança automática é realizada.
+      </p>
+    </div>
+  );
+}
+
 export function AdminLayout() {
   const { me, logout } = useAuth();
   const navigate = useNavigate();
@@ -81,6 +103,10 @@ export function AdminLayout() {
   const base = siteBase();
   const [menu, setMenu] = useState(false);
   const user = me.data;
+  const activeCompany = user?.companies?.find(company => `/c/${company.slug}` === base);
+  const trial = activeCompany?.subscription_status === "trial" && activeCompany?.trial_end
+    ? { end: activeCompany.trial_end, cents: activeCompany.price_cents_month ?? 1999 }
+    : null;
   const Side = (
     <nav className="space-y-1">
       {adminNav.map(({ to, label, icon: Icon }) => (
@@ -145,6 +171,7 @@ export function AdminLayout() {
             </div>
           )}
           <main className="p-4 pb-20 sm:p-6">
+            {trial && <TrialStatusBanner end={trial.end} cents={trial.cents} />}
             <Outlet />
           </main>
         </div>
