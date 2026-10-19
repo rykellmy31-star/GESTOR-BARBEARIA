@@ -78,8 +78,10 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
     const vRow = await db.prepare(`SELECT schedule_version FROM bookings WHERE id = ?1 AND company_id = ?2`).bind(booking.id, companyId).first<{ schedule_version: number }>();
     const version = vRow?.schedule_version ?? 1;
 
-    // remarcação/edição → invalida pendentes antigos (com liberação de reserva)
-    await cancelPendingJobs(db, companyId, booking.id, kind, "reagendado ou remarcado");
+    // Remarcação invalida versões antigas, mas nunca cancela a mensagem
+    // da própria versão quando o agendamento é processado novamente.
+    const currentIdempotencyKey = `booking-${booking.id}-${kind}-v${version}`;
+    await cancelPendingJobs(db, companyId, booking.id, kind, "reagendado ou remarcado", currentIdempotencyKey);
 
     if (booking.status !== "pendente" && booking.status !== "confirmado") return { ok: true, status: "skipped", reason: "agendamento não está ativo" };
     if (startMs <= now.getTime()) return { ok: true, status: "skipped", reason: "início já passou" };
@@ -111,7 +113,7 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
       fireAtMs = now.getTime() + 20_000; // confirmação/teste: quase imediato
     }
     const fireDeadlineMs = startMs + 15 * 60_000;
-    const idem = `booking-${booking.id}-${kind}-v${version}`;
+    const idem = currentIdempotencyKey;
     const price = await resolvePricing(db, companyId, "utility");
     const platform = await loadPlatformSettings(db);
     const company = await db.prepare(`SELECT demo FROM companies WHERE id = ?1`).bind(companyId).first<{ demo: number }>();
@@ -190,14 +192,18 @@ function notifyIfNoRecent(db: D1Database, companyId: number, kind: "billing" | "
 }
 
 /** Cancela jobs pendentes do agendamento (e libera reservas). */
-export async function cancelPendingJobs(db: D1Database, companyId: number, bookingId: number, kind: MessageKind | null, reason: string): Promise<void> {
+export async function cancelPendingJobs(
+  db: D1Database, companyId: number, bookingId: number,
+  kind: MessageKind | null, reason: string, exceptIdempotencyKey?: string
+): Promise<void> {
   const kindF = kind ? " AND kind = ?3" : "";
+  const exceptF = exceptIdempotencyKey ? ` AND idempotency_key <> ?${kind ? 4 : 3}` : "";
   const { results } = await db
     .prepare(
       `SELECT id, reserved_cents FROM message_jobs
-       WHERE company_id = ?1 AND booking_id = ?2${kindF} AND status IN ('scheduled','blocked_funds')`
+       WHERE company_id = ?1 AND booking_id = ?2${kindF}${exceptF} AND status IN ('scheduled','blocked_funds')`
     )
-    .bind(companyId, bookingId, ...(kind ? [kind] : []))
+    .bind(companyId, bookingId, ...(kind ? [kind] : []), ...(exceptIdempotencyKey ? [exceptIdempotencyKey] : []))
     .all<{ id: number; reserved_cents: number }>();
   for (const j of results) {
     await db
