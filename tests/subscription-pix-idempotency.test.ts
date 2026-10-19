@@ -144,4 +144,25 @@ describe("regressão D1: confirmação Pix idempotente", () => {
     }
   });
 
+  it("encaminha pagamento antigo aprovado à revisão manual sem trocar o plano", async () => {
+    const now = "2026-10-19T16:30:00Z";
+    await db.prepare("INSERT INTO companies (id,slug,name,status,plan_code,created_at,updated_at) VALUES (9012,'billing-late-test','Billing Late Test','active','scale',?1,?1)").bind(now).run();
+    await db.prepare("INSERT INTO subscriptions (company_id,plan_code,status,period_end,updated_at) VALUES (9012,'scale','active','2026-11-20T16:30:00Z',?1)").bind(now).run();
+    await db.prepare("INSERT INTO subscription_invoices (id,company_id,code,plan_code,amount_cents,status,provider_payment_id) VALUES (9012,9012,'TIGU-TEST-9012','pro',4990,'failed','9012')").run();
+    await db.prepare("INSERT INTO subscription_invoices (id,company_id,code,plan_code,amount_cents,status,provider_payment_id) VALUES (9013,9012,'TIGU-TEST-9013','scale',12990,'paid','9013')").run();
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id:9012,status:"approved",external_reference:"TIGU-TEST-9012",
+      transaction_amount:49.90,currency_id:"BRL",payment_method_id:"pix"
+    }),{status:200})));
+    try {
+      const result = await confirmSubscriptionPix({...env,DB:db,MP_ACCESS_TOKEN:"test-token",TIGU_STAGING:"0"} as Env,"9012");
+      expect(result).toMatchObject({ok:false,status:"manual_review",activated:false});
+      expect((await db.prepare("SELECT plan_code FROM subscriptions WHERE company_id=9012").first<{plan_code:string}>())?.plan_code).toBe("scale");
+      expect((await db.prepare("SELECT status FROM subscription_invoices WHERE id=9012").first<{status:string}>())?.status).toBe("failed");
+    } finally {
+      vi.stubGlobal("fetch",original);
+    }
+  });
+
 });
