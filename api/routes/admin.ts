@@ -858,7 +858,7 @@ adminRouter.post("/whatsapp/run-now", async (c) => {
 adminRouter.post("/whatsapp/jobs/:id/retry", async (c) => {
   const db = P(c); const id = cid(c);
   const jobId = await bookingIdParam(c);
-  const r = await db.prepare(`UPDATE message_jobs SET status='scheduled', attempts=0, next_attempt_at=NULL, last_error='reprocessado manualmente', updated_at=?1 WHERE id=?2 AND company_id=?3 AND status='failed' AND created_at > strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`).bind(nowIso(), jobId, id).run();
+  const r = await db.prepare(`UPDATE message_jobs SET status='scheduled', attempts=0, next_attempt_at=NULL, last_error='reprocessado manualmente', updated_at=?1 WHERE id=?2 AND company_id=?3 AND status='failed' AND refunded_at IS NULL AND captured_at IS NULL AND last_error NOT LIKE 'Encerrado sem envio após confirmação externa%' AND created_at > strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`).bind(nowIso(), jobId, id).run();
   if (!r.meta?.changes) return err(c, "Só é possível reprocessar falhas dos últimos 7 dias", 409);
   return json(c, { ok: true, message: "Job devolvido à fila; a cobrança continua idempotente (nunca cobra 2× pelo mesmo envio)." });
 });
