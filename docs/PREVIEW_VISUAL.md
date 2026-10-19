@@ -87,3 +87,15 @@ Os dados da `/preview` continuam exclusivamente fictícios. O GitHub Actions ver
 - No Cloudflare Pages **sem backend**, a página inicial identifica os três preços de referência como **ilustrativos**. A prévia `/preview?tela=vendas` mostra cartões de exemplo, sem compra habilitada.
 - Atualizar preços **não implementa cobrança de assinaturas**: os planos pagos dependem de confirmação/ativação assistida e integração de pagamento recorrente.
 - Testes cobrem consulta pública, autorização do Superadmin, edição, rejeição de alterações inválidas e atualização dos valores devolvidos pela API.
+
+
+## Contatos interessados em contratar (nova etapa)
+
+- Os botões dos planos **Pro** e **Scale** na página de vendas abrem `/contratar?plano=pro` ou `?plano=scale`.
+- O formulário pede nome, nome da barbearia, e-mail, telefone, dúvidas opcionais e **consentimento explícito** para contato comercial. Ele **não** cobra, cria assinatura ou muda o plano de uma empresa.
+- Os dados só podem ser enviados quando o Worker está acessível. No Cloudflare Pages estático, o envio fica indisponível e a tela explica a limitação. **Não compartilhar dados reais na demonstração.**
+- O backend usa `POST /api/marketing/leads` com validação, proteção por origem, honeypot, limite persistente de até cinco tentativas/hora por impressão digital (hash) e unicidade por e-mail/plano/janela de 30 minutos. É necessário configurar antibot adicional antes de operação comercial pública.
+- A migração `migrations/0003_sales_leads.sql` cria as tabelas `sales_leads` e `sales_lead_rate_limits`; **deve ser aplicada ao D1 de homologação antes de testar o fluxo funcional** (`npm run staging:migrate`).
+- No Superadmin há a rota `/superadmin/leads` **Interessados**: somente superadministradores podem consultar nome e contato, pesquisar por barbearia/e-mail e mudar o status de Novo → Contato realizado → Em negociação → Encerrado, deixando nota interna. Status comerciais **não significam pagamento confirmado**.
+- A prévia visual ganhou `/preview?tela=interessados`, com nomes inventados e nenhuma informação de clientes reais.
+- Contatos não geram notificações externas automaticamente. O atendimento é manual enquanto não houver integração e conformidade para notificações.
