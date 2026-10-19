@@ -52,7 +52,7 @@ webhooksRouter.post("/mercadopago", async (c) => {
   const raw = await c.req.text();
   let body: { type?: string; data?: { id?: string }; action?: string } = {};
   try { body = JSON.parse(raw); } catch { return c.json({ ok: true }); }
-  const dataId = body.data?.id ?? "";
+  const dataId = String(body.data?.id ?? c.req.query("data.id") ?? "");
   if (!dataId) return c.json({ ok: true, ignored: "sem data.id" });
 
   const secret = c.env.MP_WEBHOOK_SECRET || "";
