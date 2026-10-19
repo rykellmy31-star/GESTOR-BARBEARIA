@@ -55,3 +55,20 @@
 - Novos testes verificam identidade do número entre empresas, webhook duplicado, status fora de ordem, opt-in explícito, programação exatamente 60 min antes, reagendamento idempotente, troca de versão e cancelamento com liberação de reserva.
 - **GitHub Actions: 21/21 testes aprovados**, verificação TypeScript e build aprovados.
 - Ainda faltam testes reais de entrega no provedor, revisão dos tokens de integração, simulação de perda/timeout de webhook e auditoria de consentimento no fluxo de cadastro público.
+
+
+## Etapa 4 — recuperação de Pix (19/10/2026)
+
+- A rotina `reconcilePendingTopups` verifica cobranças Pix recentes ainda não creditadas, inclusive recargas marcadas como expiradas, por meio do Mercado Pago. Não depende da entrega do webhook para confirmar pagamentos.
+- O cron executa a reconciliação a cada 10 minutos, limitado a 20 cobranças por execução, e alterna os pedidos pela última verificação. A busca está limitada a pedidos criados nas últimas 48 horas para evitar consultas indefinidas.
+- O valor, a referência, o método Pix, a moeda BRL e o identificador do pagamento são comparados com o pedido antes do crédito, usando as validações já existentes.
+- O crédito continua protegido por transação D1 e chave de idempotência.
+- Testes automatizados verificam duas aprovações válidas (uma após expiração), repetição sem dupla cobrança e rejeição de divergência de valor.
+- Execução aprovada: 22/22 testes, checagem de tipos e build concluídos.
+
+### Pendências de produção que continuam abertas
+
+- WhatsApp: uma falha de rede ou timeout após enviar à Meta pode ser resposta indeterminada; o cron atual ainda pode repetir o disparo. Antes de usar números reais é necessário registrar/reconciliar resultados indeterminados sem reenviar automaticamente.
+- Webhooks: o código atual responde HTTP 200 para algumas falhas de processamento, inclusive quando o evento não foi completamente persistido. Deve diferenciar evento concluído de erro transitório.
+- Pix: a conciliação é limitada aos últimos dois dias, 20 registros por execução e depende da disponibilidade da API real; pagamentos mais antigos exigem investigação administrativa.
+- O fluxo financeiro real e os estados da API ainda devem passar por testes ponta a ponta antes de receber clientes e dinheiro reais.
