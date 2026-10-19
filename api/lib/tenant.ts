@@ -41,7 +41,10 @@ export async function getMembership(db: D1Database, userId: number, companyId: n
        FROM company_memberships m
        JOIN subscriptions s ON s.company_id = m.company_id
        JOIN plans p ON p.code = s.plan_code
-       WHERE m.user_id = ?1 AND m.company_id = ?2 AND m.active = 1`
+       WHERE m.user_id = ?1 AND m.company_id = ?2 AND m.active = 1
+         AND (m.role <> 'barber' OR EXISTS(
+           SELECT 1 FROM barbers b WHERE b.id=m.barber_id AND b.company_id=m.company_id AND b.active=1
+         ))`
     )
     .bind(userId, companyId)
     .first<MembershipRow>();

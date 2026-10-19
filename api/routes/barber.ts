@@ -8,8 +8,9 @@ import { z } from "zod";
 import type { Env } from "../types";
 import { err, json, nowIso } from "../lib/utils";
 import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
+import { calendarDaySchema } from "../lib/admin-blocks";
 import { setBookingStatus, cancelBooking, rescheduleBooking } from "../lib/booking";
-import { todayLocal, addDays } from "../lib/time";
+import { todayLocal, addDays, localToUtc } from "../lib/time";
 import { computeDaySlots, type BarberRow } from "../lib/availability";
 import type { ServiceRow } from "../lib/availability";
 
@@ -149,18 +150,23 @@ barberRouter.patch("/bookings/:id/status", async (c) => {
 /** agenda em mapa por dia: { days: { "YYYY-MM-DD": [itens] }, work_days, blocked } */
 barberRouter.get("/agenda", async (c) => {
   const m = me(c);
-  const from = c.req.query("from") || todayLocal(ctxSettings(c).timezone);
-  const daysN = Math.min(31, Math.max(1, Number(c.req.query("days") || 7)));
-  const to = addDays(from, daysN);
+  const query=z.object({from:calendarDaySchema.optional(),days:z.coerce.number().int().min(1).max(31).default(7)})
+    .safeParse({from:c.req.query("from"),days:c.req.query("days")});
+  if (!query.success) return err(c,"Período inválido. Use uma data real e entre 1 e 31 dias inteiros.",400);
+  const tz=ctxSettings(c).timezone;
+  const from=query.data.from??todayLocal(tz),daysN=query.data.days;
+  const to=addDays(from,daysN);
+  if (!calendarDaySchema.safeParse(to).success) return err(c,"Período fora do intervalo de datas suportado",400);
+  const start=localToUtc(tz,from,0).toISOString().replace(/\.\d{3}Z$/,"Z");
+  const end=localToUtc(tz,to,0).toISOString().replace(/\.\d{3}Z$/,"Z");
   const { results } = await c.env.DB
     .prepare(
       `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.customer_name, b.customer_phone, b.notes, b.price_cents, b.origin, s.name AS service_name
        FROM bookings b LEFT JOIN services s ON s.id=b.service_id
        WHERE b.company_id=?1 AND b.barber_id=?2 AND b.starts_at>=?3 AND b.starts_at<?4 AND b.status!='bloqueio' ORDER BY b.starts_at`
     )
-    .bind(cid(c), m.barber_id, new Date(`${from}T00:00:00Z`).toISOString(), new Date(`${to}T00:00:00Z`).toISOString())
+    .bind(cid(c),m.barber_id,start,end)
     .all<Record<string, unknown> & { starts_at: string }>();
-  const tz = ctxSettings(c).timezone;
   const { utcToLocal } = await import("../lib/time");
   const byDay: Record<string, Record<string, unknown>[]> = {};
   for (const r of results) {
