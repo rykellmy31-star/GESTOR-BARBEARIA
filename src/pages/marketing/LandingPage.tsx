@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Bell, CalendarCheck, CreditCard, Lock, ScanFace, Scissors, ShieldCheck, Store, MessageCircle } from "lucide-react";
 import { useReveal } from "@/lib/hooks";
+import { SalesContactSection } from "./SalesContactSection";
 
 const feats = [
   { icon: CalendarCheck, t: "Agenda à prova de conflito", d: "Trava real de horários: dois clientes nunca marcam o mesmo barbeiro no mesmo minuto — em todas as barbearias ao mesmo tempo." },
@@ -74,6 +75,8 @@ export function LandingPage() {
         </div>
         <p className="mt-4 text-center text-[11px] text-zinc-600">Mensagens de WhatsApp: R$ 0,10 por mensagem aceita no provedor (custo do WhatsApp por conta da barbearia via créditos; política de estorno automático em falha). Valores iniciais ajustáveis pela plataforma.</p>
       </section>
+
+      <SalesContactSection />
 
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
         <div className="reveal flex flex-wrap items-center justify-between gap-6 rounded-2xl border border-[var(--c-gold)]/40 bg-[color-mix(in_srgb,var(--c-gold)_8%,#0a0a0c)] p-8">
