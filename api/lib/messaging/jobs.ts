@@ -253,7 +253,7 @@ export async function processDueJobs(env: Env, opts: { now?: Date; limit?: numbe
     try {
       await dispatchOne(env, job, now, out);
     } catch (e) {
-      await db.prepare(`UPDATE message_jobs SET last_error = ?1, updated_at = ?2, status = 'scheduled', next_attempt_at = strftime('%Y-%m-%dT%H:%M:%SZ','now','+300 seconds') WHERE id = ?3 AND status = 'sending'`).bind(String(e).slice(0, 400), nowIso(), job.id).run();
+      await db.prepare(`UPDATE message_jobs SET last_error = ?1, updated_at = ?2, status = 'sending', next_attempt_at = NULL WHERE id = ?3 AND status = 'sending'`).bind(String(e).slice(0, 400), nowIso(), job.id).run();
     }
   }
   return out;
