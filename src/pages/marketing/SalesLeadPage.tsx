@@ -35,13 +35,18 @@ export function SalesLeadPage() {
     queryFn:()=>api.get<{ok:boolean;d1:boolean}>("/health"),
     retry:false,staleTime:60_000
   });
+  const privacy = useQuery({
+    queryKey:["public-sales-privacy"],
+    queryFn:()=>api.get<{retention_days:number;purpose:string}>("/marketing/privacy"),
+    retry:false,staleTime:30_000,
+  });
   const challenge = useQuery({
     queryKey:["sales-lead-challenge"],
     queryFn:()=>api.get<{enabled:boolean;required:boolean;site_key:string|null}>("/marketing/lead-config"),
     retry:false,staleTime:60_000,
   });
   const canSubmit = health.isSuccess && Boolean(health.data?.d1) &&
-    challenge.isSuccess && challenge.data.enabled &&
+    privacy.isSuccess && challenge.isSuccess && challenge.data.enabled &&
     (!challenge.data.required || Boolean(turnstileToken));
   const update = <K extends keyof Payload>(key:K,value:Payload[K]) =>
     setValues(p=>({...p,[key]:value}));
@@ -114,7 +119,7 @@ export function SalesLeadPage() {
                 <div className="hidden" aria-hidden="true"><label>Site <input type="text" tabIndex={-1} autoComplete="off" value={values.website} onChange={e=>update("website",e.target.value)}/></label></div>
                 <label className="flex items-start gap-3 text-xs leading-relaxed text-zinc-400">
                   <input required type="checkbox" className="mt-0.5 accent-[#d4af37]" checked={values.consent} onChange={e=>update("consent",e.target.checked)}/>
-                  <span>Autorizo a equipe Tigu a usar meu nome, e-mail e telefone para responder a este pedido comercial. Sei que não estou contratando nem pagando um plano.</span>
+                  <span>Autorizo a equipe Tigu a usar meus dados para responder a esta solicitação comercial, pelo prazo informado abaixo. Sei que não estou contratando nem pagando um plano.</span>
                 </label>
                 {challenge.isSuccess && challenge.data.required && challenge.data.enabled && challenge.data.site_key &&
                   <SalesTurnstile key={challengeEpoch} siteKey={challenge.data.site_key} onToken={setTurnstileToken} />}
@@ -124,7 +129,12 @@ export function SalesLeadPage() {
                   {pending?<Loader2 size={16} className="animate-spin"/>:<ShieldCheck size={16}/>}
                   {pending?"Enviando…":"Enviar solicitação de atendimento"}
                 </button>
-                <p className="text-center text-[11px] text-zinc-500">Seus dados serão utilizados somente para o atendimento comercial solicitado. Nenhum pagamento será iniciado.</p>
+                <p className="text-center text-[11px] text-zinc-500">
+                  {privacy.isSuccess
+                    ? `Seus dados serão guardados por até ${privacy.data.retention_days} dias, com possibilidade de solicitar exclusão antes desse prazo.`
+                    : "O prazo de armazenamento ainda não está disponível. O envio permanecerá desativado."}
+                  {" "}Nenhum pagamento será iniciado.
+                </p>
               </form>
             </>
           )}
