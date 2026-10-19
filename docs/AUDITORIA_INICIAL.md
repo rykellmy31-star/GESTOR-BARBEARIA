@@ -91,3 +91,22 @@
 - Validar com contas reais a aceitação, entrega, falha e cobrança das mensagens na Meta, além das regras de consentimento.
 - Revisar o Embedded Signup e validar os requisitos do parceiro que centralizará faturamento para as barbearias.
 - Testar concorrência e indisponibilidades reais de D1/Meta/Mercado Pago; CI local não cobre toda a infraestrutura de produção.
+
+
+## Etapa 6 — Conciliação operacional de envios sem confirmação (19/10/2026)
+
+Implementação na branch de auditoria:
+
+- O painel **Superadmin → Mensagens** sinaliza os jobs com resultado incerto e oferece **Conferir envio**. Essa ação não está disponível para donos de barbearias.
+- Antes de decidir, o operador deve consultar o número da empresa no provedor Meta e manter uma justificativa concreta (mínimo de 20 caracteres); **não** inferir a ausência de envio apenas do timeout.
+- **Não enviada:** após o tempo mínimo de segurança, encerra o job como falho, libera a reserva e registra extrato e auditoria em operação D1 atômica (sem lançar nova cobrança). A repetição não deve devolver duas vezes.
+- **Envio confirmado:** exige o ID de mensagem Meta (formato `wamid.*`), verifica se já foi associado a outro job e registra status `sent`. A captura segue a política `capture_on`: imediatamente no aceite ou posteriormente no webhook de entrega.
+- O fluxo usa `POST /api/super/messages/:id/resolve`, protegido por `requireSuper` e validação de justificativa, além de testes para controle de acesso, crédito, duplicidade e registro.
+- A branch `main` permanece sem merge; não foram usados números Meta nem dinheiro reais.
+
+### Limitações que ainda exigem revisão
+
+- A decisão de que houve ou não envio depende de **conferência humana externa**; um formato correto de `wamid` por si só não demonstra entrega.
+- Se a confirmação de envio for persistida mas a captura financeira falhar, a cobrança exigirá reconciliação individual; não disparar outra mensagem para corrigir isso.
+- Conciliação automática de webhooks de status já aceitos parcialmente, concorrência extrema e testes reais de API seguem pendentes.
+- A auditoria de segurança do onboarding Meta Embedded Signup e da arquitetura de faturamento centralizado ainda não concluiu. Não publicar comercialmente.
