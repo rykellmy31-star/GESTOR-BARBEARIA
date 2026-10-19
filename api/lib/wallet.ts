@@ -93,7 +93,7 @@ export async function reserveForJob(
 export async function releaseJobReservation(db: D1Database, companyId: number, jobId: number, _priceCents: number): Promise<boolean> {
   const job = await db.prepare(
     `SELECT reserved_cents FROM message_jobs WHERE id=?1 AND company_id=?2
-     AND captured_at IS NULL AND refunded_at IS NULL`
+     AND captured_at IS NULL AND refunded_at IS NULL AND status NOT IN ('sent','delivered','read')`
   ).bind(jobId, companyId).first<{ reserved_cents: number }>();
   if (!job || job.reserved_cents <= 0) return false;
 
@@ -116,7 +116,7 @@ export async function releaseJobReservation(db: D1Database, companyId: number, j
       ).bind(idem, job.reserved_cents, now, companyId),
       db.prepare(
         `UPDATE message_jobs SET reserved_cents=0,refunded_at=?1,updated_at=?1
-         WHERE id=?2 AND company_id=?3 AND captured_at IS NULL AND refunded_at IS NULL`
+         WHERE id=?2 AND company_id=?3 AND captured_at IS NULL AND refunded_at IS NULL AND status NOT IN ('sent','delivered','read') AND status NOT IN ('sent','delivered','read')`
       ).bind(now, jobId, companyId),
       db.prepare(
         `UPDATE wallet_transactions SET balance_after=(SELECT balance_cents FROM wallets WHERE company_id=?1),
