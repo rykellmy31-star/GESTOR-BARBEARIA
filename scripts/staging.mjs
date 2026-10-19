@@ -8,14 +8,13 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import process from "node:process";
+import { stagingConfigIssues } from "./staging-config.mjs";
 
 const [action = "", ...args] = process.argv.slice(2);
 const root = process.cwd();
 const path = resolve(root, "wrangler.staging.jsonc");
 const template = resolve(root, "wrangler.staging.template.jsonc");
-const project = "tigu-staging";
 const databaseName = "tigu-staging-db";
-const bucketName = "tigu-staging-media";
 const getArg = (name) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : null; };
 const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const die = (message) => { console.error("✖ Homologação Tigu: " + message); process.exit(1); };
@@ -35,22 +34,8 @@ if (action === "prepare") {
 if (!existsSync(path)) die("configure primeiro: npm run staging:prepare -- --database-id UUID_DO_D1_TESTE.");
 const config = JSON.parse(readFileSync(path, "utf8"));
 const original = JSON.parse(readFileSync(resolve(root, "wrangler.jsonc"), "utf8"));
-const db = config.d1_databases?.[0];
-const bucket = config.r2_buckets?.[0];
-if (config.name !== project || config.main !== "api/index.ts" ||
-    config.vars?.TIGU_STAGING !== "1" ||
-    config.vars?.APP_ENV !== "production" ||
-    config.vars?.PAYMENTS_MOCK !== "0" ||
-    config.vars?.WHATSAPP_MOCK !== "1" ||
-    config.triggers?.crons?.length !== 0 ||
-    db?.binding !== "DB" || db?.database_name !== databaseName ||
-    !guid.test(db?.database_id ?? "") ||
-    db.database_id === original.d1_databases?.[0]?.database_id ||
-    bucket?.binding !== "MEDIA" || bucket?.bucket_name !== bucketName ||
-    config.assets?.directory !== "./dist" ||
-    config.assets?.run_worker_first?.includes("/api/*") !== true) {
-  die("Configuração insegura ou recurso incompatível: nada foi executado.");
-}
+const issues = stagingConfigIssues(config, original);
+if (issues.length) die("Configuração insegura: " + issues.join("; ") + ". Nada foi executado.");
 console.log("✔ Worker, D1, R2 e bloqueios de homologação conferidos.");
 if (action === "validate") process.exit(0);
 
