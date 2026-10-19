@@ -172,7 +172,7 @@ superRouter.put("/companies/:id/plan", async (c) => {
   if (!parsed.success) return err(c, "plano inválido", 400);
   const db = c.env.DB; const id = idParam(c);
   await db.batch([
-    db.prepare(`UPDATE subscriptions SET plan_code=?1, status='active', updated_at=?2 WHERE company_id=?3`).bind(parsed.data.plan_code, nowIso(), id),
+    db.prepare(`UPDATE subscriptions SET plan_code=?1,status='active',period_end=strftime('%Y-%m-%dT%H:%M:%SZ',?2,'+1 month'),updated_at=?2 WHERE company_id=?3`).bind(parsed.data.plan_code, nowIso(), id),
     db.prepare(`UPDATE companies SET plan_code=?1, updated_at=?2 WHERE id=?3`).bind(parsed.data.plan_code, nowIso(), id),
     db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin',?2,?3,'system')`).bind(id, `Plano alterado para ${parsed.data.plan_code.toUpperCase()}`, parsed.data.note || "Ajustado pela equipe Tigu."),
   ]);
