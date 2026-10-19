@@ -389,6 +389,20 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
     return;
   }
 
+  if (result.uncertain) {
+    // Sem confirmação: não gerar segunda mensagem nem capturar créditos.
+    await db.batch([
+      attemptIns,
+      db.prepare(`UPDATE message_jobs SET last_error=?1, next_attempt_at=NULL, updated_at=?2
+        WHERE id=?3 AND status='sending'`)
+        .bind("Envio sem confirmação do provedor: verificar antes de reenviar.", at, job.id),
+      notifyIfNoRecent(db, job.company_id, "message", "Verificar envio de WhatsApp",
+        "O provedor não confirmou o resultado. Disparo automático suspenso para evitar mensagem duplicada."),
+    ]);
+    out.blocked++;
+    return;
+  }
+
   const attemptsLeft = job.attempts + 1 < (job.max_attempts || Number(platform.msg_max_attempts));
   if (!result.permanent && attemptsLeft) {
     const backoff = Number(platform.retry_backoff_sec) * Math.pow(2, job.attempts); // expoencial: 2,4,8…
