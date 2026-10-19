@@ -93,7 +93,7 @@ export const tenantMiddleware =
     if (writeRequiresSubscription && !isSubscriptionBillingAction(c.req.method,c.req.path)) {
       const subscription = await subscriptionAccess(c.env.DB, company.id);
       if (!canOperateSubscription(subscription)) return err(c,
-        "Seu período de teste terminou ou a assinatura está inativa. Fale com o suporte Tigu para continuar. Nenhuma cobrança será feita automaticamente.", 402);
+        "Seu teste ou assinatura venceu. Acesse Assinatura e Pix no painel para escolher um plano e continuar após a confirmação do pagamento.", 402);
     }
 
     c.set("settings", settings);
