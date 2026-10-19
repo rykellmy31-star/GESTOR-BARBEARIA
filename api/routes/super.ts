@@ -228,7 +228,7 @@ superRouter.put("/users/:id", async (c) => {
   await audit(db, c.get("user"), "user.update", "user", id, { active: d.active, role: d.platform_role, reset: Boolean(d.reset_password) }, { companyId: null, scope: "platform" });
   return json(c, { ok: true });
 });
-const memberSchema = z.object({ company_id: z.number().int().positive(), user_id: z.number().int().positive().optional(), email: z.string().email().optional(), role: z.enum(["owner", "manager", "barber"]), barber_id: z.number().int().positive().nullable().default(null) });
+const memberSchema = z.object({ company_id: z.number().int().positive(), user_id: z.number().int().positive().optional(), email: z.string().trim().email().optional(), role: z.enum(["owner", "manager", "barber"]), barber_id: z.number().int().positive().nullable().default(null) });
 superRouter.post("/memberships", async (c) => {
   const parsed = memberSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 400);
@@ -239,7 +239,20 @@ superRouter.post("/memberships", async (c) => {
   let uid = d.user_id ?? 0;
   if (!uid && d.email) uid = (await db.prepare(`SELECT id FROM users WHERE email=?1`).bind(d.email.toLowerCase()).first<{ id: number }>())?.id ?? 0;
   if (!uid) return err(c, "Informe user_id ou e-mail cadastrado", 400);
-  await db.prepare(`INSERT INTO company_memberships (company_id, user_id, role, barber_id, active, created_at) VALUES (?1,?2,?3,?4,1,?5) ON CONFLICT(company_id, user_id) DO UPDATE SET role=?3, barber_id=?4, active=1`).bind(d.company_id, uid, d.role, d.barber_id, nowIso()).run();
+  const target = await db.prepare("SELECT active FROM users WHERE id=?1").bind(uid).first<{active:number}>();
+  if (!target) return err(c, "Usuário não encontrado", 404);
+  if (!target.active) return err(c, "Reative a conta antes de conceder acesso à empresa", 409);
+  if (d.role === "barber" && !d.barber_id) return err(c, "Selecione o profissional da empresa para este acesso", 422);
+  if (d.barber_id && !await db.prepare("SELECT id FROM barbers WHERE id=?1 AND company_id=?2 AND active=1").bind(d.barber_id,d.company_id).first())
+    return err(c, "Profissional inválido ou inativo para esta empresa", 422);
+  const barberId = d.role === "barber" ? d.barber_id : null;
+  // Revalida as referências no próprio write para não conceder acesso com dados obsoletos.
+  const saved = await db.prepare(`INSERT INTO company_memberships (company_id, user_id, role, barber_id, active, created_at)
+    SELECT c.id,u.id,?3,?4,1,?5 FROM companies c JOIN users u ON u.id=?2 AND u.active=1
+    WHERE c.id=?1 AND (?4 IS NULL OR EXISTS(SELECT 1 FROM barbers b WHERE b.id=?4 AND b.company_id=c.id AND b.active=1))
+    ON CONFLICT(company_id, user_id) DO UPDATE SET role=excluded.role,barber_id=excluded.barber_id,active=1`)
+    .bind(d.company_id,uid,d.role,barberId,nowIso()).run();
+  if (saved.meta.changes !== 1) return err(c, "Os dados do acesso mudaram. Atualize a página e tente novamente.", 409);
   await audit(db, c.get("user"), "membership.set", "company_membership", `${d.company_id}:${uid}`, { role: d.role }, { companyId: d.company_id, scope: "platform" });
   return json(c, { ok: true });
 });
