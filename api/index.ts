@@ -25,7 +25,7 @@ import { expirePendingTopups, reconcilePendingTopups } from "./lib/topup";
 import { nowIso } from "./lib/utils";
 import { loadSalesContact, publicSalesContact } from "./lib/marketing";
 import { listPublicPlans } from "./lib/plans";
-import { allowSalesLeadAttempt, createSalesLead, leadRequestSchema } from "./lib/sales-leads";
+import { allowSalesLeadAttempt, createSalesLead, leadRequestSchema, getSalesRetentionDays, purgeExpiredSalesLeads, purgeOldSalesRateLimits } from "./lib/sales-leads";
 import { salesChallengeConfig, verifySalesTurnstile } from "./lib/sales-challenge";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -65,6 +65,10 @@ app.get("/api/marketing/plans", async (c) =>
 );
 
 /** Configuração pública da proteção; nunca retorna a chave secreta. */
+app.get("/api/marketing/privacy", async (c) =>
+  c.json({ retention_days: await getSalesRetentionDays(c.env.DB), purpose: "commercial_inquiry" })
+);
+
 app.get("/api/marketing/lead-config", (c) =>
   c.json(salesChallengeConfig(c.env))
 );
@@ -111,6 +115,19 @@ export default {
         try {
           await processDueJobs(env, { limit: 40 });
           await expirePendingTopups(env);
+          // Uma vez por dia às 03:05 UTC, somente fora da homologação.
+          // Exclui leads vencidos em lotes limitados, sem guardar dados pessoais em logs.
+          const now = new Date();
+          if (now.getUTCHours() === 3 && now.getUTCMinutes() === 5) {
+            let removed = 0;
+            for (let batch = 0; batch < 10; batch++) {
+              const n = await purgeExpiredSalesLeads(env.DB);
+              removed += n;
+              if (n < 200) break;
+            }
+            await purgeOldSalesRateLimits(env.DB);
+            console.log("[privacy] leads expirados removidos:", removed);
+          }
           // Reconsulta apenas a cada 10 minutos, evitando custo excessivo
           // e recuperando pagamentos aprovados que perderam o webhook.
           if (new Date().getUTCMinutes() % 10 === 0) {
