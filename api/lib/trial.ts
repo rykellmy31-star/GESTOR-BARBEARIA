@@ -16,7 +16,10 @@ export async function subscriptionAccess(db: D1Database, companyId: number): Pro
 /** O encerramento é exclusivo: expirou na data/hora exata registrada no D1. */
 export function canOperateSubscription(sub: SubscriptionAccess | null, now: Date = new Date()): boolean {
   if (!sub) return false;
-  if (sub.status === "active") return true;
+  if (sub.status === "active") {
+    // Renovação mensal exige período válido: nunca liberar indefinidamente.
+    return Boolean(sub.period_end && new Date(sub.period_end).getTime() > now.getTime());
+  }
   if (sub.status !== "trial" || !sub.period_end) return false;
   return new Date(sub.period_end).getTime() > now.getTime();
 }
@@ -28,6 +31,8 @@ export function isTrialExpired(sub: SubscriptionAccess | null, now: Date = new D
 /** Somente bloqueia criação de novas reservas/pedidos, não cancelamentos existentes. */
 export function requiresSubscriptionToWrite(method: string, route: string, authenticatedArea: boolean): boolean {
   if (!["POST","PUT","PATCH","DELETE"].includes(method)) return false;
+  // Pagamento de renovação precisa permanecer possível mesmo após 15 dias.
+  if (/^\/api\/c\/[a-z0-9-]+\/billing\/pix(?:\/verify)?$/.test(route)) return false;
   if (authenticatedArea) return true;
   return /^\/api\/c\/[a-z0-9-]+\/(?:bookings|orders)$/.test(route) && method === "POST";
 }
