@@ -15,6 +15,7 @@ import { audit } from "../lib/audit";
 import { hashPassword } from "../lib/crypto";
 import { changeOrderStatus } from "../lib/orders";
 import { createTeamAccount } from "../lib/team-accounts";
+import { updateTeamAccess, type TeamMemberSnapshot } from "../lib/team-access";
 import { IMAGE_EXTENSIONS, MAX_IMAGE_BYTES, hasImageSignature, readUploadBody } from "../lib/image-upload";
 import { resolveBlockRequest } from "../lib/block-requests";
 import { barberCapacitySql } from "../lib/barber-capacity";
@@ -592,7 +593,7 @@ adminRouter.put("/team/:membershipId", async (c) => {
   if (!parsed.success) return err(c, "Dados inválidos", 400);
   const db = P(c); const id = cid(c);
   const mid = parseInt(c.req.param("membershipId") || "0", 10);
-  const m = await db.prepare(`SELECT m.*, u.platform_role FROM company_memberships m JOIN users u ON u.id=m.user_id WHERE m.id=?1 AND m.company_id=?2`).bind(mid, id).first<{ id: number; user_id: number; role: string; platform_role: string }>();
+  const m = await db.prepare(`SELECT m.*, u.platform_role, u.password_hash FROM company_memberships m JOIN users u ON u.id=m.user_id WHERE m.id=?1 AND m.company_id=?2`).bind(mid, id).first<TeamMemberSnapshot & { platform_role: string }>();
   if (!m) return err(c, "Membro não encontrado", 404);
   if (m.role === "owner") return err(c, "O papel de dono não é editável pelo painel (use o suporte Tigu).", 403);
   const d = parsed.data;
@@ -601,29 +602,23 @@ adminRouter.put("/team/:membershipId", async (c) => {
     if (m.platform_role === "superadmin" || otherCompany)
       return err(c, "A senha desta conta global só pode ser redefinida pelo próprio usuário ou pelo suporte Tigu.", 403);
   }
-  if (d.active === false) {
-    await db.prepare(`UPDATE company_memberships SET active=0 WHERE id=?1`).bind(m.id).run();
-    await db.prepare(`DELETE FROM sessions WHERE user_id=?1 AND user_id IN (SELECT user_id FROM company_memberships WHERE company_id=?2)`).bind(m.user_id, id).run();
-    await audit(db, c.get("user"), "team.remove", "membership", m.id, { user_id: m.user_id }, { companyId: id });
-    return json(c, { ok: true });
+  const removing = d.active === false;
+  const role = removing ? m.role as "manager" | "barber" : d.role ?? m.role as "manager" | "barber";
+  const barberId = role === "barber" ? (removing || d.barber_id === undefined ? m.barber_id : d.barber_id) : null;
+  const validateBarber = !removing && role === "barber" && (d.active === true || d.role !== undefined || d.barber_id !== undefined);
+  if (validateBarber) {
+    if (!barberId) return err(c, "Vincule um profissional ativo ao acesso", 422);
+    const barber = await db.prepare("SELECT id FROM barbers WHERE id=?1 AND company_id=?2 AND active=1").bind(barberId,id).first();
+    if (!barber) return err(c, "Barbeiro inválido ou inativo para esta empresa", 400);
   }
-  if (d.role || d.barber_id !== undefined) {
-    const role = d.role ?? (m.role as "manager" | "barber");
-    const barberId = role === "barber" ? (d.barber_id ?? (m as { barber_id?: number | null }).barber_id ?? null) : null;
-    if (role === "barber" && barberId) {
-      const okB = await db.prepare(`SELECT id FROM barbers WHERE id=?1 AND company_id=?2`).bind(barberId, id).first();
-      if (!okB) return err(c, "Barbeiro inválido para esta empresa", 400);
-    }
-    await db.prepare(`UPDATE company_memberships SET role=?1, barber_id=?2 WHERE id=?3 AND company_id=?4`).bind(role, barberId, m.id, id).run();
-  }
-  if (d.reset_password) {
-    await db.batch([
-      db.prepare(`UPDATE users SET password_hash=?1, must_change_password=1 WHERE id=?2`).bind(await hashPassword(d.reset_password),m.user_id),
-      db.prepare(`DELETE FROM sessions WHERE user_id=?1`).bind(m.user_id),
-      db.prepare(`UPDATE password_resets SET used_at=?1 WHERE user_id=?2 AND used_at IS NULL`).bind(nowIso(),m.user_id),
-    ]);
-  }
-  await audit(db, c.get("user"), "team.update", "membership", m.id, { role: d.role, reset: Boolean(d.reset_password) }, { companyId: id });
+  const changed = await updateTeamAccess(db,id,m,{
+    role,barberId,active:removing?0:d.active===true?1:m.active,
+    validateBarber,validateUser:d.active===true,
+    passwordHash:!removing&&d.reset_password?await hashPassword(d.reset_password):undefined,
+  });
+  if (!changed) return err(c, "O acesso ou as permissões mudaram durante a operação. Atualize a página e tente novamente.", 409);
+  await audit(db, c.get("user"), removing ? "team.remove" : "team.update", "membership", m.id,
+    { role: d.role, active: d.active, reset: !removing && Boolean(d.reset_password) }, { companyId: id });
   return json(c, { ok: true });
 });
 

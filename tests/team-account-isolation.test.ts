@@ -82,3 +82,21 @@ describe("equipe: proteção da identidade global", () => {
     expect(await db.prepare("SELECT count(*) n FROM password_resets WHERE user_id=?1 AND used_at IS NULL").bind(target.id).first("n")).toBe(0);
   });
 });
+
+describe("equipe: reativação e vínculo obrigatório", () => {
+  it("reativa vínculo removido sem trocar senha ou promover papel", async () => {
+    const a = await company(), target = await user();
+    const membership = await db.prepare("INSERT INTO company_memberships(company_id,user_id,role,barber_id,active) VALUES (?1,?2,'barber',?3,0)").bind(a.id,target.id,a.barberId).run();
+    expect((await a.request(`/team/${membership.meta.last_row_id}`,{active:true},"PUT")).status).toBe(200);
+    expect(await db.prepare("SELECT active,role,barber_id FROM company_memberships WHERE id=?1").bind(membership.meta.last_row_id).first()).toEqual({active:1,role:"barber",barber_id:a.barberId});
+    expect(await db.prepare("SELECT password_hash FROM users WHERE id=?1").bind(target.id).first("password_hash")).toBe("original-password-hash");
+  });
+  it("não ativa conta global desativada nem libera profissional sem vínculo", async () => {
+    const a = await company(), target = await user();
+    const membership = await db.prepare("INSERT INTO company_memberships(company_id,user_id,role,barber_id,active) VALUES (?1,?2,'barber',?3,0)").bind(a.id,target.id,a.barberId).run();
+    await db.prepare("UPDATE users SET active=0 WHERE id=?1").bind(target.id).run();
+    expect((await a.request(`/team/${membership.meta.last_row_id}`,{active:true},"PUT")).status).toBe(409);
+    expect((await a.request(`/team/${membership.meta.last_row_id}`,{barber_id:null},"PUT")).status).toBe(422);
+    expect(await db.prepare("SELECT active,barber_id FROM company_memberships WHERE id=?1").bind(membership.meta.last_row_id).first()).toEqual({active:0,barber_id:a.barberId});
+  });
+});

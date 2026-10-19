@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Loader2, Plus, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Badge, Button, EmptyState, Field, Input, Modal, Select, useToast } from "@/components/ui";
@@ -16,12 +16,18 @@ export function TeamPage() {
     onSuccess: (r: any) => {
       toast.push("ok", r.created ? "Conta criada para o integrante." : "Acesso vinculado à conta existente.");
       qc.invalidateQueries({ queryKey: ["team"] }); setOpen(false);
+      setF({ name: "", email: "", role: "barber", barber_id: "", password: "" });
     },
     onError: (e: any) => toast.push("err", e.message),
   });
   const revoke = useMutation({
     mutationFn: (id: number) => api.put(`/admin/team/${id}`, { active: false }),
     onSuccess: () => { toast.push("ok", "Acesso removido."); qc.invalidateQueries({ queryKey: ["team"] }); },
+    onError: (e: any) => toast.push("err", e.message),
+  });
+  const restore = useMutation({
+    mutationFn: (id: number) => api.put(`/admin/team/${id}`, { active: true }),
+    onSuccess: () => { toast.push("ok", "Acesso reativado."); qc.invalidateQueries({ queryKey: ["team"] }); },
     onError: (e: any) => toast.push("err", e.message),
   });
   const valid = f.name.trim().length >= 2 && /\S+@\S+\.\w+/.test(f.email) && (f.role !== "barber" || f.barber_id !== "") && f.password.length >= 10;
@@ -35,6 +41,9 @@ export function TeamPage() {
         </div>
         <Button className="btn-gold" onClick={() => setOpen(true)}><Plus size={15} /> Adicionar integrante</Button>
       </div>
+      {q.isError && <div role="alert" className="rounded-xl border border-red-500/30 p-4 text-sm text-red-300">
+        Não foi possível carregar a equipe. <Button onClick={() => q.refetch()}>Tentar novamente</Button>
+      </div>}
       <div className="overflow-x-auto rounded-2xl border border-line bg-panel">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-zinc-500">
@@ -49,17 +58,19 @@ export function TeamPage() {
                 <td className="px-4 py-3 text-xs text-zinc-500">{m.last_login_at ? new Date(m.last_login_at).toLocaleDateString("pt-BR") : "nunca"}</td>
                 <td className="px-4 py-3 text-right">
                   {m.role !== "owner" && m.active === 1 && (
-                    <button className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-zinc-400 hover:border-red-500/60 hover:text-red-300" onClick={() => { if (confirm(`Remover acesso de ${m.name}?`)) revoke.mutate(m.membership_id); }}>
+                    <button className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-zinc-400 hover:border-red-500/60 hover:text-red-300" disabled={revoke.isPending || restore.isPending} onClick={() => { if (confirm(`Remover acesso de ${m.name}?`)) revoke.mutate(m.membership_id); }}>
                       <Trash2 size={13} /> remover
                     </button>
                   )}
-                  {m.active === 0 && <span className="text-xs text-zinc-600">inativo</span>}
+                  {m.active === 0 && m.role !== "owner" && <button disabled={restore.isPending || revoke.isPending} className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-zinc-300 hover:border-gold" onClick={() => restore.mutate(m.membership_id)}>
+                    <RotateCcw size={13} /> reativar acesso
+                  </button>}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {!q.isLoading && !(q.data ?? []).length && <EmptyState icon={<ShieldCheck size={28} />} title="Só você por aqui" text="Adicione gerentes e crie o acesso dos profissionais ao painel." />}
+        {!q.isLoading && !q.isError && !(q.data ?? []).length && <EmptyState icon={<ShieldCheck size={28} />} title="Só você por aqui" text="Adicione gerentes e crie o acesso dos profissionais ao painel." />}
       </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Adicionar integrante">
@@ -69,12 +80,12 @@ export function TeamPage() {
           <div className="grid grid-cols-2 gap-3">
             <Field label="Papel"><Select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option value="barber">Profissional (painel)</option><option value="manager">Gerente (painel completo)</option></Select></Field>
             {f.role === "barber" && (
-              <Field label="Vincular a"><Select value={f.barber_id} onChange={(e) => setF({ ...f, barber_id: e.target.value })}><option value="">selecione…</option>{(barbers.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select></Field>
+              <Field label="Vincular a"><Select value={f.barber_id} onChange={(e) => setF({ ...f, barber_id: e.target.value })}><option value="">selecione…</option>{(barbers.data ?? []).filter((b: any) => b.active === 1).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select></Field>
             )}
           </div>
-          <Field label="Senha provisória (10+)" hint="O integrante troca no primeiro acesso. Se o e-mail já tiver conta Tigu, a senha não é usada."><Input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
+          <Field label="Senha provisória (10+)" hint="O integrante troca no primeiro acesso. Para e-mail com conta Tigu existente, solicite o vínculo ao suporte."><Input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
           <Button className="btn-gold w-full justify-center py-2.5" disabled={!valid || add.isPending} onClick={() => add.mutate()}>
-            {add.isPending ? <Loader2 size={15} className="animate-spin" /> : null} Convidar / criar acesso
+            {add.isPending ? <Loader2 size={15} className="animate-spin" /> : null} Criar acesso
           </Button>
         </div>
       </Modal>
