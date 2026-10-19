@@ -23,6 +23,7 @@ export function mpProvider(env: Env): PaymentProvider {
   return {
     kind: "mercadopago",
     async createPixPayment(inp) {
+      if (env.TIGU_STAGING === "1") return { ok: false, error: "Pix real bloqueado no ambiente de homologação." };
       if (!token) return { ok: false, error: "Gateway de pagamento não configurado (MP_ACCESS_TOKEN ausente)." };
       const body = {
         transaction_amount: Math.round(inp.amountCents / 100 * 100) / 100,
@@ -54,6 +55,7 @@ export function mpProvider(env: Env): PaymentProvider {
       }
     },
     async getPaymentStatus(id) {
+      if (env.TIGU_STAGING === "1") return { status: "error" };
       if (!token) return { status: "error" };
       const res = await fetch(`${MP_BASE}/v1/payments/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -92,6 +94,7 @@ export function mockPaymentProvider(env: Env): PaymentProvider & { confirm(id: s
 }
 
 export function pickPaymentProvider(env: Env, demo: boolean): { provider: PaymentProvider | null; error?: string } {
+  if (env.TIGU_STAGING === "1") return { provider: null, error: "Recarga Pix desativada no ambiente de homologação." };
   if (env.PAYMENTS_MOCK === "1" || (demo && !env.MP_ACCESS_TOKEN)) {
     if (env.APP_ENV === "production" && env.PAYMENTS_MOCK !== "1") return { provider: null, error: "Pagamentos indisponíveis no momento." };
     if (env.APP_ENV === "production" && env.PAYMENTS_MOCK === "1") return { provider: null, error: "Pagamentos indisponíveis no momento." };
