@@ -160,3 +160,14 @@ Na página funcional `/c/<slug>/admin/assinatura`, um Pix com `expires_at` no pa
 Se houver timeout durante a criação do Pix e o resultado for incerto, a fatura permanece `creating` e outra não será criada automaticamente. É necessário atendimento/reconciliação para não cobrar duas vezes. A atualização de status da assinatura, fatura e plano da empresa ocorre na mesma transação D1, com confirmação idempotente.
 
 Na prévia estática `/preview?tela=vendas`, a seleção de planos e o Pix continuam demonstrativos: **não há pagamento nem confirmação real**. Não afirmar que a versão publicada em Cloudflare foi atualizada sem checar o deploy do Pages/Worker.
+
+
+## Mensalidades Pix do Superadmin
+
+A suíte do Superadmin ganhou a seção **Mensalidades Pix** (`/superadmin/subscription-invoices`), separada das **Recargas & estornos** de WhatsApp. Ela apresenta os valores efetivamente confirmados, número de faturas pagas, pendências, faturas em criação, vencidas e com falha; permite buscar por nome/slug da barbearia ou código da fatura e filtrar por situação.
+
+A API **restrita ao Superadmin** é `GET /api/super/subscription-invoices`. Para proteger os pagadores, a resposta não inclui o Pix Copia e Cola nem a imagem QR Code. O painel mostra no máximo 100 faturas recentes por filtro; os indicadores somam todas as faturas armazenadas. Pesquisas por códigos longos usam busca literal, compatível com D1, em vez de `LIKE` com padrão extenso.
+
+Cobranças em criação há mais de 10 minutos recebem destaque para investigação no Mercado Pago. **Não existe botão para marcar Pix como pago**: só a confirmação reconsultada no provedor pode conceder acesso ao plano.
+
+A prévia visual agora permite navegar para `/preview?tela=mensalidades`, com barbearias e valores exclusivamente fictícios. O Pages estático não acessa o D1, não recebe pagamentos e não comprova que o Worker funcional esteja publicado.
