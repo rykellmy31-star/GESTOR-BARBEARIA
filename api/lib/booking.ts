@@ -1,3 +1,4 @@
+import { isBookingConflictError } from "./booking-conflicts";
 // ============================================================================
 // SERVIÇO DE AGENDAMENTO (fonte única p/ público, painel e barbeiro).
 //  - validação server-side completa (assertSlotAllowed)
@@ -129,7 +130,7 @@ export async function createBooking(ctx: BookingMutationCtx, input: z.infer<type
     ]);
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
-    if (msg.includes("UNIQUE constraint failed: booking_slots")) return { ok: false, message: "Ops! Este horário acabou de ser reservado por outra pessoa. Escolha outro horário.", status: 409 };
+    if (isBookingConflictError(e)) return { ok: false, message: "Ops! Este horário acabou de ser reservado por outra pessoa. Escolha outro horário.", status: 409 };
     if (msg.includes("UNIQUE constraint failed: bookings.idempotency_key")) {
       const dup = await db.prepare(`SELECT * FROM bookings WHERE idempotency_key = ?1 AND company_id = ?2`).bind(input.idempotencyKey, companyId).first<Record<string, unknown> & { id: number; starts_at: string; cancel_token: string; allowed_cancel_until: string; code: string; ends_at: string }>();
       if (dup) {
@@ -232,7 +233,7 @@ export async function rescheduleBooking(
       ...insertBookingNotifications(db, companyId, { code: b.code, customer_name: "", customer_phone: "", barber_id: b.barber_id, barber_name: barber.name, service_name: service.name, starts_at: startsAt, price_cents: service.price_cents, status: "pendente" }, settings.timezone, `Agendamento ${b.code} remarcado para ${formatDateTimePtBr(settings.timezone, startsAt)}`, "reschedule"),
     ]);
   } catch (e) {
-    if (String(e).includes("UNIQUE constraint failed: booking_slots")) return { ok: false, message: "O novo horário acabou de ser tomado. Escolha outro.", status: 409 };
+    if (isBookingConflictError(e)) return { ok: false, message: "O novo horário acabou de ser tomado. Escolha outro.", status: 409 };
     throw e;
   }
   // re-programação: cancela jobs antigos (qualquer kind) e agenda novo lembrete
@@ -258,10 +259,15 @@ export async function setBookingStatus(ctx: BookingMutationCtx, bookingId: numbe
   if (!b) return { ok: false, message: "Agendamento não encontrado", status: 404 };
   const allowed: Record<string, string[]> = { pendente: ["confirmado", "concluido", "no_show"], confirmado: ["concluido", "no_show", "pendente"] };
   if (!(allowed[b.status] ?? []).includes(status)) return { ok: false, message: `Transição ${b.status} → ${status} não permitida`, status: 409 };
-  await db.batch([
-    db.prepare(`UPDATE bookings SET status=?2, updated_at=?3 WHERE id=?1 AND company_id=?4`).bind(b.id, status, nowIso(), companyId),
-    ...insertBookingNotifications(db, companyId, { code: b.code, customer_name: b.customer_name, customer_phone: b.customer_phone, barber_id: b.barber_id, barber_name: b.barber_name, service_name: b.service_name ?? "", starts_at: b.starts_at, price_cents: b.price_cents, status }, settings.timezone, status === "confirmado" ? `Agendamento ${b.code} confirmado` : status === "concluido" ? `Atendimento ${b.code} concluído` : `Cliente não compareceu (${b.code})`, "booking"),
-  ]);
+  try {
+    await db.batch([
+      db.prepare(`UPDATE bookings SET status=?2, updated_at=?3 WHERE id=?1 AND company_id=?4`).bind(b.id, status, nowIso(), companyId),
+      ...insertBookingNotifications(db, companyId, { code: b.code, customer_name: b.customer_name, customer_phone: b.customer_phone, barber_id: b.barber_id, barber_name: b.barber_name, service_name: b.service_name ?? "", starts_at: b.starts_at, price_cents: b.price_cents, status }, settings.timezone, status === "confirmado" ? `Agendamento ${b.code} confirmado` : status === "concluido" ? `Atendimento ${b.code} concluído` : `Cliente não compareceu (${b.code})`, "booking"),
+    ]);
+  } catch (error) {
+    if (isBookingConflictError(error)) return {ok:false,message:"Este atendimento conflita com outro horário. Atualize a agenda antes de confirmar.",status:409};
+    throw error;
+  }
   await audit(db, ctx.user ?? null, status, "booking", b.id, { code: b.code }, { companyId });
   return { ok: true };
 }

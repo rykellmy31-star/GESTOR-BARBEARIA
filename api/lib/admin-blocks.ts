@@ -1,3 +1,4 @@
+import { isBookingConflictError } from "./booking-conflicts";
 import { z } from "zod";
 import { localToUtc } from "./time";
 import { slotKeysFor } from "./availability";
@@ -38,7 +39,7 @@ export async function createAdminIntervalBlock(db:D1Database, companyId:number, 
     if (results[0].meta.changes!==1) return {ok:false as const,status:409,message:"Horário ocupado ou profissional alterado. Atualize a agenda e remarque os clientes antes de bloquear."};
     return {ok:true as const,code};
   } catch (error) {
-    if (String(error).includes("UNIQUE constraint failed: booking_slots"))
+    if (isBookingConflictError(error))
       return {ok:false as const,status:409,message:"Há agendamentos nesse horário. Atualize a agenda e remarque os clientes antes de bloquear."};
     throw error;
   }
