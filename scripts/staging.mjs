@@ -25,6 +25,9 @@ if (action === "prepare") {
   if (existsSync(path)) die("wrangler.staging.jsonc já existe; confirme seu conteúdo antes de substituí-lo.");
   const config = JSON.parse(readFileSync(template, "utf8"));
   config.d1_databases[0].database_id = id;
+  const original = JSON.parse(readFileSync(resolve(root, "wrangler.jsonc"), "utf8"));
+  const issues = stagingConfigIssues(config, original);
+  if (issues.length) die("Configuração insegura: " + issues.join("; ") + ". Nenhum arquivo foi criado.");
   writeFileSync(path, JSON.stringify(config, null, 2) + "\n", { flag: "wx", mode: 0o600 });
   console.log("✔ Configuração criada: wrangler.staging.jsonc (ignorada pelo Git).");
   console.log("  Próximo passo: rode 'npm run staging:validate'.");

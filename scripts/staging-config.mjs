@@ -27,7 +27,8 @@ export function stagingConfigIssues(config, original) {
   fail(config.vars?.APP_ENV === "production" && config.vars?.TIGU_STAGING === "1" &&
     config.vars?.WHATSAPP_MOCK === "1" && config.vars?.PAYMENTS_MOCK === "0" &&
     config.vars?.GRAPH_API_VERSION === "v23.0", "flags de isolamento da homologação inválidas");
-  fail(config.observability?.enabled === true, "observabilidade deve estar ligada");
+  fail(isRecord(config.observability) && Object.keys(config.observability).length === 1 &&
+    config.observability.enabled === true, "observabilidade deve estar ligada sem opções adicionais");
 
   const assets = config.assets;
   fail(isRecord(assets) && Object.keys(assets).length === 4 &&
@@ -43,7 +44,7 @@ export function stagingConfigIssues(config, original) {
   fail(Boolean(db && Object.keys(db).length === 4 &&
     db.binding === "DB" && db.database_name === "tigu-staging-db" &&
     uuid.test(db.database_id || "") &&
-    db.database_id !== original?.d1_databases?.[0]?.database_id &&
+    String(db.database_id).toLowerCase() !== String(original?.d1_databases?.[0]?.database_id).toLowerCase() &&
     db.migrations_dir === "migrations"), "D1 deve ser exclusivamente tigu-staging-db");
 
   const buckets = config.r2_buckets;

@@ -131,3 +131,10 @@ Trabalhar exclusivamente em `audit/tigu-primeira-validacao`, reportar ao proprie
 - [x] Migrações 0001–0010 aplicadas em banco local novo e isolado.
 - [ ] Aplicar migrações 0009 e 0010 no banco remoto autorizado; não implantadas nesta rodada.
 - [ ] Conferir a interface em navegador funcional; download e instalação de navegador bloqueados no ambiente atual.
+
+## Rodada de isolamento da configuração de homologação
+
+- [x] UUID do D1 comparado sem diferenciar maiúsculas/minúsculas, impedindo reutilização do banco de produção por variação de escrita.
+- [x] `staging:prepare` valida o contrato completo antes de criar o arquivo; templates inseguros não deixam configuração gravada.
+- [x] Opções adicionais de observabilidade são rejeitadas pelo contrato de homologação.
+- [x] Regressões locais cobrem a colisão de UUID e a recusa de preparação sem efeitos no disco; nenhuma operação remota executada.

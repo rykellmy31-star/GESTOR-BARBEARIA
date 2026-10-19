@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { stagingConfigIssues } from "./staging-config.mjs";
 
 const template = JSON.parse(readFileSync(new URL("../wrangler.staging.template.jsonc", import.meta.url), "utf8"));
@@ -31,6 +35,7 @@ const dangerous = [
   ["migrations inconsistentes", x => { x.d1_databases[0].migrations_dir = "../other"; }],
   ["secret embutido em configuração", x => { x.vars.SESSION_SECRET = "senha"; }],
   ["binding extra via KV", x => { x.kv_namespaces = [{ binding: "DADOS" }]; }],
+  ["destino adicional de observabilidade", x => { x.observability.logs = { destinations: ["externo"] }; }],
 ];
 
 for (const [description, change] of dangerous) {
@@ -46,4 +51,32 @@ test("recusa compartilhar o mesmo identificador D1 com a produção", () => {
   const x = safe();
   original.d1_databases[0].database_id = x.d1_databases[0].database_id;
   assert.ok(stagingConfigIssues(x, original).length > 0);
+});
+
+test("recusa UUID de produção com capitalização diferente", () => {
+  const x = safe();
+  x.d1_databases[0].database_id = "abcdefab-cdef-4abc-8abc-abcdefabcdef";
+  const original = structuredClone(production);
+  original.d1_databases[0].database_id = x.d1_databases[0].database_id.toUpperCase();
+  assert.ok(stagingConfigIssues(x, original).length > 0);
+});
+
+test("prepare rejeita template inseguro e D1 de produção antes de criar arquivo", () => {
+  for (const scenario of ["database", "template"]) {
+    const dir = mkdtempSync(join(tmpdir(), "tigu-prepare-rejection-"));
+    try {
+      const original = structuredClone(production);
+      const config = structuredClone(template);
+      const id = "abcdefab-cdef-4abc-8abc-abcdefabcdef";
+      if (scenario === "database") original.d1_databases[0].database_id = id.toUpperCase();
+      else config.routes = [{ pattern: "example.com/*" }];
+      writeFileSync(join(dir, "wrangler.jsonc"), JSON.stringify(original));
+      writeFileSync(join(dir, "wrangler.staging.template.jsonc"), JSON.stringify(config));
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL("./staging.mjs", import.meta.url)),
+        "prepare", "--database-id", id], { cwd: dir, encoding: "utf8" });
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /Configuração insegura/);
+      assert.equal(existsSync(join(dir, "wrangler.staging.jsonc")), false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
 });
