@@ -34,6 +34,6 @@ describe("Mercado Pago: autenticidade do webhook Pix", () => {
     expect(await verifyMpWebhookSignature(secret, signature, requestId, "987654321")).toBe(false);
     expect(await verifyMpWebhookSignature(secret, signature, "other-request", id)).toBe(false);
     expect(await verifyMpWebhookSignature(secret, signature.replace(ts, "1792400001"), requestId, id)).toBe(false);
-    expect(await verifyMpWebhookSignature(secret, signature.replace(/.$/, "0"), requestId, id)).toBe(false);
+    expect(await verifyMpWebhookSignature(secret, signature.replace(/.$/, signature.endsWith("0") ? "1" : "0"), requestId, id)).toBe(false);
   });
 });
