@@ -408,8 +408,7 @@ superRouter.post("/messages/:id/resolve", async (c) => {
     }
     const result = await db.prepare(
       `UPDATE message_jobs SET status='failed', last_error=?1, next_attempt_at=NULL, updated_at=?2
-       WHERE id=?3 AND company_id=?4 AND status='sending' AND provider_msg_id=''
-       AND refunded_at IS NULL AND (price_cents=0 OR reserved_cents >= price_cents)`
+       WHERE id=?3 AND company_id=?4 AND status='sending' AND provider_msg_id=''`
     ).bind("Conciliação manual: envio NÃO confirmado; " + d.justification, nowIso(), id, job.company_id).run();
     if (!result.meta?.changes) return err(c, "O envio foi alterado por outra operação. Atualize o painel.", 409);
     await audit(db, c.get("user"), "message.resolve.not_sent", "message_job", id,
