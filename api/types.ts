@@ -40,6 +40,7 @@ export interface SessionUser {
   name: string;
   email: string;
   platform_role: "user" | "superadmin";
+  must_change_password?: boolean;
   /** company context preenchido pelo middleware tenant */
   company?: {
     id: number;
