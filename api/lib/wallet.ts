@@ -122,25 +122,48 @@ export async function refundJobCharge(
  * (webhook re-consultado). Gate: topup ainda não creditada. 100% idempotente.
  */
 export async function creditTopup(db: D1Database, companyId: number, amountCents: number, topupOrderId: number, note = "Recarga Pix confirmada"): Promise<boolean> {
+  const order = await db.prepare(
+    `SELECT status, amount_cents, credited_at FROM topup_orders WHERE id=?1 AND company_id=?2`
+  ).bind(topupOrderId, companyId).first<{ status: string; amount_cents: number; credited_at: string | null }>();
+  if (!order || !["pending", "expired"].includes(order.status) || order.credited_at !== null) return false;
+  // Valor obrigatório é o do pedido salvo no banco; nunca creditar montante arbitrário do chamador.
+  if (!Number.isInteger(amountCents) || order.amount_cents !== amountCents || amountCents <= 0) return false;
+  await ensureWallet(db, companyId);
+
   const now = nowIso();
-  const gate = await db
-    .prepare(`UPDATE topup_orders SET status = 'paid', credited_at = ?1, paid_at = COALESCE(paid_at, ?1) WHERE id = ?2 AND company_id = ?3 AND status IN ('pending','expired')`)
-    .bind(now, topupOrderId, companyId)
-    .run();
-  if (!gate.meta?.changes) return false;
-  await db.batch([
-    db
-      .prepare(`UPDATE wallets SET balance_cents = balance_cents + ?1, lifetime_recharged_cents = lifetime_recharged_cents + ?1, updated_at = ?2 WHERE company_id = ?3`)
-      .bind(amountCents, now, companyId),
-    db.prepare(
-      `INSERT OR IGNORE INTO wallet_transactions (company_id, type, amount_cents, balance_after, reserved_after, ref_type, ref_id, idempotency_key, note, created_at)
-       SELECT ?1,'topup',?2,w.balance_cents,w.reserved_cents,'topup_order',CAST(?3 AS TEXT),?4,?5,?6 FROM wallets w WHERE w.company_id=?1`
-    ).bind(companyId, amountCents, topupOrderId, `topup:${topupOrderId}`, note, now),
-    db
-      .prepare(`UPDATE topup_orders SET credited_tx_id = (SELECT id FROM wallet_transactions WHERE company_id = ?1 AND idempotency_key = ?2) WHERE id = ?3`)
-      .bind(companyId, `topup:${topupOrderId}`, topupOrderId),
-  ]);
-  return true;
+  const idem = `topup:${topupOrderId}`;
+  try {
+    // Se houver confirmação concorrente, o UNIQUE(idempotency_key) faz o
+    // segundo batch falhar por completo: sem crédito duplicado no saldo.
+    await db.batch([
+      db.prepare(
+        `INSERT INTO wallet_transactions (company_id, type, amount_cents, balance_after,
+         reserved_after, ref_type, ref_id, idempotency_key, note, created_at)
+         SELECT ?1,'topup',?2,w.balance_cents,w.reserved_cents,'topup_order',CAST(?3 AS TEXT),?4,?5,?6
+         FROM wallets w WHERE w.company_id=?1`
+      ).bind(companyId, amountCents, topupOrderId, idem, note, now),
+      db.prepare(
+        `UPDATE wallets SET balance_cents=balance_cents+?1,
+         lifetime_recharged_cents=lifetime_recharged_cents+?1, updated_at=?2 WHERE company_id=?3`
+      ).bind(amountCents, now, companyId),
+      db.prepare(
+        `UPDATE wallet_transactions SET
+         balance_after=(SELECT balance_cents FROM wallets WHERE company_id=?1),
+         reserved_after=(SELECT reserved_cents FROM wallets WHERE company_id=?1)
+         WHERE company_id=?1 AND idempotency_key=?2`
+      ).bind(companyId, idem),
+      db.prepare(
+        `UPDATE topup_orders SET status='paid', paid_at=COALESCE(paid_at,?1),
+         credited_at=?1, credited_tx_id=(SELECT id FROM wallet_transactions WHERE idempotency_key=?2),
+         updated_at=?1 WHERE id=?3 AND company_id=?4 AND status IN ('pending','expired')`
+      ).bind(now, idem, topupOrderId, companyId),
+    ]);
+    return true;
+  } catch (e) {
+    const existing = await db.prepare(`SELECT id FROM wallet_transactions WHERE idempotency_key=?1`).bind(idem).first();
+    if (existing) return false;
+    throw e;
+  }
 }
 
 /** Ajuste manual do superadmin — justificativa obrigatória, auditado, idempotente. */
