@@ -99,3 +99,14 @@ Os dados da `/preview` continuam exclusivamente fictícios. O GitHub Actions ver
 - No Superadmin há a rota `/superadmin/leads` **Interessados**: somente superadministradores podem consultar nome e contato, pesquisar por barbearia/e-mail e mudar o status de Novo → Contato realizado → Em negociação → Encerrado, deixando nota interna. Status comerciais **não significam pagamento confirmado**.
 - A prévia visual ganhou `/preview?tela=interessados`, com nomes inventados e nenhuma informação de clientes reais.
 - Contatos não geram notificações externas automaticamente. O atendimento é manual enquanto não houver integração e conformidade para notificações.
+
+
+## Verificação antirobôs na contratação
+
+A rota `/contratar` usa o componente Cloudflare Turnstile **somente quando um Worker de produção/homologação está configurado**. A site key chega por `GET /api/marketing/lead-config`; a chave secreta nunca sai do Worker. O servidor verifica cada token em `siteverify` **antes** de registrar o contato.
+
+- Na prévia estática Pages, não existe Worker/D1: o formulário continua desativado e informa que não recebe dados pessoais.
+- No Worker de homologação sem `SALES_TURNSTILE_SITE_KEY` e `SALES_TURNSTILE_SECRET`, o formulário é bloqueado com mensagem explícita.
+- Depois de configurar as chaves e testar a validação, a solicitação poderá ser enviada com autorização do interessado e verificada na lista do Superadmin.
+- A prévia `/preview?tela=vendas` e `/preview?tela=interessados` continua usando apenas dados ilustrativos e não possui desafio antirobôs nem faz requisições financeiras.
+- Esta proteção do **funil comercial** não resolve sozinha as proteções de autenticação/cadastro do restante da plataforma nem a política de retenção LGPD.
