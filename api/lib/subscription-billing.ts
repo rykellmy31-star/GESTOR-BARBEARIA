@@ -94,9 +94,9 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
   if (!["pending","expired"].includes(inv.status)) return {ok:false,status:inv.status,activated:false};
   const payment=await mpProvider(env).getPaymentStatus(providerId);
   if (payment.status!=="approved") {
-    if (["cancelled","rejected"].includes(payment.status)) {
-      await db.prepare("UPDATE subscription_invoices SET status='failed' WHERE id=?1 AND status='pending'")
-        .bind(inv.id).run();
+    if (["cancelled","rejected","expired"].includes(payment.status)) {
+      await db.prepare("UPDATE subscription_invoices SET status=?1,updated_at=?2 WHERE id=?3 AND status='pending'")
+        .bind(payment.status==="expired"?"expired":"failed",nowIso(),inv.id).run();
     }
     return {ok:true,status:payment.status,activated:false};
   }
