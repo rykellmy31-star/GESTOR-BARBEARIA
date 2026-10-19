@@ -74,7 +74,7 @@ export function SalesPlansSettings() {
         <h2 className="font-display text-xl text-zinc-100">Planos e valores da página de vendas</h2>
         <p className="mt-2 max-w-3xl text-xs leading-relaxed text-zinc-400">
           Configure preços e limites dos planos. O site funcional lê os valores do banco D1.
-          O Start custa R$ 19,99/mês por padrão depois de um teste grátis de 15 dias. Você também pode editar sua mensalidade. Isso <strong>não cobra mensalidades automaticamente</strong>: ativação e pagamento recorrente continuam pendentes de integração.
+          O Start custa R$ 19,99/mês por padrão depois de um teste grátis de 15 dias. Você também pode editar sua mensalidade. O cliente pode escolher Start, Pro ou Scale e pagar uma mensalidade Pix pelo painel. <strong>Não há débito automático</strong>; a integração Mercado Pago precisa ser validada antes da produção.
         </p>
       </div>
       {q.isLoading ? <p className="text-sm text-zinc-400">Carregando planos…</p> :
