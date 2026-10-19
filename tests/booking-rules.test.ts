@@ -825,3 +825,78 @@ describe("Página de vendas: contato gerenciado exclusivamente pelo superadmin",
     expect(adminStillHasSavedValue.body.contact.whatsapp).toBe("5573999999999");
   });
 });
+
+
+describe("Cadastro seguro e recuperação de conta", () => {
+  it("cria usuário, empresa, carteira e assinatura atomizadamente; repetição não deixa sobras", async () => {
+    const stamp = String(Date.now());
+    const email = "signup-atomico-" + stamp + "@teste.com";
+    const body = JSON.stringify({
+      company_name: "Barbearia Cadastro Atomico " + stamp,
+      email, password: PW, name: "Dono Teste", phone: "5573999990011"
+    });
+    const results = await Promise.all([
+      api("/api/auth/register", { method: "POST", body }),
+      api("/api/auth/register", { method: "POST", body }),
+    ]);
+    expect(results.map(r => r.status).sort()).toEqual([201, 409]);
+    const row = await db.prepare(
+      "SELECT u.id uid,c.id cid,c.slug,m.role,s.plan_code,w.balance_cents,cs.data AS company_settings FROM users u JOIN company_memberships m ON m.user_id=u.id AND m.role='owner' JOIN companies c ON c.id=m.company_id JOIN company_settings cs ON cs.company_id=c.id JOIN subscriptions s ON s.company_id=c.id JOIN wallets w ON w.company_id=c.id WHERE u.email=?1"
+    ).bind(email).first<any>();
+    expect(row).not.toBeNull();
+    expect(row.role).toBe("owner");
+    expect(row.plan_code).toBe("free");
+    expect(row.balance_cents).toBe(0);
+    expect(JSON.parse(row.company_settings).shop_name).toContain("Barbearia Cadastro Atomico");
+    const duplicateUser = await db.prepare("SELECT COUNT(*) n FROM users WHERE email=?1")
+      .bind(email).first<{ n: number }>();
+    expect(duplicateUser?.n).toBe(1);
+    const secondAttempt = await api("/api/auth/register", { method: "POST", body });
+    expect(secondAttempt.status).toBe(409);
+  });
+
+  it("não produz código de recuperação por HTTP em produção sem canal de entrega", async () => {
+    const email = "conta-valida-teste@invalid.example";
+    const request = await app.request("/api/auth/recover", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email }),
+    }, { ...env, DB: db, APP_ENV: "production" } as Env);
+    expect(request.status).toBe(200);
+    const result: any = await request.json();
+    expect(result.support_required).toBe(true);
+    expect(result.demo_code).toBeUndefined();
+    const resets = await db.prepare(
+      "SELECT COUNT(*) n FROM password_resets p JOIN users u ON u.id=p.user_id WHERE u.email=?1"
+    ).bind(email).first<{ n: number }>();
+    expect(resets?.n).toBe(0);
+  });
+
+  it("contabiliza erros de código no D1 e bloqueia depois de cinco tentativas", async () => {
+    const stamp = String(Date.now());
+    const email = "recuperacao-" + stamp + "@teste.com";
+    await db.prepare(
+      "INSERT INTO users (platform_role,name,email,password_hash,active,created_at) VALUES ('user','Testador',?1,?2,1,?3)"
+    ).bind(email, await hashPassword(PW), new Date().toISOString()).run();
+    const recover = await api("/api/auth/recover", {
+      method: "POST", body: JSON.stringify({ email })
+    });
+    expect(recover.status).toBe(200);
+    expect(recover.body.demo_code).toHaveLength(10);
+    for (let i = 0; i < 5; i++) {
+      const invalid = await api("/api/auth/recover/verify", {
+        method: "POST",
+        body: JSON.stringify({ email, code: "INVALID000", password: "OutraSenhaForte#2026" })
+      });
+      expect(invalid.status).toBe(400);
+    }
+    const blocked = await api("/api/auth/recover/verify", {
+      method: "POST",
+      body: JSON.stringify({ email, code: recover.body.demo_code, password: "OutraSenhaForte#2026" })
+    });
+    expect(blocked.status).toBe(429);
+    const row = await db.prepare(
+      "SELECT attempts FROM password_resets WHERE user_id=(SELECT id FROM users WHERE email=?1) ORDER BY id DESC LIMIT 1"
+    ).bind(email).first<{ attempts: number }>();
+    expect(row?.attempts).toBe(5);
+  });
+});
