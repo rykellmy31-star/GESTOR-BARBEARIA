@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { Button, Field, Input, Select, Spinner, useToast } from "@/components/ui";
 import { money } from "@/lib/format";
 import { H } from "./shared";
+import { SalesContactSettings } from "./SalesContactSettings";
 
 const LABELS: Record<string, { label: string; hint?: string; kind: "cents" | "int" | "enum" }> = {
   msg_price_cents: { label: "Preço padrão por mensagem", hint: "Enquanto não houver regra própria de precificação; recomendado R$ 0,10 para começar.", kind: "cents" },
@@ -32,6 +33,7 @@ export function SuperSettings() {
   return (
     <div>
       <H title="Configuração da plataforma" sub="Defaults que valem para todas as barbearias, cada mudança isolada e auditada." />
+      <SalesContactSettings />
       <div className="grid max-w-2xl gap-3">
         {Object.keys(LABELS).map((k) => {
           const meta = LABELS[k];
