@@ -25,6 +25,7 @@ import { expirePendingTopups, reconcilePendingTopups } from "./lib/topup";
 import { nowIso } from "./lib/utils";
 import { loadSalesContact, publicSalesContact } from "./lib/marketing";
 import { listPublicPlans } from "./lib/plans";
+import { allowSalesLeadAttempt, createSalesLead, leadRequestSchema } from "./lib/sales-leads";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -59,6 +60,22 @@ app.get("/api/marketing/plans", async (c) =>
 );
 
 app.use("/api/*", originGuard);
+
+/** Solicitação de atendimento para planos pagos: nunca cria cobrança nem ativa assinatura. */
+app.post("/api/marketing/leads", async (c) => {
+  const parsed = leadRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Confira seus dados e aceite o contato comercial.", details: parsed.error.flatten().fieldErrors }, 422);
+  if (parsed.data.website) return c.json({ ok: true, message: "Solicitação recebida." }, 201);
+  const key = c.env.SESSION_SECRET || (c.env.APP_ENV === "production" ? "" : "dev-only-lead-key");
+  if (!key) return c.json({ error: "Atendimento indisponível temporariamente." }, 503);
+  const allowed = await allowSalesLeadAttempt(c.env.DB,key,c.req.header("cf-connecting-ip") || null,parsed.data.email);
+  if (!allowed) return c.json({ error: "Limite de solicitações atingido. Tente novamente mais tarde." }, 429);
+  const result = await createSalesLead(c.env.DB, parsed.data);
+  if (result.status === "missing_plan") return c.json({ error: "O plano selecionado está indisponível." }, 422);
+  if (result.status === "duplicate") return c.json({ error: "Já recebemos uma solicitação recente para esse plano. Aguarde nosso contato." }, 409);
+  return c.json({ ok: true, reference: result.id, message: "Solicitação registrada. Nossa equipe poderá entrar em contato." }, 201);
+});
+
 
 app.route("/api/auth", authRouter);
 app.route("/api/super", superRouter);
