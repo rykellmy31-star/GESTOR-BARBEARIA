@@ -8,6 +8,18 @@ export function SuperOverview() {
   const [days, setDays] = useState(30);
   const q = useQuery({ queryKey: ["super-overview", days], queryFn: () => api.get<any>(`/super/overview?days=${days}`) });
   if (q.isLoading) return <Spinner label="Consolidando a plataforma…" />;
+  if (q.isError || !q.data) {
+    return (
+      <div role="alert" className="rounded-2xl border border-amber-500/30 bg-[#16161c] p-6">
+        <h1 className="font-display text-xl text-zinc-100">Não foi possível carregar o painel</h1>
+        <p className="mt-2 text-sm text-zinc-400">Confira se a API e o banco D1 do Tigu estão configurados neste ambiente.</p>
+        <button type="button" onClick={() => void q.refetch()}
+          className="mt-4 rounded-xl border border-[#d4af37]/60 px-4 py-2 text-sm font-semibold text-[#e8ca66] hover:bg-[#d4af37]/10">
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
   const d = q.data;
   const usage = (d.usage_by_day ?? []).slice().reverse();
   const maxRev = Math.max(1, ...usage.map((u: any) => Number(u.revenue_cents ?? 0)));
