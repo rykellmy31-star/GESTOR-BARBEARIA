@@ -177,6 +177,22 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
 
   if (view === "vendas") return (
     <div className="space-y-5">
+      <Panel title="Planos na página de vendas" aside={<Tag tone="gold">Exemplo, não é contratação</Tag>}>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            ["Start", "R$ 0,00", "Para testar a agenda"],
+            ["Pro", "R$ 49,90", "Lembretes e equipe"],
+            ["Scale", "R$ 129,90", "Operações maiores"],
+          ].map(([name, price, benefit]) => (
+            <div key={name} className="rounded-xl border border-[#39323a] bg-[#101014] p-4">
+              <p className="text-xs font-medium text-[#e8ca66]">{name}</p>
+              <p className="mt-2 font-display text-2xl text-zinc-50">{price}<span className="text-xs text-zinc-500">/mês</span></p>
+              <p className="mt-2 text-xs text-zinc-400">{benefit}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-zinc-500">Preços apenas ilustrativos. O Superadmin pode alterar os valores no ambiente funcional; cobrança automática ainda não está habilitada.</p>
+      </Panel>
       <Panel title="Como o visitante encontrará seu contato" aside={<Tag tone="gold">Demonstração visual</Tag>}>
         <div className="rounded-2xl border border-[#d4af37]/40 bg-[#111115] p-6 text-center sm:p-10">
           <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#d4af37]">Atendimento comercial</p>
