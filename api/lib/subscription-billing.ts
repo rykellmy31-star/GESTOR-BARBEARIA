@@ -140,7 +140,10 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
     .bind(providerId).first<SubscriptionInvoice>();
   if (!inv) return {ok:false,status:"not_found",activated:false};
   if (inv.status==="paid") return {ok:true,status:"paid",activated:false};
-  if (!["pending","expired"].includes(inv.status)) return {ok:false,status:inv.status,activated:false};
+  // Uma cobrança pode ser aprovada pelo gateway após o sistema marcá-la
+  // como failed (por exemplo, eventos fora de ordem). Consultar o provedor
+  // antes de decidir, sem permitir a reabertura de uma fatura ainda em criação.
+  if (!["pending","expired","failed"].includes(inv.status)) return {ok:false,status:inv.status,activated:false};
   const payment=await mpProvider(env).getPaymentStatus(providerId);
   if (payment.status!=="approved") {
     // Falha de consulta não é confirmação de recusa nem de expiração.
@@ -169,7 +172,7 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
     // Assim uma fatura já consumida não estende o período novamente, mesmo
     // quando duas notificações chegam no mesmo segundo.
     db.prepare(`UPDATE subscription_invoices SET status='paid',paid_at=?1,updated_at=?1
-      WHERE id=?2 AND status IN ('pending','expired')`)
+      WHERE id=?2 AND status IN ('pending','expired','failed')`)
       .bind(at,inv.id),
     db.prepare(`UPDATE subscriptions SET status='active',plan_code=?3,
       period_end=strftime('%Y-%m-%dT%H:%M:%SZ',
