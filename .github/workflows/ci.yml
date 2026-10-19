@@ -37,5 +37,9 @@ jobs:
         run: npm run check:types
       - name: Gerar dist antes dos testes Workers
         run: npm run build
+      - name: Conferir atribuição de autoria no frontend compilado
+        run: |
+          grep -R -q 'Sistema desenvolvido por' dist/assets
+          grep -R -q 'Carlos Rykellmy Santos Correia' dist/assets
       - name: Rodar testes
         run: npm test
