@@ -98,7 +98,7 @@ export function SubscriptionBillingPage() {
             {plans.map(plan=>{
               const selected=chosenCode===plan.code;
               const blocked=Boolean(invoice)||Boolean(valid&&sub?.status==="active"&&rank[plan.code]<rank[sub.plan_code as PlanCode]);
-              const name=plan.code==="free"?"Start":plan.code==="pro"?"Pro":"Scale";
+              const name=plan.code==="free"?"Básico · Start":plan.code==="pro"?"Intermediário · Pro":"Premium · Scale";
               return (
                 <button key={plan.code} type="button" disabled={blocked}
                   aria-pressed={selected}
