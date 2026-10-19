@@ -60,15 +60,15 @@ export async function currentUser(c: Context<{ Bindings: Env }>): Promise<Sessio
   const uid = parseInt(parts[1], 10);
   const tokenHash = await sha(`${parts[2]}:${secretOf(c.env)}:${uid}`);
   const row = await c.env.DB
-    .prepare(`SELECT u.id, u.name, u.email, u.platform_role
+    .prepare(`SELECT u.id, u.name, u.email, u.platform_role, u.must_change_password
                FROM users u JOIN sessions s ON s.user_id = u.id
                WHERE s.user_id = ?1 AND s.token_hash = ?2 AND u.active = 1 AND s.expires_at > ?3`)
     .bind(uid, tokenHash, nowIso())
-    .first<{ id: number; name: string; email: string; platform_role: "user" | "superadmin" }>();
+    .first<{ id: number; name: string; email: string; platform_role: "user" | "superadmin"; must_change_password: number }>();
   if (!row) return null;
   // renovação "sliding" assíncrona (não bloqueia a request)
   c.executionCtx?.waitUntil?.(c.env.DB.prepare(`UPDATE sessions SET last_seen_at = ?2 WHERE token_hash = ?1`).bind(tokenHash, nowIso()).run());
-  return { id: row.id, name: row.name, email: row.email, platform_role: row.platform_role };
+  return { id: row.id, name: row.name, email: row.email, platform_role: row.platform_role, must_change_password: row.must_change_password === 1 };
 }
 
 export async function currentUserOptional(c: Context<{ Bindings: Env }>): Promise<SessionUser | null> {
@@ -82,6 +82,8 @@ export async function currentUserOptional(c: Context<{ Bindings: Env }>): Promis
 export const requireAuth = factory.createMiddleware(async (c, next) => {
   const u = await currentUser(c);
   if (!u) return err(c, "Não autenticado. Faça login para continuar.", 401);
+  if (u.must_change_password && c.req.path !== "/api/auth/password")
+    return err(c, "Você precisa alterar a senha provisória antes de acessar esta área.", 403);
   c.set("user", u);
   await next();
 });
@@ -158,6 +160,7 @@ export const publicUser = (u: SessionUser) => ({
   name: u.name,
   email: u.email,
   platform_role: u.platform_role,
+  must_change_password: u.must_change_password === true,
   company: u.company
     ? { slug: u.company.slug, name: u.company.name, role: u.company.role, barber_id: u.company.barber_id, plan: u.company.plan.code }
     : null,
