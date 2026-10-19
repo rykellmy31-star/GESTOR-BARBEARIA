@@ -1,5 +1,7 @@
 /// <reference types="@cloudflare/vitest-pool-workers" />
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { confirmSubscriptionPix } from "../api/lib/subscription-billing";
+import type { Env } from "../api/types";
 import { env } from "cloudflare:test";
 import schema1 from "../migrations/0001_init.sql";
 import schema2 from "../migrations/0002_whatsapp_identity.sql";
@@ -92,6 +94,34 @@ describe("regressão D1: confirmação Pix idempotente", () => {
         AND newer.id>subscription_invoices.id AND newer.status='paid')`).run();
     expect(result.meta.changes).toBe(0);
     expect((await db.prepare("SELECT status FROM subscription_invoices WHERE id=9005").first<{status:string}>())?.status).toBe("failed");
+  });
+
+  it("executa confirmação real do serviço contra D1 e impede repetição", async () => {
+    const now = "2026-10-19T15:30:00Z";
+    await db.prepare("INSERT INTO companies (id,slug,name,status,plan_code,created_at,updated_at) VALUES (9010,'billing-service-test','Billing Service Test','active','free',?1,?1)").bind(now).run();
+    await db.prepare("INSERT INTO subscriptions (company_id,plan_code,status,period_end,updated_at) VALUES (9010,'free','active','2026-10-20T15:30:00Z',?1)").bind(now).run();
+    await db.prepare("INSERT INTO subscription_invoices (id,company_id,code,plan_code,amount_cents,status,provider_payment_id) VALUES (9010,9010,'TIGU-TEST-9010','pro',4990,'pending','9010')").run();
+    const fetchOriginal = globalThis.fetch;
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id:9010,status:"approved",external_reference:"TIGU-TEST-9010",
+      transaction_amount:49.90,currency_id:"BRL",payment_method_id:"pix"
+    }),{status:200}));
+    vi.stubGlobal("fetch",fetchMock);
+    try {
+      const testEnv = {...env,DB:db,MP_ACCESS_TOKEN:"test-token",TIGU_STAGING:"0"} as Env;
+      const first = await confirmSubscriptionPix(testEnv,"9010");
+      expect(first).toMatchObject({ok:true,status:"paid",activated:true});
+      const afterFirst = await db.prepare("SELECT period_end,plan_code FROM subscriptions WHERE company_id=9010").first<{period_end:string;plan_code:string}>();
+      expect(afterFirst?.plan_code).toBe("pro");
+      expect((await db.prepare("SELECT plan_code FROM companies WHERE id=9010").first<{plan_code:string}>())?.plan_code).toBe("pro");
+      const second = await confirmSubscriptionPix(testEnv,"9010");
+      expect(second).toMatchObject({ok:true,status:"paid",activated:false});
+      const afterSecond = await db.prepare("SELECT period_end FROM subscriptions WHERE company_id=9010").first<{period_end:string}>();
+      expect(afterSecond?.period_end).toBe(afterFirst?.period_end);
+      expect(fetchMock).toHaveBeenCalledOnce();
+    } finally {
+      vi.stubGlobal("fetch",fetchOriginal);
+    }
   });
 
 });
