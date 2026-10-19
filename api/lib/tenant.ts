@@ -60,17 +60,6 @@ export const tenantMiddleware =
     if (!company) return err(c, "Esta barbearia não existe (ou o endereço mudou).", 404);
     if (company.status === "suspended") return err(c, `Esta barbearia está temporariamente suspensa${company.suspend_reason ? `: ${company.suspend_reason}` : ""}.`, 403);
 
-    // Evita novas reservas/alterações após o fim dos 15 dias, sem apagar
-    // informações nem impedir consulta ou cancelamento de reservas existentes.
-    const writeRequiresSubscription = requiresSubscriptionToWrite(
-      c.req.method, c.req.path, opts.auth !== "none"
-    );
-    if (writeRequiresSubscription) {
-      const subscription = await subscriptionAccess(c.env.DB, company.id);
-      if (!canOperateSubscription(subscription)) return err(c,
-        "Seu período de teste terminou ou a assinatura está inativa. Fale com o suporte Tigu para continuar. Nenhuma cobrança será feita automaticamente.", 402);
-    }
-
     const user: SessionUser | null = await currentUserOptional(c);
     const settings = await loadCompanySettings(c.env.DB, company.id);
 
@@ -96,6 +85,17 @@ export const tenantMiddleware =
       // rota pública: só expõe {id, slug, name} para as queries
       c.set("company", { id: company.id, slug: company.slug, name: company.name, role: "public", barber_id: null, plan: { code: "public", whatsapp_enabled: 0, max_barbers: 0, max_messages_month: 0 } });
     }
+    // Evita novas reservas/alterações após o fim dos 15 dias, sem apagar
+    // informações nem impedir consulta ou cancelamento de reservas existentes.
+    const writeRequiresSubscription = requiresSubscriptionToWrite(
+      c.req.method, c.req.path, opts.auth !== "none"
+    );
+    if (writeRequiresSubscription) {
+      const subscription = await subscriptionAccess(c.env.DB, company.id);
+      if (!canOperateSubscription(subscription)) return err(c,
+        "Seu período de teste terminou ou a assinatura está inativa. Fale com o suporte Tigu para continuar. Nenhuma cobrança será feita automaticamente.", 402);
+    }
+
     c.set("settings", settings);
     await next();
   };
