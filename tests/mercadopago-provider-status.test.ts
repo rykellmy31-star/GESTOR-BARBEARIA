@@ -35,4 +35,14 @@ describe("Mercado Pago: consulta confiável do pagamento", () => {
     expect((await mpProvider({...env,TIGU_STAGING:"1"}).getPaymentStatus("123")).status).toBe("error");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+  it("não libera cobrança em falha de rede", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network unavailable")));
+    expect((await mpProvider(env).getPaymentStatus("123")).status).toBe("error");
+  });
+
+  it("não aceita JSON inválido como confirmação", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid-json", {status:200})));
+    expect((await mpProvider(env).getPaymentStatus("123")).status).toBe("error");
+  });
+
 });
