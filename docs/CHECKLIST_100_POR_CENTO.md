@@ -119,4 +119,15 @@ Trabalhar exclusivamente em `audit/tigu-primeira-validacao`, reportar ao proprie
 - [x] Migração 0008 protege contra sobreposição real de intervalos em grades diferentes, com reversão transacional dos conflitos.
 - [x] Migrações 0001–0008 executadas em banco local isolado.
 - [ ] Aplicar migração 0008 remotamente após autorização e auditoria dos dados legados; não implantada nesta rodada.
-- [ ] Ampliar validação concorrente das transições de status e da criação de folgas de dia inteiro.
+- [x] Transições de status, cancelamento e remarcação com disputa controlada; folgas conferidas no commit (migrações 0009 e 0010).
+
+
+## Rodada de concorrência e validação HTTP
+
+- [x] Apenas a mutação vencedora altera slots, versão e notificações do atendimento.
+- [x] Snapshot antigo de mensagem não cancela nem programa o lembrete de uma versão mais recente.
+- [x] Claim de envio revalida empresa, assinatura, plano, cota e versão; operações perdedoras preservam os créditos do envio assumido.
+- [x] Validação HTTP reproduzível em Worker/D1/R2 locais: 24 verificações, incluindo vencimento do teste grátis e cancelamento público preservado.
+- [x] Migrações 0001–0010 aplicadas em banco local novo e isolado.
+- [ ] Aplicar migrações 0009 e 0010 no banco remoto autorizado; não implantadas nesta rodada.
+- [ ] Conferir a interface em navegador funcional; download e instalação de navegador bloqueados no ambiente atual.
