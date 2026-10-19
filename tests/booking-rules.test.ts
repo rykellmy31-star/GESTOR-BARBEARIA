@@ -582,9 +582,9 @@ describe("Superadmin: conciliação de WhatsApp sem reenvio", () => {
       { method: "POST", body: JSON.stringify(payload) }, superCookie);
     expect(repeated.status).toBe(409);
     const auditRow = await db.prepare(
-      "SELECT action FROM audit_log WHERE entity='message_job' AND entity_id=?1 AND action='message.resolve.not_sent'"
+      "SELECT action FROM audit_log WHERE entity='message_job' AND entity_id=?1 AND action='message.not_sent_confirmed'"
     ).bind(String(jobId)).first<{ action: string }>();
-    expect(auditRow?.action).toBe("message.resolve.not_sent");
+    expect(auditRow?.action).toBe("message.not_sent_confirmed");
   });
 
   it("exige ID Meta único e cobra uma única vez ao confirmar envio verificado", async () => {
