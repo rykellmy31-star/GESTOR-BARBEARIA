@@ -26,7 +26,7 @@ export function SuperLayout() {
         </div>
         <nav className="mt-6 flex-1 space-y-0.5">
           {links.map((l) => (
-            <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors ${isActive ? "bg-gold-soft font-semibold text-[var(--c-gold)]" : "text-zinc-400 hover:bg-white/5 hover:text-zinc-100"}`}>
+            <NavLink key={l.to} to={l.to} end={l.to === "overview"} className={({ isActive }) => `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors ${isActive ? "bg-gold-soft font-semibold text-[var(--c-gold)]" : "text-zinc-400 hover:bg-white/5 hover:text-zinc-100"}`}>
               <l.icon size={15} /> {l.label}
             </NavLink>
           ))}
@@ -42,7 +42,7 @@ export function SuperLayout() {
       </aside>
       <div className="lg:pl-56">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-2 overflow-x-auto border-b border-[#26262f] bg-[#0a0a0c]/90 px-4 backdrop-blur lg:hidden">
-          {links.map((l) => <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => `whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs ${isActive ? "bg-gold-soft font-semibold text-[var(--c-gold)]" : "text-zinc-400"}`}><l.icon size={13} className="mr-1 inline" />{l.label}</NavLink>)}
+          {links.map((l) => <NavLink key={l.to} to={l.to} end={l.to === "overview"} className={({ isActive }) => `whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs ${isActive ? "bg-gold-soft font-semibold text-[var(--c-gold)]" : "text-zinc-400"}`}><l.icon size={13} className="mr-1 inline" />{l.label}</NavLink>)}
         </header>
         <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6"><Outlet /></main>
       </div>
