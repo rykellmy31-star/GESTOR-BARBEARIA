@@ -132,25 +132,45 @@ export async function releaseJobReservation(db: D1Database, companyId: number, j
 
 /** Captura a cobrança (consume) de um job aceito. Idempotente via captured_at + chave. */
 export async function captureJobCharge(db: D1Database, companyId: number, jobId: number, priceCents: number): Promise<boolean> {
-  const now = nowIso();
-  const gate = await db
-    .prepare(`UPDATE message_jobs SET captured_at = ?1 WHERE id = ?2 AND captured_at IS NULL AND status IN ('sending','sent','delivered','read','failed')`)
-    .bind(now, jobId)
-    .run();
-  if (!gate.meta?.changes) return false;
-  await db.batch([
-    db
-      .prepare(`UPDATE wallets SET balance_cents = balance_cents - ?1, reserved_cents = MAX(0, reserved_cents - ?1), lifetime_charged_cents = lifetime_charged_cents + ?1, updated_at = ?2 WHERE company_id = ?3`)
-      .bind(priceCents, now, companyId),
-    db.prepare(
-      `INSERT OR IGNORE INTO wallet_transactions (company_id, type, amount_cents, balance_after, reserved_after, ref_type, ref_id, idempotency_key, note, created_at)
-       SELECT ?1,'capture',-?2,w.balance_cents,w.reserved_cents,'message_job','job-'||?3,?4,'Mensagem cobrada (aceita no provedor)',?5 FROM wallets w WHERE w.company_id=?1`
-    ).bind(companyId, priceCents, jobId, `capture:job-${jobId}`, now),
-  ]);
-  return true;
+  const job = await db.prepare(
+    `SELECT price_cents, reserved_cents, captured_at, refunded_at, status FROM message_jobs
+     WHERE id=?1 AND company_id=?2`
+  ).bind(jobId, companyId).first<{ price_cents: number; reserved_cents: number; captured_at: string | null; refunded_at: string | null; status: string }>();
+  if (!job || job.captured_at || job.refunded_at ||
+      !["sending", "sent", "delivered", "read", "failed"].includes(job.status) ||
+      job.price_cents !== priceCents || job.reserved_cents < priceCents) return false;
+  await ensureWallet(db, companyId);
+  const now = nowIso(), idem = `capture:job-${jobId}`;
+  try {
+    await db.batch([
+      db.prepare(
+        `INSERT INTO wallet_transactions (company_id,type,amount_cents,balance_after,reserved_after,
+         ref_type,ref_id,idempotency_key,note,created_at)
+         SELECT ?1,'capture',-?2,w.balance_cents,w.reserved_cents,'message_job',?3,?4,
+         'Mensagem cobrada (aceita no provedor)',?5 FROM wallets w WHERE w.company_id=?1`
+      ).bind(companyId, priceCents, `job-${jobId}`, idem, now),
+      db.prepare(
+        `UPDATE wallets SET balance_cents=balance_cents-?1,
+         reserved_cents=reserved_cents-?1,
+         lifetime_charged_cents=lifetime_charged_cents+?1,updated_at=?2 WHERE company_id=?3`
+      ).bind(priceCents, now, companyId),
+      db.prepare(
+        `UPDATE message_jobs SET captured_at=?1,reserved_cents=0,updated_at=?1
+         WHERE id=?2 AND company_id=?3 AND captured_at IS NULL`
+      ).bind(now, jobId, companyId),
+      db.prepare(
+        `UPDATE wallet_transactions SET balance_after=(SELECT balance_cents FROM wallets WHERE company_id=?1),
+         reserved_after=(SELECT reserved_cents FROM wallets WHERE company_id=?1)
+         WHERE company_id=?1 AND idempotency_key=?2`
+      ).bind(companyId, idem),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-/** Estorno pós-cobrança (falha de entrega com política delivered / decisão do super). */
+/** Estorno de mensagem com lançamento imutável e alteração atômica de saldo. */
 export async function refundJobCharge(
   db: D1Database,
   companyId: number,
@@ -159,22 +179,37 @@ export async function refundJobCharge(
   note = "",
   byUserId: number | null = null
 ): Promise<boolean> {
-  const now = nowIso();
-  const gate = await db
-    .prepare(`UPDATE message_jobs SET refunded_at = ?1 WHERE id = ?2 AND captured_at IS NOT NULL AND refunded_at IS NULL`)
-    .bind(now, jobId)
-    .run();
-  if (!gate.meta?.changes) return false;
-  await db.batch([
-    db
-      .prepare(`UPDATE wallets SET balance_cents = balance_cents + ?1, lifetime_charged_cents = MAX(0, lifetime_charged_cents - ?1), updated_at = ?2 WHERE company_id = ?3`)
-      .bind(priceCents, now, companyId),
-    db.prepare(
-      `INSERT OR IGNORE INTO wallet_transactions (company_id, type, amount_cents, balance_after, reserved_after, ref_type, ref_id, idempotency_key, note, created_by, created_at)
-       SELECT ?1,'refund',?2,w.balance_cents,w.reserved_cents,'message_job','job-'||?3,?4,?5,?6,?7 FROM wallets w WHERE w.company_id=?1`
-    ).bind(companyId, priceCents, jobId, `refund:job-${jobId}`, note || "Reembolso de cobrança de mensagem", byUserId, now),
-  ]);
-  return true;
+  const job = await db.prepare(
+    `SELECT price_cents, captured_at, refunded_at FROM message_jobs WHERE id=?1 AND company_id=?2`
+  ).bind(jobId, companyId).first<{ price_cents: number; captured_at: string | null; refunded_at: string | null }>();
+  if (!job || !job.captured_at || job.refunded_at || job.price_cents !== priceCents) return false;
+  const now = nowIso(), idem = `refund:job-${jobId}`;
+  try {
+    await db.batch([
+      db.prepare(
+        `INSERT INTO wallet_transactions (company_id,type,amount_cents,balance_after,reserved_after,
+         ref_type,ref_id,idempotency_key,note,created_by,created_at)
+         SELECT ?1,'refund',?2,w.balance_cents,w.reserved_cents,'message_job',?3,?4,?5,?6,?7
+         FROM wallets w WHERE w.company_id=?1`
+      ).bind(companyId, priceCents, `job-${jobId}`, idem, note || "Reembolso de mensagem", byUserId, now),
+      db.prepare(
+        `UPDATE wallets SET balance_cents=balance_cents+?1,
+         lifetime_charged_cents=MAX(0,lifetime_charged_cents-?1),
+         updated_at=?2 WHERE company_id=?3`
+      ).bind(priceCents, now, companyId),
+      db.prepare(
+        `UPDATE message_jobs SET refunded_at=?1,updated_at=?1 WHERE id=?2 AND company_id=?3 AND refunded_at IS NULL`
+      ).bind(now, jobId, companyId),
+      db.prepare(
+        `UPDATE wallet_transactions SET balance_after=(SELECT balance_cents FROM wallets WHERE company_id=?1),
+         reserved_after=(SELECT reserved_cents FROM wallets WHERE company_id=?1)
+         WHERE company_id=?1 AND idempotency_key=?2`
+      ).bind(companyId, idem),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
