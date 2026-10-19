@@ -27,6 +27,8 @@ try {
 
 // O build executa tsc -b, validando app, API, testes e configuração Node uma vez.
 run(npm,["run","build"]);
+if (!readFileSync(join(root,"dist/index.html"),"utf8").includes('<meta name="referrer" content="no-referrer"'))
+  throw new Error("Política de privacidade do referrer ausente do HTML compilado.");
 const assets = join(root,"dist/assets");
 const compiled = readdirSync(assets).filter(f=>f.endsWith(".js"))
   .map(f=>readFileSync(join(assets,f),"utf8")).join("\n");

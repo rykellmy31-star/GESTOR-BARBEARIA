@@ -44,18 +44,30 @@ try {
   }
   check("Worker local com D1/R2 e pagamentos reais bloqueados",health?.ok&&health.d1&&health.r2&&health.staging&&!health.payments.mercadopago&&!health.payments.mock);
   function client(){let cookie="";return async(method,path,body)=>{
-    const response=await fetch(base+path,{method,redirect:"manual",signal:AbortSignal.timeout(10000),headers:{"content-type":"application/json",origin:base,...(cookie?{cookie}:{})},body:body===undefined?undefined:JSON.stringify(body)});
+    const multipart=body instanceof FormData;
+    const response=await fetch(base+path,{method,redirect:"manual",signal:AbortSignal.timeout(10000),headers:{...(multipart?{}:{"content-type":"application/json"}),origin:base,...(cookie?{cookie}:{})},body:body===undefined?undefined:multipart?body:JSON.stringify(body)});
     const set=response.headers.getSetCookie();if(set.length)cookie=set.map(value=>value.split(";")[0]).join("; ");
     const text=await response.text();let data;try{data=JSON.parse(text);}catch{data=text;}
-    return {status:response.status,data};
+    return {status:response.status,data,headers:response.headers};
   };}
   const visitor=client(),owner=client(),other=client(),superadmin=client();
   const home=await visitor("GET","/");check("HTML de vendas servido pelo build local",home.status===200&&typeof home.data==="string"&&home.data.includes('id="root"'));
+  check("Página não envia endereço de navegação como referrer",home.data.includes('<meta name="referrer" content="no-referrer"'));
   const password=`Teste!${randomBytes(12).toString("hex")}`,email="owner@local-e2e.test";
   const signup=await owner("POST","/api/auth/register",{company_name:"Barbearia Local E2E",name:"Dono local",email,password});
   check("Cadastro cria empresa e sessão",signup.status===201&&!!signup.data.company?.slug);
   const slug=signup.data.company.slug,c=`/api/c/${slug}`;
   const billing=await owner("GET",c+"/billing/status"),sub=billing.data.subscription;
+  const session=await owner("GET","/api/auth/me");
+  check("Cadastro, sessão e cobrança não permitem armazenamento em cache",[signup,session,billing].every(result=>result.headers.get("cache-control")==="no-store"&&result.headers.get("x-content-type-options")==="nosniff"));
+  const image=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9uoAAAAASUVORK5CYII=","base64");
+  const photo=new FormData();photo.append("file",new Blob([image],{type:"image/png"}),"foto.png");
+  const uploaded=await owner("POST",c+"/admin/upload",photo);
+  assert.equal(uploaded.status,201,"Upload PNG local deve funcionar");
+  const served=await fetch(base+uploaded.data.url,{signal:AbortSignal.timeout(10000)});
+  check("Foto percorre HTTP, R2 local e retorno protegido",served.status===200&&served.headers.get("content-type")==="image/png"&&served.headers.get("x-content-type-options")==="nosniff"&&image.equals(Buffer.from(await served.arrayBuffer())));
+  const fakePhoto=new FormData();fakePhoto.append("file",new Blob(["<script>alert(1)</script>"],{type:"image/png"}),"foto.png");
+  check("Foto com tipo falsificado é recusada por HTTP",(await owner("POST",c+"/admin/upload",fakePhoto)).status===415);
   check("Teste grátis com duração exata de quinze dias",billing.status===200&&sub.status==="trial"&&Date.parse(sub.period_end)-Date.parse(sub.started_at)===15*86400000);
   check("Pix real continua indisponível",(await owner("POST",c+"/billing/pix",{plan_code:"free"})).status===503);
   const second=await other("POST","/api/auth/register",{company_name:"Segunda Local E2E",name:"Outro dono",email:"other@local-e2e.test",password});

@@ -36,9 +36,18 @@ const app = new Hono<{ Bindings: Env }>();
 app.onError((e, c) => {
   const msg = e instanceof Error ? e.message : String(e);
   console.error(`[api-error] ${c.req.method} ${c.req.path}:`, msg, (e as Error).stack ?? "");
-  return c.json({ error: "Erro interno. Migrations aplicadas? (npm run db:migrate:local)", detail: c.env.APP_ENV !== "production" ? msg : undefined }, 500);
+  return c.json({ error: c.env.APP_ENV === "production" ? "Não foi possível concluir a solicitação. Tente novamente em instantes." : "Erro interno. Migrations aplicadas? (npm run db:migrate:local)", detail: c.env.APP_ENV !== "production" ? msg : undefined }, 500);
 });
 app.notFound((c) => c.json({ error: "Rota não encontrada", path: c.req.path }, 404));
+
+// Respostas da API podem conter sessões, clientes e informações financeiras.
+// Aplica também a retornos antecipados de autenticação, CSRF e falhas internas.
+app.use("/api/*", async (c, next) => {
+  c.header("Cache-Control", "no-store");
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("Referrer-Policy", "no-referrer");
+  await next();
+});
 
 app.get("/api/health", (c) =>
   c.json({
