@@ -1358,3 +1358,119 @@ describe("Tigu Start R$ 19,99 e teste grátis por 15 dias", () => {
     expect(canOperateSubscription({plan_code:"free",status:"cancelled",period_end:null},now)).toBe(false);
   });
 });
+
+
+describe("Assinaturas Pix mensais via Mercado Pago", () => {
+  async function newOwner() {
+    const email="owner-pix-"+crypto.randomUUID()+"@teste.com";
+    const response=await api("/api/auth/register",{method:"POST",body:JSON.stringify({
+      company_name:"Barbearia Pix "+crypto.randomUUID().slice(0,6),name:"Dona Pix",email,password:PW
+    })});
+    expect(response.status).toBe(201);
+    return {cookie:response.cookie!,slug:response.body.company.slug,email};
+  }
+  const billingEnv=():Env=>({...env,DB:db,APP_ENV:"development",TIGU_STAGING:"0",
+    PAYMENTS_MOCK:"0",MP_ACCESS_TOKEN:"TOKEN_FICTICIO",MP_WEBHOOK_SECRET:"WH_FAKE",
+    PUBLIC_URL:"https://tigu.example.test"} as Env);
+  const request=(envOverride:Env,path:string,cookie:string,method="GET",body:object={})=>
+    app.request(path,{method,headers:{"content-type":"application/json",cookie},
+      ...(method==="GET"?{}:{body:JSON.stringify(body)})},envOverride);
+  it("gera Pix do Start e só libera após aprovação real reconsultada, sem duplicar meses",async()=>{
+    const owner=await newOwner(),e=billingEnv();
+    const url="/api/c/"+owner.slug+"/billing";
+    await db.prepare("UPDATE subscriptions SET period_end=?1 WHERE company_id=(SELECT id FROM companies WHERE slug=?2)")
+      .bind(new Date(Date.now()-60_000).toISOString().replace(/\\.\\d{3}Z$/,"Z"),owner.slug).run();
+    let code="",paymentCalls=0,statusCalls=0;
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async (input,init)=>{
+      const endpoint=String(input);
+      if(endpoint.endsWith("/v1/payments")&&init?.method==="POST"){
+        paymentCalls++;
+        const data=JSON.parse(String(init.body));
+        code=data.external_reference;
+        expect(data.payment_method_id).toBe("pix");
+        expect(data.transaction_amount).toBe(19.99);
+        return new Response(JSON.stringify({
+          id:778899,point_of_interaction:{transaction_data:{qr_code:"pix-copia-cola-teste"}}
+        }),{status:201,headers:{"content-type":"application/json"}});
+      }
+      if(endpoint.endsWith("/v1/payments/778899")){
+        statusCalls++;
+        return new Response(JSON.stringify({
+          id:778899,status:"approved",external_reference:code,transaction_amount:19.99,
+          payment_method_id:"pix",currency_id:"BRL"
+        }),{status:200,headers:{"content-type":"application/json"}});
+      }
+      throw new Error("Rede externa inesperada: "+endpoint);
+    });
+    try {
+      const first=await request(e,url+"/pix",owner.cookie,"POST");
+      expect(first.status).toBe(200);
+      const invoice:any=await first.json();
+      expect(invoice.invoice.qr_code_text).toBe("pix-copia-cola-teste");
+      expect(invoice.invoice.amount_cents).toBe(1999);
+      const repeat=await request(e,url+"/pix",owner.cookie,"POST");
+      expect((await repeat.json() as any).invoice.id).toBe(invoice.invoice.id);
+      expect(paymentCalls).toBe(1);
+      const before=await db.prepare("SELECT status,period_end FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(owner.slug).first<any>();
+      expect(before.status).toBe("trial");
+      const verify=await request(e,url+"/pix/verify",owner.cookie,"POST",{invoice_id:invoice.invoice.id});
+      expect(verify.status).toBe(200);
+      expect((await verify.json() as any).activated).toBe(true);
+      const after=await db.prepare("SELECT status,period_end FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(owner.slug).first<any>();
+      expect(after.status).toBe("active");
+      expect(new Date(after.period_end).getTime()).toBeGreaterThan(Date.now()+25*86_400_000);
+      const repeatVerify=await request(e,url+"/pix/verify",owner.cookie,"POST",{invoice_id:invoice.invoice.id});
+      expect(repeatVerify.status).toBe(200);
+      expect((await repeatVerify.json() as any).activated).toBe(false);
+      const same=await db.prepare("SELECT period_end FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(owner.slug).first<any>();
+      expect(same.period_end).toBe(after.period_end);
+      expect(statusCalls).toBe(1);
+      const wallet=await db.prepare("SELECT balance_cents FROM wallets WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(owner.slug).first<any>();
+      expect(wallet.balance_cents).toBe(0);
+    } finally {fetchMock.mockRestore();}
+  });
+
+  it("não ativa assinatura por Pix com valor ou método divergente",async()=>{
+    const owner=await newOwner(),e=billingEnv(),url="/api/c/"+owner.slug+"/billing";
+    let code="";
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(input,init)=>{
+      if(String(input).endsWith("/v1/payments")&&init?.method==="POST"){
+        code=JSON.parse(String(init.body)).external_reference;
+        return new Response(JSON.stringify({id:998877,
+          point_of_interaction:{transaction_data:{qr_code:"pix-teste"}}}),{status:201});
+      }
+      return new Response(JSON.stringify({id:998877,status:"approved",external_reference:code,
+        payment_method_id:"credit_card",currency_id:"BRL",transaction_amount:19.99}),{status:200});
+    });
+    try {
+      const created=await request(e,url+"/pix",owner.cookie,"POST");
+      expect(created.status).toBe(200);
+      const invoice:any=(await created.json()).invoice;
+      const response=await request(e,url+"/pix/verify",owner.cookie,"POST",{invoice_id:invoice.id});
+      expect(response.status).toBe(409);
+      const sub=await db.prepare("SELECT status FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(owner.slug).first<any>();
+      expect(sub.status).toBe("trial");
+      const dbInvoice=await db.prepare("SELECT status FROM subscription_invoices WHERE id=?1")
+        .bind(invoice.id).first<any>();
+      expect(dbInvoice.status).toBe("pending");
+    } finally {fetchMock.mockRestore();}
+  });
+
+  it("impede QR real em homologação e não permite faturar empresa de outro dono",async()=>{
+    const a=await newOwner(),b=await newOwner();
+    const e=billingEnv(),st={...e,TIGU_STAGING:"1",APP_ENV:"production"} as Env;
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("rede proibida"));
+    try {
+      const blocked=await request(st,"/api/c/"+a.slug+"/billing/pix",a.cookie,"POST");
+      expect(blocked.status).toBe(503);
+      const forbidden=await request(e,"/api/c/"+b.slug+"/billing/pix",a.cookie,"POST");
+      expect(forbidden.status).toBe(403);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {fetchMock.mockRestore();}
+  });
+});
