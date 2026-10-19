@@ -43,5 +43,7 @@ jobs:
           grep -R -q 'Carlos Rykellmy Santos Correia' dist/assets
           grep -R -q 'Filtrar agendamentos por barbeiro' dist/assets
           grep -R -q 'Profissional:' dist/assets
+          grep -R -q 'Prévia sem API conectada' dist/assets
+          grep -R -q 'Planos e valores da página de vendas' dist/assets
       - name: Rodar testes
         run: npm test
