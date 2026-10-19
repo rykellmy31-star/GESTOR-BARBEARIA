@@ -1494,4 +1494,83 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {fetchMock.mockRestore();}
   });
+  it("permite escolher o Pro ao terminar o teste e muda recursos só após Pix aprovado",async()=>{
+    const owner=await newOwner(),e=billingEnv(),url="/api/c/"+owner.slug+"/billing";
+    const expires=new Date(Date.now()-60_000).toISOString().replace(/\.\d{3}Z$/,"Z");
+    await db.prepare("UPDATE subscriptions SET period_end=?1 WHERE company_id=(SELECT id FROM companies WHERE slug=?2)")
+      .bind(expires,owner.slug).run();
+    let code="";
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(input,init)=>{
+      if(String(input).endsWith("/v1/payments")&&init?.method==="POST"){
+        const data=JSON.parse(String(init.body));
+        expect(data.transaction_amount).toBe(49.90);
+        code=data.external_reference;
+        return new Response(JSON.stringify({id:345670,point_of_interaction:{transaction_data:{qr_code:"PIX-PRO"}}}),{status:201});
+      }
+      return new Response(JSON.stringify({
+        id:345670,status:"approved",external_reference:code,payment_method_id:"pix",
+        currency_id:"BRL",transaction_amount:49.90
+      }),{status:200});
+    });
+    try{
+      const created=await request(e,url+"/pix",owner.cookie,"POST",{plan_code:"pro"});
+      expect(created.status).toBe(200);
+      const invoice:any=(await created.json() as any).invoice;
+      expect(invoice.plan_code).toBe("pro");
+      expect(invoice.amount_cents).toBe(4990);
+      const before=await db.prepare("SELECT plan_code,status FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(owner.slug).first<any>();
+      expect(before.plan_code).toBe("free");
+      const verify=await request(e,url+"/pix/verify",owner.cookie,"POST",{invoice_id:invoice.id});
+      expect(verify.status).toBe(200);
+      const after=await db.prepare("SELECT plan_code,status FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(owner.slug).first<any>();
+      expect(after).toMatchObject({plan_code:"pro",status:"active"});
+      const company=await db.prepare("SELECT plan_code FROM companies WHERE slug=?1").bind(owner.slug).first<any>();
+      expect(company.plan_code).toBe("pro");
+    }finally{fetchMock.mockRestore();}
+  });
+
+  it("upgrade Pro para Scale mantém dias restantes e acrescenta mês sem duplicar confirmação",async()=>{
+    const owner=await newOwner(),e=billingEnv(),url="/api/c/"+owner.slug+"/billing";
+    const company=await db.prepare("SELECT id FROM companies WHERE slug=?1").bind(owner.slug).first<{id:number}>();
+    const oldEnd=new Date(Date.now()+10*86400000).toISOString().replace(/\.\d{3}Z$/,"Z");
+    await db.prepare("UPDATE subscriptions SET plan_code='pro',status='active',period_end=?1 WHERE company_id=?2")
+      .bind(oldEnd,company!.id).run();
+    let code="";
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(input,init)=>{
+      if(String(input).endsWith("/v1/payments")&&init?.method==="POST"){
+        const data=JSON.parse(String(init.body)); code=data.external_reference;
+        expect(data.transaction_amount).toBe(129.90);
+        return new Response(JSON.stringify({id:678912,point_of_interaction:{transaction_data:{qr_code:"PIX-SCALE"}}}),{status:201});
+      }
+      return new Response(JSON.stringify({id:678912,status:"approved",external_reference:code,
+        payment_method_id:"pix",currency_id:"BRL",transaction_amount:129.90}),{status:200});
+    });
+    try{
+      const downgrade=await request(e,url+"/pix",owner.cookie,"POST",{plan_code:"free"});
+      expect(downgrade.status).toBe(422);
+      const created=await request(e,url+"/pix",owner.cookie,"POST",{plan_code:"scale"});
+      expect(created.status).toBe(200);
+      const invoice:any=(await created.json() as any).invoice;
+      const conflict=await request(e,url+"/pix",owner.cookie,"POST",{plan_code:"pro"});
+      expect(conflict.status).toBe(409);
+      const before=await db.prepare("SELECT plan_code FROM subscriptions WHERE company_id=?1")
+        .bind(company!.id).first<any>();
+      expect(before.plan_code).toBe("pro");
+      const confirmed=await request(e,url+"/pix/verify",owner.cookie,"POST",{invoice_id:invoice.id});
+      expect(confirmed.status).toBe(200);
+      expect((await confirmed.json() as any).activated).toBe(true);
+      const after=await db.prepare("SELECT plan_code,period_end FROM subscriptions WHERE company_id=?1")
+        .bind(company!.id).first<any>();
+      expect(after.plan_code).toBe("scale");
+      expect(new Date(after.period_end).getTime()).toBeGreaterThan(new Date(oldEnd).getTime()+27*86400000);
+      const repeated=await request(e,url+"/pix/verify",owner.cookie,"POST",{invoice_id:invoice.id});
+      expect((await repeated.json() as any).activated).toBe(false);
+      const again=await db.prepare("SELECT period_end FROM subscriptions WHERE company_id=?1")
+        .bind(company!.id).first<any>();
+      expect(again.period_end).toBe(after.period_end);
+    }finally{fetchMock.mockRestore();}
+  });
+
 });
