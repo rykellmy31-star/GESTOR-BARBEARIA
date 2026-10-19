@@ -16,6 +16,7 @@ import schema0001 from "../migrations/0001_init.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
+import { manualAdjustment, creditTopup, reserveForJob, releaseJobReservation, captureJobCharge, refundJobCharge, getWallet } from "../api/lib/wallet";
 
 const db = env.DB as unknown as D1Database;
 
@@ -182,5 +183,68 @@ describe("RBAC multi-tenant", () => {
   });
   it("super não autenticado → 401", async () => {
     expect((await api("/api/super/overview")).status).toBe(401);
+  });
+});
+
+describe("carteira do Tigu: operações e cobrança sem duplicidade", () => {
+  it("ajuste e Pix repetidos não criam saldo extra; reserva, captura, estorno e liberação preservam o extrato", async () => {
+    const companyId = 1;
+    const userId = 1;
+    const initial = (await getWallet(db, companyId))!;
+    const key = `financial-regression-${Date.now()}`;
+    const justification = "Teste automatizado de conciliacao financeira";
+
+    expect((await manualAdjustment(db, companyId, 5000, justification, userId, key)).ok).toBe(true);
+    expect((await manualAdjustment(db, companyId, 5000, justification, userId, key)).ok).toBe(false);
+    expect((await getWallet(db, companyId))!.balance_cents).toBe(initial.balance_cents + 5000);
+
+    const insertedTopup = await db.prepare(
+      `INSERT INTO topup_orders (company_id, code, amount_cents, status, provider)
+       VALUES (?1, ?2, 3000, 'pending', 'mock')`
+    ).bind(companyId, `TEST-${key}`).run();
+    const topupId = insertedTopup.meta.last_row_id as number;
+    expect(await creditTopup(db, companyId, 3000, topupId)).toBe(true);
+    expect(await creditTopup(db, companyId, 3000, topupId)).toBe(false);
+    expect(await creditTopup(db, companyId, 9000, topupId)).toBe(false);
+    expect((await getWallet(db, companyId))!.balance_cents).toBe(initial.balance_cents + 8000);
+
+    const makeJob = async (suffix: string, cents: number): Promise<number> => {
+      const date = new Date().toISOString();
+      const ins = await db.prepare(
+        `INSERT INTO message_jobs
+         (company_id,kind,to_phone,template_code,language,status,scheduled_at,fire_deadline,price_cents,idempotency_key)
+         VALUES (?1,'test','5573999999999','tigu_test','pt_BR','scheduled',?2,?2,?3,?4)`
+      ).bind(companyId, date, cents, `${key}-${suffix}`).run();
+      return ins.meta.last_row_id as number;
+    };
+
+    const jobId = await makeJob("capture", 10);
+    expect((await reserveForJob(db, companyId, jobId, 10, false)).ok).toBe(true);
+    expect((await reserveForJob(db, companyId, jobId, 10, false)).ok).toBe(true);
+    expect((await getWallet(db, companyId))!.reserved_cents).toBe(initial.reserved_cents + 10);
+    await db.prepare("UPDATE message_jobs SET status='sent' WHERE id=?1").bind(jobId).run();
+    expect(await captureJobCharge(db, companyId, jobId, 10)).toBe(true);
+    expect(await captureJobCharge(db, companyId, jobId, 10)).toBe(false);
+    expect((await getWallet(db, companyId))!.reserved_cents).toBe(initial.reserved_cents);
+    expect((await getWallet(db, companyId))!.balance_cents).toBe(initial.balance_cents + 7990);
+    expect(await refundJobCharge(db, companyId, jobId, 10)).toBe(true);
+    expect(await refundJobCharge(db, companyId, jobId, 10)).toBe(false);
+    expect((await getWallet(db, companyId))!.balance_cents).toBe(initial.balance_cents + 8000);
+
+    const secondJobId = await makeJob("cancel", 150);
+    expect((await reserveForJob(db, companyId, secondJobId, 150, false)).ok).toBe(true);
+    await db.prepare("UPDATE message_jobs SET status='cancelled' WHERE id=?1").bind(secondJobId).run();
+    expect(await releaseJobReservation(db, companyId, secondJobId, 150)).toBe(true);
+    expect(await releaseJobReservation(db, companyId, secondJobId, 150)).toBe(false);
+    expect((await getWallet(db, companyId))!.reserved_cents).toBe(initial.reserved_cents);
+    expect((await getWallet(db, companyId))!.balance_cents).toBe(initial.balance_cents + 8000);
+
+    const last = await db.prepare(
+      `SELECT COUNT(*) AS n FROM wallet_transactions WHERE idempotency_key IN
+       (?1,?2,?3,?4,?5,?6,?7)`
+    ).bind(`adjust:${key}`, `topup:${topupId}`,
+      `reserve:job-${jobId}`, `capture:job-${jobId}`, `refund:job-${jobId}`,
+      `reserve:job-${secondJobId}`, `release:job-${secondJobId}`).first<{ n: number }>();
+    expect(last?.n).toBe(7);
   });
 });
