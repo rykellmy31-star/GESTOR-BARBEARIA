@@ -19,7 +19,11 @@ export function LoginPage() {
     try {
       const res = await login.mutateAsync({ email, password });
       toast.push("ok", `Bem-vindo, ${res.user.name.split(" ")[0]}!`);
-      navigate(params.get("next") || res.next || "/selecionar", { replace: true });
+      // Não permitir URL externa, nem contornar troca de senha obrigatória.
+      const requestedNext = params.get("next") || "";
+      const safeNext = /^\/(?:superadmin|selecionar|c\/[a-z0-9-]+\/(?:admin|painel))(?:\/|$)/.test(requestedNext)
+        ? requestedNext : "";
+      navigate(res.user.must_change_password ? "/alterar-senha" : (safeNext || res.next || "/selecionar"), { replace: true });
     } catch (e2: any) {
       setErr(e2.message || "Falha na autenticação");
     }
