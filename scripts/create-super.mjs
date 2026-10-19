@@ -11,6 +11,8 @@ import { randomBytes, pbkdf2Sync } from "node:crypto";
 const argv = process.argv.slice(2);
 const arg = (n) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : undefined; };
 const remote = argv.includes("--remote");
+const database = arg("database") || "tigu-db";
+const config = arg("config");
 const email = (arg("email") || "super@tigu.app").toLowerCase();
 const name = arg("name") || "Equipe Tigu";
 let password = arg("password");
@@ -29,5 +31,5 @@ INSERT INTO users (platform_role, name, email, password_hash, active, created_at
 VALUES ('superadmin', ${q(name)}, ${q(email)}, ${q(stored)}, 1, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 ON CONFLICT(email) DO UPDATE SET platform_role='superadmin', active=1, password_hash=excluded.password_hash, must_change_password=0;
 `;
-execFileSync("npx", ["wrangler", "d1", "execute", "tigu-db", remote ? "--remote" : "--local", "--command", sql.trim()], { stdio: "inherit" });
+execFileSync("npx", ["wrangler", "d1", "execute", database, remote ? "--remote" : "--local", "--command", sql.trim(), ...(config ? ["--config", config] : [])], { stdio: "inherit" });
 console.log(`\n✔ superadmin ${email}\n  senha: ${password}\n  (guarde agora — não é recuperável; redefina rodando o script de novo)`);
