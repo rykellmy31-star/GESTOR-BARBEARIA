@@ -15,6 +15,7 @@ import { audit } from "../lib/audit";
 import { hashPassword } from "../lib/crypto";
 import { changeOrderStatus } from "../lib/orders";
 import { resolveBlockRequest } from "../lib/block-requests";
+import { barberCapacitySql } from "../lib/barber-capacity";
 import { getWallet, manualAdjustment } from "../lib/wallet";
 import { createTopup, confirmTopupFromProvider } from "../lib/topup";
 import { getConnection, sendImmediate, resolvePricing, processDueJobs } from "../lib/messaging/jobs";
@@ -345,12 +346,13 @@ adminRouter.post("/barbers", async (c) => {
   const db = P(c); const id = cid(c);
   if (!(await companyOwnsIds(db,"services",id,parsed.data.service_ids))) return err(c,"Serviço inválido para esta empresa",422);
   const limit = await planLimit(db, id, "max_barbers");
-  if (limit >= 0) {
+  if (parsed.data.active && limit >= 0) {
     const count = await db.prepare(`SELECT COUNT(*) n FROM barbers WHERE company_id=?1 AND active=1`).bind(id).first<{ n: number }>();
     if ((count?.n ?? 0) >= limit) return err(c, `Seu plano permite ${limit} barbeiros ativos. Faça upgrade no Tigu para mais vagas.`, 402);
   }
   const slug = await uniqueSlug(db, "barbers", slugify(parsed.data.name));
-  const ins = await db.prepare(`INSERT INTO barbers (company_id, slug, name, specialty, bio, photo, work_days, work_start, work_end, break_start, break_end, active, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)`).bind(id, slug, parsed.data.name.trim(), parsed.data.specialty, parsed.data.bio, parsed.data.photo, JSON.stringify(parsed.data.work_days), parsed.data.work_start, parsed.data.work_end, parsed.data.break_start, parsed.data.break_end, parsed.data.active ? 1 : 0, nowIso()).run();
+  const ins = await db.prepare(`INSERT INTO barbers (company_id, slug, name, specialty, bio, photo, work_days, work_start, work_end, break_start, break_end, active, created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13 WHERE ?12=0 OR ${barberCapacitySql("?1")}`).bind(id, slug, parsed.data.name.trim(), parsed.data.specialty, parsed.data.bio, parsed.data.photo, JSON.stringify(parsed.data.work_days), parsed.data.work_start, parsed.data.work_end, parsed.data.break_start, parsed.data.break_end, parsed.data.active ? 1 : 0, nowIso()).run();
+  if (ins.meta.changes!==1) return err(c,"O limite de profissionais ativos do plano foi atingido. Atualize a equipe.",402);
   const barberId = ins.meta.last_row_id as number;
   await syncBarberServices(db, id, barberId, parsed.data.service_ids);
   return json(c, { ok: true, id: barberId, slug });
@@ -392,7 +394,12 @@ adminRouter.put("/barbers/:id", async (c) => {
   for (const [k, col] of Object.entries(map)) if (k in d) { sets.push(`${col} = ?`); binds.push(String(d[k])); }
   if ("work_days" in d) { sets.push("work_days = ?"); binds.push(JSON.stringify(d.work_days)); }
   if ("active" in d) { sets.push("active = ?"); binds.push(d.active ? 1 : 0); }
-  if (sets.length) await db.prepare(`UPDATE barbers SET ${sets.join(", ")} WHERE id = ? AND company_id = ?`).bind(...binds, b.id, id).run();
+  if (sets.length) {
+    const updated=await db.prepare(`UPDATE barbers SET ${sets.join(", ")} WHERE id=? AND company_id=?
+      AND (?=0 OR active=1 OR ${barberCapacitySql("barbers.company_id")})`)
+      .bind(...binds,b.id,id,d.active===true?1:0).run();
+    if (updated.meta.changes!==1) return err(c,"O limite de profissionais ativos do plano foi atingido.",402);
+  }
   if ("service_ids" in d) await syncBarberServices(db, id, b.id, (d.service_ids as number[]) ?? []);
   return json(c, { ok: true });
 });
