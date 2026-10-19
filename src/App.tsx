@@ -16,6 +16,7 @@ import { SettingsPage } from "./pages/admin/SettingsPage";
 import { DemoPage } from "./pages/admin/DemoPage";
 import { TeamPage } from "./pages/admin/TeamPage";
 import { WalletPage } from "./pages/admin/WalletPage";
+import { SubscriptionBillingPage } from "./pages/admin/SubscriptionBillingPage";
 import { MessagesPage } from "./pages/admin/MessagesPage";
 import { BarberPanelPage } from "./pages/barber/BarberPanelPage";
 import { LoginPage } from "./pages/auth/LoginPage";
@@ -117,6 +118,7 @@ export default function App() {
         <Route path="clientes" element={<CustomersPage />} />
         <Route path="mensagens" element={<MessagesPage />} />
         <Route path="carteira" element={<WalletPage />} />
+        <Route path="assinatura" element={<SubscriptionBillingPage />} />
         <Route path="configuracoes" element={<SettingsPage />} />
         <Route path="demonstracao" element={<DemoPage />} />
       </Route>
