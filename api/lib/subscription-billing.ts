@@ -143,6 +143,11 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
   if (!["pending","expired"].includes(inv.status)) return {ok:false,status:inv.status,activated:false};
   const payment=await mpProvider(env).getPaymentStatus(providerId);
   if (payment.status!=="approved") {
+    // Falha de consulta não é confirmação de recusa nem de expiração.
+    // Preserve a fatura aberta para conciliação segura.
+    if (payment.status==="error" || payment.status==="not_found")
+      return {ok:false,status:"gateway_unavailable",activated:false,
+        message:"Não foi possível verificar o pagamento no Mercado Pago."};
     if (["cancelled","rejected","expired"].includes(payment.status)) {
       await db.prepare("UPDATE subscription_invoices SET status=?1,updated_at=?2 WHERE id=?3 AND status='pending'")
         .bind(payment.status==="expired"?"expired":"failed",nowIso(),inv.id).run();
