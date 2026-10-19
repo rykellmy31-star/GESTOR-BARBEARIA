@@ -45,6 +45,10 @@ app.get("/api/health", (c) =>
     d1: Boolean(c.env.DB),
     r2: Boolean(c.env.MEDIA),
     staging: c.env.TIGU_STAGING === "1",
+    security: {
+      session_secret_ready: Boolean(c.env.SESSION_SECRET && c.env.SESSION_SECRET.length >= 32),
+      encryption_key_ready: Boolean(c.env.MSG_ENC_KEY && c.env.MSG_ENC_KEY.length >= 32),
+    },
     whatsapp: { embedded: Boolean(c.env.WHATSAPP_APP_ID && c.env.WHATSAPP_EMBEDDED_CONFIG_ID), mock: c.env.WHATSAPP_MOCK === "1" },
     payments: { mercadopago: Boolean(c.env.MP_ACCESS_TOKEN), mock: c.env.PAYMENTS_MOCK === "1" },
   })
