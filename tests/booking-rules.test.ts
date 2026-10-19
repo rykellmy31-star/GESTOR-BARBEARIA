@@ -25,6 +25,7 @@ import { app } from "../api/index";
 import { encryptSecret } from "../api/lib/crypto";
 import { loadCompanySettings } from "../api/lib/settings";
 import { resolveApiUrl } from "../api/lib/url";
+import { purgeExpiredSalesLeads, purgeOldSalesRateLimits, getSalesRetentionDays } from "../api/lib/sales-leads";
 import { reconcilePendingTopups } from "../api/lib/topup";
 import { manualAdjustment, creditTopup, reserveForJob, releaseJobReservation, captureJobCharge, refundJobCharge, getWallet, resolveUncertainNotSent } from "../api/lib/wallet";
 
@@ -1193,5 +1194,92 @@ describe("Prontidão de autenticação em homologação", () => {
     expect(response.headers.get("set-cookie")).toBeNull();
     const result = await response.json() as any;
     expect(result.detail).toBeUndefined();
+  });
+});
+
+
+describe("Privacidade e retenção de dados de interessados", () => {
+  async function createSuper() {
+    const email = "super-privacidade-" + crypto.randomUUID() + "@tigu.test";
+    await db.prepare("INSERT INTO users (platform_role,name,email,password_hash,active,created_at) VALUES ('superadmin','Gestor Privacidade',?1,?2,1,?3)")
+      .bind(email, await hashPassword(PW), new Date().toISOString()).run();
+    const login = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password: PW }) });
+    expect(login.status).toBe(200);
+    return login.cookie!;
+  }
+  async function createLead(email: string) {
+    const response = await api("/api/marketing/leads", {
+      method: "POST",
+      body: JSON.stringify({ contact_name: "Teste Privacidade", company_name: "Barbearia Retenção",
+        email, phone: "5573998998899", plan_code: "pro", message: "Dúvidas",
+        consent: true, website: "" }),
+    });
+    expect(response.status).toBe(201);
+    return Number(response.body.reference);
+  }
+
+  it("publica apenas o prazo e impede edição/exclusão por usuários comuns", async () => {
+    expect(await getSalesRetentionDays(db)).toBe(180);
+    const privacy = await api("/api/marketing/privacy");
+    expect(privacy.status).toBe(200);
+    expect(privacy.body).toEqual({ retention_days: 180, purpose: "commercial_inquiry" });
+    expect((await api("/api/super/leads/privacy")).status).toBe(401);
+    expect((await api("/api/super/leads/privacy", {}, cookieA)).status).toBe(403);
+    expect((await api("/api/super/leads/privacy", { method: "PUT", body: JSON.stringify({ days: 30 }) }, cookieA)).status).toBe(403);
+    expect((await api("/api/super/leads/privacy/cleanup", { method: "POST", body: "{}" }, cookieA)).status).toBe(403);
+    expect((await api("/api/super/leads/999999", { method: "DELETE", body: JSON.stringify({ reason: "privacy_request" }) }, cookieA)).status).toBe(403);
+  });
+
+  it("exclui apenas registros vencidos e mantém recentes", async () => {
+    const admin = await createSuper();
+    const previous = await getSalesRetentionDays(db);
+    expect((await api("/api/super/leads/privacy", { method: "PUT", body: JSON.stringify({ days: 17 }) }, admin)).status).toBe(422);
+    expect((await api("/api/super/leads/privacy", { method: "PUT", body: JSON.stringify({ days: 30 }) }, admin)).status).toBe(200);
+    const oldId = await createLead("antigo-" + crypto.randomUUID() + "@tigu.test");
+    const recentId = await createLead("recente-" + crypto.randomUUID() + "@tigu.test");
+    const tooOld = new Date(Date.now() - 32 * 86_400_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    await db.prepare("UPDATE sales_leads SET created_at=?1 WHERE id=?2").bind(tooOld, oldId).run();
+
+    try {
+      const manual = await api("/api/super/leads/privacy/cleanup", { method: "POST", body: "{}" }, admin);
+      expect(manual.status).toBe(200);
+      expect(manual.body.removed).toBeGreaterThanOrEqual(1);
+      expect(await db.prepare("SELECT id FROM sales_leads WHERE id=?1").bind(oldId).first()).toBeNull();
+      expect(await db.prepare("SELECT id FROM sales_leads WHERE id=?1").bind(recentId).first()).not.toBeNull();
+      expect((await api("/api/marketing/privacy")).body.retention_days).toBe(30);
+      const auditRow = await db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='sales_leads.cleanup'")
+        .first<{ n: number }>();
+      expect(auditRow?.n).toBeGreaterThan(0);
+    } finally {
+      await api("/api/super/leads/privacy", { method: "PUT", body: JSON.stringify({ days: previous }) }, admin);
+    }
+  });
+
+  it("exclusão individual exige justificativa e não conserva dados pessoais na auditoria", async () => {
+    const admin = await createSuper();
+    const email = "excluir-" + crypto.randomUUID() + "@tigu.test";
+    const id = await createLead(email);
+    expect((await api("/api/super/leads/" + id, { method: "DELETE", body: JSON.stringify({ reason: "qualquer" }) }, admin)).status).toBe(422);
+    const deleted = await api("/api/super/leads/" + id, { method: "DELETE", body: JSON.stringify({ reason: "privacy_request" }) }, admin);
+    expect(deleted.status).toBe(200);
+    expect(await db.prepare("SELECT id FROM sales_leads WHERE id=?1").bind(id).first()).toBeNull();
+    expect((await api("/api/super/leads/" + id, { method: "DELETE", body: JSON.stringify({ reason: "privacy_request" }) }, admin)).status).toBe(404);
+    const auditRow = await db.prepare("SELECT meta FROM audit_log WHERE action='sales_lead.delete' AND entity_id=?1 ORDER BY id DESC LIMIT 1")
+      .bind(String(id)).first<{ meta: string }>();
+    expect(auditRow).not.toBeNull();
+    expect(JSON.stringify(auditRow)).not.toContain(email);
+    expect(auditRow?.meta).toContain("privacy_request");
+  });
+
+  it("limpa hashes de limitação somente depois da janela de 48 horas", async () => {
+    const oldBucket = Math.floor(Date.now() / 3_600_000) - 60;
+    const recentBucket = Math.floor(Date.now() / 3_600_000) - 4;
+    await db.prepare("INSERT INTO sales_lead_rate_limits(fingerprint,hour_bucket,attempts) VALUES ('expired-fingerprint-test',?1,1)")
+      .bind(oldBucket).run();
+    await db.prepare("INSERT INTO sales_lead_rate_limits(fingerprint,hour_bucket,attempts) VALUES ('recent-fingerprint-test',?1,1)")
+      .bind(recentBucket).run();
+    expect(await purgeOldSalesRateLimits(db)).toBeGreaterThanOrEqual(1);
+    expect(await db.prepare("SELECT fingerprint FROM sales_lead_rate_limits WHERE fingerprint='expired-fingerprint-test'").first()).toBeNull();
+    expect(await db.prepare("SELECT fingerprint FROM sales_lead_rate_limits WHERE fingerprint='recent-fingerprint-test'").first()).not.toBeNull();
   });
 });
