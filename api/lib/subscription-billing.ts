@@ -200,7 +200,7 @@ export async function reconcileSubscriptionPix(env: Env, limit=20) {
       !env.MP_ACCESS_TOKEN || !env.MP_WEBHOOK_SECRET)
     return {checked:0,activated:0};
   const {results}=await env.DB.prepare(`SELECT provider_payment_id FROM subscription_invoices
-    WHERE status IN ('pending','expired') AND provider_payment_id IS NOT NULL
+    WHERE status IN ('pending','expired','failed') AND provider_payment_id IS NOT NULL
       AND created_at>=strftime('%Y-%m-%dT%H:%M:%SZ','now','-48 hours')
     ORDER BY updated_at ASC LIMIT ?1`).bind(Math.min(50,Math.max(1,limit)))
     .all<{provider_payment_id:string}>();
