@@ -151,3 +151,12 @@ Assinantes de Pro podem selecionar Scale na mesma tela, com upgrade após o Pix 
 A página `/preview?tela=vendas` ganhou um exemplo ilustrativo da tela de escolha pós-teste. A simulação não gera QR Code real, não coleta pagamentos e não altera assinaturas. A validação do gateway e o deploy comercial continuam pendentes, assim como credenciais reais, webhook, conciliação e testes financeiros em ambiente controlado.
 
 **Pix de renovação não equivale a Pix Automático**: na implementação atual o cliente autoriza cada pagamento separadamente.
+
+
+## Reconciliação de QR Code Pix vencido
+
+Na página funcional `/c/<slug>/admin/assinatura`, um Pix com `expires_at` no passado não deve mais mostrar QR Code nem Copia e Cola para pagamento. Em vez disso, a interface orienta **Verificar Pix vencido no Mercado Pago**. O servidor só libera uma nova fatura se a consulta ao gateway comprovar que a anterior está expirada, rejeitada ou cancelada; se o Pix anterior tiver sido pago, a mesma consulta ativa a assinatura sem gerar uma segunda cobrança.
+
+Se houver timeout durante a criação do Pix e o resultado for incerto, a fatura permanece `creating` e outra não será criada automaticamente. É necessário atendimento/reconciliação para não cobrar duas vezes. A atualização de status da assinatura, fatura e plano da empresa ocorre na mesma transação D1, com confirmação idempotente.
+
+Na prévia estática `/preview?tela=vendas`, a seleção de planos e o Pix continuam demonstrativos: **não há pagamento nem confirmação real**. Não afirmar que a versão publicada em Cloudflare foi atualizada sem checar o deploy do Pages/Worker.
