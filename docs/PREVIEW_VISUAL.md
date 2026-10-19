@@ -110,3 +110,16 @@ A rota `/contratar` usa o componente Cloudflare Turnstile **somente quando um Wo
 - Depois de configurar as chaves e testar a validação, a solicitação poderá ser enviada com autorização do interessado e verificada na lista do Superadmin.
 - A prévia `/preview?tela=vendas` e `/preview?tela=interessados` continua usando apenas dados ilustrativos e não possui desafio antirobôs nem faz requisições financeiras.
 - Esta proteção do **funil comercial** não resolve sozinha as proteções de autenticação/cadastro do restante da plataforma nem a política de retenção LGPD.
+
+
+## Gestão e retenção de interessados (nova atualização)
+
+A demonstração estática `/preview?tela=interessados` agora mostra uma seção visual de privacidade. São **somente dados fictícios**, e os controles mostrados no preview não alteram o banco.
+
+No Superadmin **funcional**, em `/superadmin/leads`, o proprietário pode configurar a retenção dos contatos comerciais para **30, 90, 180 ou 365 dias** (proposta inicial: 180 dias), limpar contatos com prazo vencido em lotes de até 200 e excluir individualmente um contato com motivo e confirmação. Somente o Superadmin pode executar essas ações; eventos de exclusão são auditados sem copiar e-mail, telefone ou mensagem do interessado.
+
+A rota pública `GET /api/marketing/privacy` retorna somente o prazo de retenção e a finalidade, para que o formulário `/contratar` informe esse prazo ao visitante antes da autorização de contato. Caso não exista backend para fornecer esse prazo, o envio permanece bloqueado.
+
+Quando o Worker **de produção** for publicado com o cron habilitado, o trabalho agendado fará a exclusão dos contatos vencidos às **03:05 UTC**, em lotes limitados. A homologação continua sem cron; nela, a limpeza é somente manual pelo Superadmin. Hashes antigos dos limites de solicitação também são descartados depois de 48 horas.
+
+**Conformidade:** a política inicial de 180 dias é uma escolha técnica, não uma conclusão jurídica. A aprovação da política de privacidade, bases legais, comunicação aos titulares e rotinas LGPD continua pendente antes de coletar dados reais.
