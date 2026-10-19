@@ -160,8 +160,9 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
   // D1.batch é transacional: somente uma confirmação de uma fatura aberta
   // atualiza o período. Repetir Webhook/Poll jamais acrescenta outros meses.
   const changes=await db.batch([
-    // A fatura é consumida primeiro. Se outra confirmação já a consumiu,
-    // a atualização da assinatura não deve estender o período novamente.
+    // changes() vincula cada UPDATE ao resultado do anterior no mesmo batch.
+    // Assim uma fatura já consumida não estende o período novamente, mesmo
+    // quando duas notificações chegam no mesmo segundo.
     db.prepare(`UPDATE subscription_invoices SET status='paid',paid_at=?1,updated_at=?1
       WHERE id=?2 AND status IN ('pending','expired')`)
       .bind(at,inv.id),
@@ -169,11 +170,11 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
       period_end=strftime('%Y-%m-%dT%H:%M:%SZ',
         CASE WHEN period_end IS NOT NULL AND period_end>?1 THEN period_end ELSE ?1 END,
         '+1 month'),
-      updated_at=?1 WHERE company_id=?2 AND EXISTS(
+      updated_at=?1 WHERE company_id=?2 AND changes()=1 AND EXISTS(
         SELECT 1 FROM subscription_invoices WHERE id=?4 AND company_id=?2
         AND plan_code=?3 AND status='paid' AND paid_at=?1)`)
       .bind(at,inv.company_id,inv.plan_code,inv.id),
-    db.prepare(`UPDATE companies SET plan_code=?1,updated_at=?2 WHERE id=?3
+    db.prepare(`UPDATE companies SET plan_code=?1,updated_at=?2 WHERE id=?3 AND changes()=1
       AND EXISTS (SELECT 1 FROM subscription_invoices
         WHERE id=?4 AND status='paid' AND paid_at=?2)`)
       .bind(inv.plan_code,at,inv.company_id,inv.id),
