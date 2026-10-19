@@ -16,6 +16,7 @@ import { hashPassword } from "../lib/crypto";
 import { changeOrderStatus } from "../lib/orders";
 import { resolveBlockRequest } from "../lib/block-requests";
 import { barberCapacitySql } from "../lib/barber-capacity";
+import { barberScheduleFields, barberScheduleSchema } from "../lib/schedule-validation";
 import { getWallet, manualAdjustment } from "../lib/wallet";
 import { createTopup, confirmTopupFromProvider } from "../lib/topup";
 import { getConnection, sendImmediate, resolvePricing, processDueJobs } from "../lib/messaging/jobs";
@@ -334,7 +335,7 @@ adminRouter.post("/block-requests/:id/resolve", async (c) => {
 });
 
 // ── CRUD barbeiros / serviços / produtos ────────────────────────────────────
-const barberSchema = z.object({ name: z.string().min(2).max(80), specialty: z.string().max(80).default(""), bio: z.string().max(500).default(""), photo: z.string().max(500).default(""), work_days: z.array(z.number().int().min(0).max(6)).min(1), work_start: z.string().regex(/^\d{2}:\d{2}$/), work_end: z.string().regex(/^\d{2}:\d{2}$/), break_start: z.string().regex(/^\d{2}:\d{2}$/), break_end: z.string().regex(/^\d{2}:\d{2}$/), active: z.boolean().default(true), service_ids: z.array(z.number().int().positive()).default([]) });
+const barberSchema = z.object({ name: z.string().min(2).max(80), specialty: z.string().max(80).default(""), bio: z.string().max(500).default(""), photo: z.string().max(500).default(""), ...barberScheduleFields, active: z.boolean().default(true), service_ids: z.array(z.number().int().positive()).default([]) });
 
 adminRouter.get("/barbers", async (c) => {
   const { results } = await P(c).prepare(`SELECT * FROM barbers WHERE company_id=?1 ORDER BY sort, name`).bind(cid(c)).all();
@@ -343,6 +344,8 @@ adminRouter.get("/barbers", async (c) => {
 adminRouter.post("/barbers", async (c) => {
   const parsed = barberSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
+  const schedule = barberScheduleSchema.safeParse(parsed.data);
+  if (!schedule.success) return err(c, "Expediente inválido", 422, schedule.error.flatten().fieldErrors);
   const db = P(c); const id = cid(c);
   if (!(await companyOwnsIds(db,"services",id,parsed.data.service_ids))) return err(c,"Serviço inválido para esta empresa",422);
   const limit = await planLimit(db, id, "max_barbers");
@@ -385,9 +388,13 @@ adminRouter.put("/barbers/:id", async (c) => {
   const parsed = barberSchema.partial().safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
   const db = P(c); const id = cid(c);
-  const b = await db.prepare(`SELECT id FROM barbers WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<{ id: number }>();
+  const b = await db.prepare(`SELECT id,work_days,work_start,work_end,break_start,break_end FROM barbers WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<BarberRow>();
   if (!b) return err(c, "Barbeiro não encontrado", 404);
   const d = parsed.data as Record<string, unknown>;
+  if (Object.keys(barberScheduleFields).some((key) => key in d)) {
+    const schedule = barberScheduleSchema.safeParse({ ...b, work_days: safeArr(b.work_days), ...d });
+    if (!schedule.success) return err(c, "Expediente inválido", 422, schedule.error.flatten().fieldErrors);
+  }
   if ("service_ids" in d && !(await companyOwnsIds(db,"services",id,d.service_ids as number[]))) return err(c,"Serviço inválido para esta empresa",422);
   const sets: string[] = []; const binds: (string | number | null)[] = [];
   const map: Record<string, string> = { name: "name", specialty: "specialty", bio: "bio", photo: "photo", work_start: "work_start", work_end: "work_end", break_start: "break_start", break_end: "break_end" };

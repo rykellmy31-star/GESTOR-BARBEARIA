@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { openingRangeSchema, timezoneSchema } from "./schedule-validation";
 
 // ============================================================================
 // Configurações POR EMPRESA (company_settings.data) + defaults DA PLATAFORMA
@@ -12,7 +13,6 @@ export const brandSchema = z.object({
   line: z.string().regex(/^#([0-9a-fA-F]{6})$/),
 });
 
-const hourRange = z.object({ open: z.string().regex(/^\d{2}:\d{2}$/), close: z.string().regex(/^\d{2}:\d{2}$/) });
 
 export const companySettingsSchema = z.object({
   shop_name: z.string().min(2).max(80),
@@ -28,9 +28,9 @@ export const companySettingsSchema = z.object({
   logo_url: z.string().max(500).default(""),
   banner_url: z.string().max(500).default(""),
   brand: brandSchema,
-  opening_hours: z.record(z.string(), hourRange.nullable()),
+  opening_hours: z.record(z.string().regex(/^[0-6]$/, "Dia da semana inválido"), openingRangeSchema.nullable()),
   currency: z.literal("BRL").default("BRL"),
-  timezone: z.string().min(3).default("America/Bahia"),
+  timezone: timezoneSchema.default("America/Bahia"),
   // regras de agenda
   min_lead_min: z.number().int().min(0).max(2880).default(60),
   horizon_days: z.number().int().min(3).max(120).default(30),
