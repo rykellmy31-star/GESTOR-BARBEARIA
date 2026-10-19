@@ -1342,7 +1342,7 @@ describe("Tigu Start R$ 19,99 e teste grátis por 15 dias", () => {
     expect(latest?.n).toBe(0);
 
     // Ativação manual pelo Superadmin: não cria cobrança automática.
-    await db.prepare("UPDATE subscriptions SET status='active' WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+    await db.prepare("UPDATE subscriptions SET status='active',period_end=strftime('%Y-%m-%dT%H:%M:%SZ','now','+1 month') WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
       .bind(slug).run();
     const allowed = await api("/api/c/" + slug + "/admin/bookings",{method:"POST",body:"{}"},sign.cookie);
     expect(allowed.status).not.toBe(402);
