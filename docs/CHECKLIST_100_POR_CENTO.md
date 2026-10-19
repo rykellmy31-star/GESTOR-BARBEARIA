@@ -108,3 +108,15 @@ Trabalhar exclusivamente em `audit/tigu-primeira-validacao`, reportar ao proprie
 - [x] Migração 0007 protege a última conta Superadmin ativa contra desativação, rebaixamento e exclusão; transações recusadas preservam os acessos.
 - [x] Migrações 0001–0007 executadas em banco local isolado.
 - [ ] Aplicar a migração 0007 no banco remoto correto após autorização; proteção ainda não implantada remotamente.
+
+## Rodada de bloqueios e painel do profissional
+
+- [x] Bloqueios horários unificados, com SQL corrigido, protocolo na resposta e reserva transacional de slots.
+- [x] Caminho antigo de bloqueios exige profissional da mesma empresa, ativo para bloqueio de intervalo.
+- [x] Folgas/férias validam datas reais, ordem do período e aliases consistentes.
+- [x] Profissional desativado ou vínculo inválido perde acesso ao painel mesmo com sessão já existente.
+- [x] Agenda do profissional consulta o intervalo no fuso local da barbearia, incluindo o fim da noite.
+- [x] Migração 0008 protege contra sobreposição real de intervalos em grades diferentes, com reversão transacional dos conflitos.
+- [x] Migrações 0001–0008 executadas em banco local isolado.
+- [ ] Aplicar migração 0008 remotamente após autorização e auditoria dos dados legados; não implantada nesta rodada.
+- [ ] Ampliar validação concorrente das transições de status e da criação de folgas de dia inteiro.
