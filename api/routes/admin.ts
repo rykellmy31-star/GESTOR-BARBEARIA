@@ -16,6 +16,7 @@ import { hashPassword } from "../lib/crypto";
 import { changeOrderStatus } from "../lib/orders";
 import { resolveBlockRequest } from "../lib/block-requests";
 import { barberCapacitySql } from "../lib/barber-capacity";
+import { calendarDaySchema, intervalBlockSchema, createAdminIntervalBlock } from "../lib/admin-blocks";
 import { barberScheduleFields, barberScheduleSchema } from "../lib/schedule-validation";
 import { getWallet, manualAdjustment } from "../lib/wallet";
 import { createTopup, confirmTopupFromProvider } from "../lib/topup";
@@ -276,8 +277,8 @@ adminRouter.post("/bookings/block", async (c) => {
   const parsed = z
     .object({
       barberId: z.number().int().positive().nullable().optional(),
-      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      endDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      day: calendarDaySchema,
+      endDay: calendarDaySchema.optional(),
       startMin: z.number().int().min(0).max(1439).optional(),
       endMin: z.number().int().min(1).max(1440).optional(),
       reason: z.string().max(200).default("Bloqueio da administração"),
@@ -289,27 +290,15 @@ adminRouter.post("/bookings/block", async (c) => {
   const s = ctxSettings(c);
   const day = parsed.data.day;
   const endDay = parsed.data.endDay || day;
+  if ((parsed.data.startMin == null) !== (parsed.data.endMin == null)) return err(c,"Informe início e fim juntos",400);
   if (parsed.data.startMin != null && parsed.data.endMin != null) {
-    // bloqueio horário → booking 'bloqueio' com trava de slots
-    const barberId = parsed.data.barberId ?? (await db.prepare(`SELECT id FROM barbers WHERE company_id=?1 ORDER BY id LIMIT 1`).bind(id).first<{ id: number }>())?.id;
-    if (!barberId) return err(c, "Sem barbeiro", 400);
-    const tz = s.timezone;
-    const { localToUtc } = await import("../lib/time");
-    const startIso = localToUtc(tz, day, parsed.data.startMin).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const endIso = localToUtc(tz, day, parsed.data.endMin).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const code = `BLK-${Date.now().toString(36).toUpperCase()}`;
-    const slotKeys = slotKeysFor(startIso, endIso, 5);
-    try {
-      await db.batch([
-        db.prepare(`INSERT INTO bookings (company_id, code, barber_id, service_id, starts_at, ends_at, price_cents, status, origin, customer_name, customer_phone, notes, cancel_token, created_at, updated_at)
-                    VALUES (?1,?2,?3,NULL,?4,?5,0,'bloqueio','admin',?6,'','', 'x', ?7, ?7)`).bind(id, code, barberId, startIso, endIso, parsed.data.reason, nowIso()),
-        ...slotKeys.map((k) => db.prepare(`INSERT INTO booking_slots (company_id, booking_id, barber_id, slot) SELECT ?1, id, ?2, ?3 FROM bookings WHERE code = ?4`).bind(id, barberId, k, code)),
-      ]);
-    } catch (e) {
-      if (String(e).includes("booking_slots")) return err(c, "Há agendamentos nesse horário — cancele antes de bloquear", 409);
-      throw e;
-    }
-    return json(c, { ok: true }, 201);
+    if (endDay !== day) return err(c,"O bloqueio de horário deve terminar no mesmo dia",400);
+    const barberId = parsed.data.barberId ?? (await db.prepare("SELECT id FROM barbers WHERE company_id=?1 AND active=1 ORDER BY id LIMIT 1").bind(id).first<{id:number}>())?.id;
+    const interval=intervalBlockSchema.safeParse({...parsed.data,barberId,date:day});
+    if (!interval.success) return err(c,"Intervalo inválido",400,interval.error.flatten().fieldErrors);
+    const result=await createAdminIntervalBlock(db,id,s.timezone,interval.data);
+    if (!result.ok) return err(c,result.message,result.status);
+    return json(c,result,201);
   }
   await db.prepare(`INSERT INTO blocked_days (company_id, barber_id, date_from, date_to, kind, reason, created_at) VALUES (?1,?2,?3,?4,'other',?5,?6)`).bind(id, parsed.data.barberId ?? null, day, endDay, parsed.data.reason, nowIso()).run();
   return json(c, { ok: true }, 201);
@@ -1001,28 +990,11 @@ adminRouter.post("/blocked-days", async (c) => {
 });
 
 adminRouter.post("/blocks", async (c) => {
-  const parsed = z.object({ barberId: z.number().int().positive(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), startMin: z.number().int().min(0).max(1439), endMin: z.number().int().min(1).max(1440), reason: z.string().max(200).default("Bloqueio") }).safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "Dados inválidos", 400);
-  const d = parsed.data;
-  const { localToUtc } = await import("../lib/time");
-  const tz = ctxSettings(c).timezone;
-  const startIso = localToUtc(tz, d.date, d.startMin).toISOString().replace(/\.\d{3}Z$/, "Z");
-  const endIso = localToUtc(tz, d.date, d.endMin).toISOString().replace(/\.\d{3}Z$/, "Z");
-  const code = `BLK-${Date.now().toString(36).toUpperCase()}`;
-  const slotKeys = slotKeysFor(startIso, endIso, 5);
-  const db = P(c); const id = cid(c);
-  const bOk = await db.prepare(`SELECT id FROM barbers WHERE id=?1 AND company_id=?2`).bind(d.barberId, id).first();
-  if (!bOk) return err(c, "Barbeiro inválido", 404);
-  try {
-    await db.batch([
-      db.prepare(`INSERT INTO bookings (company_id, code, barber_id, service_id, starts_at, ends_at, price_cents, status, origin, customer_name, customer_phone, notes, cancel_token, created_at, updated_at) VALUES (?1,?2,?3,NULL,?4,?5,0,'bloqueio','admin',?6,'',?7,'x',?8,?8)`).bind(id, code, d.barberId, startIso, endIso, d.reason.trim(), nowIso()),
-      ...slotKeys.map((k) => db.prepare(`INSERT INTO booking_slots (company_id, booking_id, barber_id, slot) SELECT ?1, id, ?2, ?3 FROM bookings WHERE code = ?4`).bind(id, d.barberId, k, code)),
-    ]);
-  } catch (e) {
-    if (String(e).includes("booking_slots")) return err(c, "Há clientes agendados nesse intervalo — cancele/remarque antes de bloquear.", 409);
-    throw e;
-  }
-  return json(c, { ok: true }, 201);
+  const parsed=intervalBlockSchema.safeParse(await c.req.json().catch(()=>null));
+  if (!parsed.success) return err(c,"Intervalo inválido",400,parsed.error.flatten().fieldErrors);
+  const result=await createAdminIntervalBlock(P(c),cid(c),ctxSettings(c).timezone,parsed.data);
+  if (!result.ok) return err(c,result.message,result.status);
+  return json(c,result,201);
 });
 
 adminRouter.patch("/bookings/:id/status", async (c) => {
