@@ -6,12 +6,13 @@ import {
   ShoppingBag, Store, Users, Wallet, AlertTriangle, type LucideIcon
 } from "lucide-react";
 
-type View = "platform" | "vendas" | "interessados" | "barbearia" | "agenda" | "mensagens" | "carteira" | "loja";
+type View = "platform" | "vendas" | "pagamento" | "interessados" | "barbearia" | "agenda" | "mensagens" | "carteira" | "loja";
 type NavItem = { key: View; title: string; subtitle: string; icon: LucideIcon };
 
 const navigation: NavItem[] = [
   { key: "platform", title: "Superadmin Tigu", subtitle: "Visão da plataforma", icon: ShieldCheck },
   { key: "vendas", title: "Página de vendas", subtitle: "Contratação e contato", icon: MessageCircle },
+  { key: "pagamento", title: "Pagamento Pix", subtitle: "Pós-teste de 15 dias", icon: CreditCard },
   { key: "interessados", title: "Interessados", subtitle: "Pedidos de contratação", icon: Users },
   { key: "barbearia", title: "Painel da barbearia", subtitle: "Indicadores e equipe", icon: LayoutDashboard },
   { key: "agenda", title: "Agenda", subtitle: "Próximos horários", icon: CalendarDays },
@@ -174,6 +175,44 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
           </div>
         </Panel>
       </div>
+    </div>
+  );
+
+  if (view === "pagamento") return (
+    <div className="space-y-5">
+      <Panel title="Fim dos 15 dias de teste grátis" aside={<Tag tone="gold">Demonstração, sem pagamento real</Tag>}>
+        <div className="mx-auto max-w-lg rounded-2xl border border-[#d4af37]/40 bg-[#111115] p-6 text-center sm:p-8">
+          <Clock3 size={32} className="mx-auto text-[#e8ca66]" />
+          <h3 className="mt-3 font-display text-2xl text-zinc-50">Seu teste grátis terminou!</h3>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+            Para continuar gerenciando sua barbearia, renove sua assinatura pelo Pix.
+            Seus dados permanecem salvos.
+          </p>
+          <p className="mt-5 text-xs uppercase tracking-wider text-[#e8ca66]">Tigu Start</p>
+          <p className="mt-1 font-display text-3xl text-zinc-50">R$ 19,99 <span className="text-sm text-zinc-500">/mês</span></p>
+          <button type="button" disabled
+            className="mt-5 w-full cursor-not-allowed rounded-xl bg-[#d4af37] px-4 py-3 text-sm font-semibold text-[#111115] opacity-70">
+            Gerar Pix de R$ 19,99 (simulação)
+          </button>
+          <p className="mt-3 text-xs leading-relaxed text-zinc-500">No sistema funcional, o botão gerará o QR Code e o Pix Copia e Cola pelo Mercado Pago. O acesso só será liberado depois que o pagamento for confirmado na API.</p>
+        </div>
+      </Panel>
+      <Panel title="Etapas da renovação" aside={<Tag tone="gold">Exemplo visual</Tag>}>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            ["1", "Gerar Pix", "Valor do plano no banco"],
+            ["2", "Pagar no banco", "QR Code ou Copia e Cola"],
+            ["3", "Acesso liberado", "Somente após confirmação no Mercado Pago"],
+          ].map(([n,name,desc])=>(
+            <div key={n} className="rounded-xl border border-[#35313b] bg-[#111115] p-4">
+              <span className="font-display text-lg text-[#e8ca66]">{n}.</span>
+              <p className="mt-1 text-sm font-semibold text-zinc-100">{name}</p>
+              <p className="mt-1 text-xs text-zinc-400">{desc}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-zinc-500">Pix mensal por iniciativa do cliente: sem débito automático e sem dados bancários fictícios.</p>
+      </Panel>
     </div>
   );
 
