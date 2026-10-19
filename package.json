@@ -28,7 +28,8 @@
     "staging:validate": "node scripts/staging.mjs validate",
     "staging:migrate": "node scripts/staging.mjs migrate",
     "staging:deploy": "node scripts/staging.mjs deploy",
-    "staging:super": "node scripts/staging.mjs super"
+    "staging:super": "node scripts/staging.mjs super",
+    "staging:smoke": "node scripts/staging-smoke.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
