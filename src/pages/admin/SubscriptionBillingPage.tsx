@@ -49,6 +49,8 @@ export function SubscriptionBillingPage() {
   });
   const sub=q.data?.subscription;
   const invoice=q.data?.invoice;
+  const invoiceExpired=Boolean(invoice?.status==="pending" && invoice.expires_at &&
+    new Date(invoice.expires_at).getTime() <= Date.now());
   const end=sub?.period_end ? new Date(sub.period_end).getTime() : 0;
   const valid=Number.isFinite(end)&&end>Date.now()&&(sub?.status==="trial"||sub?.status==="active");
   const trial=sub?.status==="trial";
@@ -117,26 +119,33 @@ export function SubscriptionBillingPage() {
           {invoice?.status==="creating"?<p className="mt-4 text-sm text-zinc-400">Preparando Pix. Atualize esta página em alguns instantes. Não gere vários pagamentos.</p>:
            invoice?.status==="pending"?(
             <div className="mt-4 space-y-4">
-              <p className="text-sm text-zinc-300">Pix do plano {invoice.plan_code==="free"?"Start":invoice.plan_code==="pro"?"Pro":"Scale"} de {brl(invoice.amount_cents)} disponível. Faça o pagamento no aplicativo do seu banco e depois confira a confirmação.</p>
-              {invoice.qr_code_base64 && (
+              {invoiceExpired ? (
+                <p role="alert" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+                  O prazo deste QR Code terminou. Não pague o código vencido. Use a verificação abaixo:
+                  o Tigu consultará o Mercado Pago antes de permitir gerar outro Pix.
+                </p>
+              ) : (
+                <p className="text-sm text-zinc-300">Pix do plano {invoice.plan_code==="free"?"Start":invoice.plan_code==="pro"?"Pro":"Scale"} de {brl(invoice.amount_cents)} disponível. Faça o pagamento no aplicativo do seu banco e depois confira a confirmação.</p>
+              )}
+              {!invoiceExpired && invoice.qr_code_base64 && (
                 <img alt="QR Code Pix da mensalidade Tigu"
                   className="mx-auto h-52 w-52 rounded-xl bg-white p-2"
                   src={`data:image/png;base64,${invoice.qr_code_base64}`}/>
               )}
-              <label className="block text-xs text-zinc-400">Pix Copia e Cola
+              {!invoiceExpired && <label className="block text-xs text-zinc-400">Pix Copia e Cola
                 <textarea readOnly rows={4} className="input-dark mt-2 w-full resize-none text-xs"
                   value={invoice.qr_code_text}/>
-              </label>
-              <button type="button" onClick={async ()=>{
+              </label>}
+              {!invoiceExpired && <button type="button" onClick={async ()=>{
                 try {await navigator.clipboard.writeText(invoice.qr_code_text);setCopied(true);}
                 catch {toast.push("err","Copie o código manualmente.");}
               }} className="btn-gold inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold">
                 <Copy size={17}/>{copied?"Código copiado!":"Copiar código Pix"}
-              </button>
+              </button>}
               {invoice.expires_at && <p className="text-xs text-zinc-500">Validade do QR Code: {new Date(invoice.expires_at).toLocaleString("pt-BR")}.</p>}
               <button type="button" onClick={()=>verify.mutate(invoice.id)} disabled={verify.isPending}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--c-gold)]/50 px-4 py-3 text-sm text-[var(--c-gold)] disabled:opacity-50">
-                <RefreshCw size={16}/>{verify.isPending?"Consultando…":"Já paguei — verificar no Mercado Pago"}
+                <RefreshCw size={16}/>{verify.isPending?"Consultando…":invoiceExpired?"Verificar Pix vencido no Mercado Pago":"Já paguei — verificar no Mercado Pago"}
               </button>
             </div>
            ):(
