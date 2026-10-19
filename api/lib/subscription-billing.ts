@@ -193,7 +193,9 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
 
 /** Reconsulta Pix ainda pendentes quando o webhook falhar. Não há automação no staging. */
 export async function reconcileSubscriptionPix(env: Env, limit=20) {
-  if (env.TIGU_STAGING==="1" || !env.MP_ACCESS_TOKEN) return {checked:0,activated:0};
+  if (env.TIGU_STAGING==="1" || env.PAYMENTS_MOCK==="1" ||
+      !env.MP_ACCESS_TOKEN || !env.MP_WEBHOOK_SECRET)
+    return {checked:0,activated:0};
   const {results}=await env.DB.prepare(`SELECT provider_payment_id FROM subscription_invoices
     WHERE status IN ('pending','expired') AND provider_payment_id IS NOT NULL
       AND created_at>=strftime('%Y-%m-%dT%H:%M:%SZ','now','-48 hours')
