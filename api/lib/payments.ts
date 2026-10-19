@@ -58,13 +58,17 @@ export function mpProvider(env: Env): PaymentProvider {
     async getPaymentStatus(id) {
       if (env.TIGU_STAGING === "1") return { status: "error" };
       if (!token) return { status: "error" };
-      const res = await fetch(`${MP_BASE}/v1/payments/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${token}` } });
-      // HTTP 4xx/5xx ou JSON incompleto não comprovam um status financeiro.
-      // Não confundir falha temporária da API com cobrança inexistente.
-      if (!res.ok) return { status: "error" };
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      const status = typeof data.status === "string" ? data.status : "error";
-      return { status, detail: data };
+      try {
+        const res = await fetch(`${MP_BASE}/v1/payments/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${token}` } });
+        // HTTP 4xx/5xx, rede indisponível ou JSON incompleto não comprovam
+        // um status financeiro: preservar a fatura para conciliação.
+        if (!res.ok) return { status: "error" };
+        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        const status = typeof data.status === "string" ? data.status : "error";
+        return { status, detail: data };
+      } catch {
+        return { status: "error" };
+      }
     },
   };
 }
