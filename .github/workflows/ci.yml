@@ -52,5 +52,8 @@ jobs:
           grep -R -q 'Solicitar atendimento comercial' dist/assets
           grep -R -q 'Enviar solicitação de atendimento' dist/assets
           grep -R -q 'Interessados nos planos' dist/assets
+          grep -R -q 'Privacidade dos contatos' dist/assets
+          grep -R -q 'Excluir dados do contato' dist/assets
+          grep -R -q 'O prazo de armazenamento ainda não está disponível' dist/assets
       - name: Rodar testes
         run: npm test
