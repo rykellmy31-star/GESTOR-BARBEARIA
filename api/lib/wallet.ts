@@ -313,3 +313,61 @@ export async function manualAdjustment(
     return { ok: false, error: "Não foi possível aplicar o ajuste. Saldo ou transação inválida." };
   }
 }
+
+
+/**
+ * Encerramento manual de um envio incerto após confirmação externa de que
+ * ele NÃO saiu. O lançamento de devolução e o encerramento são atômicos.
+ */
+export async function resolveUncertainNotSent(
+  db: D1Database, companyId: number, jobId: number,
+  operatorId: number, evidence: string
+): Promise<{ ok: boolean; error?: string }> {
+  const note = evidence.trim();
+  if (![companyId, jobId, operatorId].every(n => Number.isSafeInteger(n) && n > 0) ||
+      note.length < 20 || note.length > 500)
+    return { ok: false, error: "Dados inválidos ou evidência fora de 20 a 500 caracteres." };
+
+  const j = await db.prepare(
+    "SELECT status,provider_msg_id,captured_at,refunded_at,reserved_cents,price_cents,last_attempt_at FROM message_jobs WHERE id=?1 AND company_id=?2"
+  ).bind(jobId, companyId).first<{
+    status: string; provider_msg_id: string; captured_at: string | null;
+    refunded_at: string | null; reserved_cents: number; price_cents: number;
+    last_attempt_at: string | null;
+  }>();
+  if (!j || j.status !== "sending" || j.provider_msg_id ||
+      j.captured_at || j.refunded_at || !j.last_attempt_at ||
+      Date.parse(j.last_attempt_at) > Date.now() - 10 * 60000 ||
+      j.reserved_cents < 0 || j.reserved_cents > j.price_cents)
+    return { ok: false, error: "Mensagem não elegível para encerramento manual." };
+
+  await ensureWallet(db, companyId);
+  const at = nowIso();
+  const key = "release:job-" + jobId;
+  const marker = "Encerrado sem envio após confirmação externa";
+  try {
+    const result = await db.batch([
+      db.prepare(
+        "UPDATE message_jobs SET status='failed',last_error=?1,next_attempt_at=NULL,reserved_cents=0,refunded_at=CASE WHEN reserved_cents>0 THEN ?2 ELSE refunded_at END,updated_at=?2 WHERE id=?3 AND company_id=?4 AND status='sending' AND provider_msg_id='' AND captured_at IS NULL AND refunded_at IS NULL AND last_attempt_at <= strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes') AND reserved_cents=?5"
+      ).bind(marker, at, jobId, companyId, j.reserved_cents),
+      db.prepare(
+        "INSERT INTO wallet_transactions (company_id,type,amount_cents,balance_after,reserved_after,ref_type,ref_id,idempotency_key,note,created_by,created_at) SELECT ?1,'release',0,w.balance_cents,w.reserved_cents,'message_job',?2,?3,?4,?5,?6 FROM wallets w JOIN message_jobs m ON m.company_id=w.company_id WHERE w.company_id=?1 AND m.id=?7 AND m.status='failed' AND m.last_error=?8 AND m.updated_at=?6"
+      ).bind(companyId, "job-" + jobId, key, note, operatorId, at, jobId, marker),
+      db.prepare(
+        "UPDATE wallets SET reserved_cents=reserved_cents-?1, updated_at=?2 WHERE company_id=?3 AND EXISTS (SELECT 1 FROM message_jobs m WHERE m.id=?4 AND m.company_id=?3 AND m.status='failed' AND m.last_error=?5 AND m.updated_at=?2) AND EXISTS (SELECT 1 FROM wallet_transactions t WHERE t.idempotency_key=?6)"
+      ).bind(j.reserved_cents, at, companyId, jobId, marker, key),
+      db.prepare(
+        "UPDATE wallet_transactions SET balance_after=(SELECT balance_cents FROM wallets WHERE company_id=?1),reserved_after=(SELECT reserved_cents FROM wallets WHERE company_id=?1) WHERE company_id=?1 AND idempotency_key=?2"
+      ).bind(companyId, key),
+      db.prepare(
+        "INSERT INTO audit_log (company_id,scope,user_id,user_name,action,entity,entity_id,meta) SELECT ?1,'platform',?2,COALESCE((SELECT name FROM users WHERE id=?2),'operador'),'message.not_sent_confirmed','message_job',?3,?4 WHERE EXISTS (SELECT 1 FROM message_jobs m WHERE m.id=?3 AND m.company_id=?1 AND m.status='failed' AND m.last_error=?5 AND m.updated_at=?6)"
+      ).bind(companyId, operatorId, String(jobId), JSON.stringify({ evidence: note, released_cents: j.reserved_cents }), marker, at),
+    ]);
+    if (result[0].meta?.changes !== 1 || result[1].meta?.changes !== 1 ||
+        result[2].meta?.changes !== 1 || result[4].meta?.changes !== 1)
+      return { ok: false, error: "Estado inconsistente: solicitar conferência de saldo e extrato." };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Encerramento não aplicado; verifique se a mensagem já foi resolvida." };
+  }
+}
