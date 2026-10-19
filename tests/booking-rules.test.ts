@@ -527,13 +527,14 @@ describe("Superadmin: conciliação de WhatsApp sem reenvio", () => {
     const companyId = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
       .first<{ id: number }>())!.id;
     const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    const attempted = new Date(Date.now() - 12 * 60_000).toISOString().replace(/\.\d{3}Z$/, "Z");
     const walletBefore = (await getWallet(db, companyId))!;
     const ins = await db.prepare(
       `INSERT INTO message_jobs (company_id,kind,to_phone,template_code,status,
          scheduled_at,fire_deadline,price_cents,language,idempotency_key,last_error,last_attempt_at)
        VALUES (?1,'reminder','5573999993333','tigu_lembrete','scheduled',
-         ?2,?2,10,'pt_BR',?3,'',?2)`
-    ).bind(companyId, now, `ops-${suffix}-${Date.now()}`).run();
+         ?2,?2,10,'pt_BR',?3,'',?4)`
+    ).bind(companyId, now, `ops-${suffix}-${Date.now()}`, attempted).run();
     const jobId = ins.meta.last_row_id as number;
     const reserved = await reserveForJob(db, companyId, jobId, 10, false);
     expect(reserved.ok).toBe(true);
