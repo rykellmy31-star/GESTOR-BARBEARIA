@@ -3,14 +3,15 @@ import { Bot, Building2, Coins, FileClock, LayoutDashboard, LogOut, Tag, Receipt
 import { useAuth } from "@/lib/hooks";
 
 const links = [
-  { to: "", label: "Visão geral", icon: LayoutDashboard, end: true },
-  { to: "empresas", label: "Barbearias", icon: Building2 },
-  { to: "usuarios", label: "Usuários", icon: Users },
-  { to: "carteiras", label: "Recargas & Refunds", icon: Coins },
-  { to: "precificacao", label: "Precificação", icon: Tag },
-  { to: "mensagens", label: "Fila global", icon: Bot },
-  { to: "auditoria", label: "Auditoria", icon: FileClock },
-  { to: "config", label: "Config. plataforma", icon: Settings },
+  { to: "overview", label: "Visão geral", icon: LayoutDashboard },
+  { to: "companies", label: "Barbearias", icon: Building2 },
+  { to: "users", label: "Usuários", icon: Users },
+  { to: "wallets", label: "Carteiras", icon: Coins },
+  { to: "topups", label: "Recargas & estornos", icon: Receipt },
+  { to: "pricing", label: "Precificação", icon: Tag },
+  { to: "messages", label: "Fila global", icon: Bot },
+  { to: "audit", label: "Auditoria", icon: FileClock },
+  { to: "settings", label: "Config. plataforma", icon: Settings },
 ];
 
 export function SuperLayout() {
