@@ -29,7 +29,7 @@ function LeadCard({ lead, reload }: {lead:Lead;reload:()=>void}) {
     onSuccess:()=>{toast.push("ok","Dados pessoais do contato excluídos.");reload();},
     onError:(e:Error)=>toast.push("err",e.message)
   });
-  const phone=lead.phone.replace(/\\D/g,"");
+  const phone=lead.phone.replace(/\D/g,"");
   return (
     <article className="rounded-2xl border border-[#33303a] bg-[#16161c] p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
