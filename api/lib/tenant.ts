@@ -9,7 +9,7 @@ import type { Env, SessionUser } from "../types";
 import { err } from "./utils";
 import { loadCompanySettings } from "./settings";
 import { currentUserOptional } from "./auth";
-import { canOperateSubscription, requiresSubscriptionToWrite, subscriptionAccess } from "./trial";
+import { canOperateSubscription, requiresSubscriptionToWrite, subscriptionAccess, isSubscriptionBillingAction } from "./trial";
 import type { CompanySettings } from "./settings";
 
 export interface CompanyRow {
@@ -90,7 +90,7 @@ export const tenantMiddleware =
     const writeRequiresSubscription = requiresSubscriptionToWrite(
       c.req.method, c.req.path, opts.auth !== "none"
     );
-    if (writeRequiresSubscription) {
+    if (writeRequiresSubscription && !isSubscriptionBillingAction(c.req.method,c.req.path)) {
       const subscription = await subscriptionAccess(c.env.DB, company.id);
       if (!canOperateSubscription(subscription)) return err(c,
         "Seu período de teste terminou ou a assinatura está inativa. Fale com o suporte Tigu para continuar. Nenhuma cobrança será feita automaticamente.", 402);
