@@ -36,6 +36,8 @@
 
 - [ ] Configurar credenciais e webhook reais do Mercado Pago, testar Pix aprovado, estornado, atrasado e conciliado em banco real.
 - [x] Permitir que o Superadmin altere preços e limites de Start/Pro/Scale no D1; a página pública lê os valores atuais do backend.
+- [x] Start por R$ 19,99/mês depois de 15 dias grátis; novos cadastros têm término registrado no D1, com bloqueio de novas operações ao expirar e aviso no painel. Sem cobrança automática.
+- [x] Migração 0004 preserva preços Start já personalizados e concede tolerância a testes legados sem data final.
 - [x] Formulário para solicitar contratação Pro/Scale, consentimento explícito, registro no D1, prevenção de duplicidade e lista de interessados restrita ao Superadmin.
 - [x] Verificar token Cloudflare Turnstile no Worker, sem enviar contatos em produção quando as chaves não estiverem configuradas.
 - [ ] Configurar Turnstile por domínio no Cloudflare e testar o formulário publicado; incluir regras WAF quando necessário.
