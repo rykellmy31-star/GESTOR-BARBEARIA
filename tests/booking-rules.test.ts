@@ -454,6 +454,16 @@ describe("Pix: recuperar confirmação sem webhook", () => {
   });
 });
 
+describe("Webhook Meta: falha de processamento sem perda silenciosa", () => {
+  it("responde erro temporário quando não consegue processar o evento recebido", async () => {
+    const res = await api("/api/webhooks/whatsapp", {
+      method: "POST",
+      body: JSON.stringify({ entry: {} })
+    });
+    expect(res.status).toBe(503);
+  });
+});
+
 describe("WhatsApp: incerteza de envio nunca autoriza duplicidade", () => {
   it("classifica timeout, resposta 5xx e HTTP 2xx sem ID como resultados incertos", async () => {
     const credentials = { APP_ENV: "development" };
