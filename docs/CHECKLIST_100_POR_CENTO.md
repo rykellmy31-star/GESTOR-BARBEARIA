@@ -11,6 +11,7 @@
 - [x] Tratamento conservador de timeout de envio (não reenviar sem confirmação).
 - [x] Conciliação manual de mensagem incerta, com supervisão e justificativa.
 - [x] Contato comercial editável pelo Superadmin, com permissão e possibilidade de ocultar.
+- [x] Exclusão individual de interessados com motivo, política inicial de retenção configurável (30–365 dias) e limpeza do banco D1 testada.
 - [x] Prévia visual responsiva independente de API com dados fictícios.
 - [x] Cadastro de usuário, empresa, assinatura e carteira em uma só transação D1.
 - [x] Rotas do Superadmin normalizadas para não duplicar o prefixo HTTP.
@@ -38,7 +39,8 @@
 - [x] Formulário para solicitar contratação Pro/Scale, consentimento explícito, registro no D1, prevenção de duplicidade e lista de interessados restrita ao Superadmin.
 - [x] Verificar token Cloudflare Turnstile no Worker, sem enviar contatos em produção quando as chaves não estiverem configuradas.
 - [ ] Configurar Turnstile por domínio no Cloudflare e testar o formulário publicado; incluir regras WAF quando necessário.
-- [ ] Definir política de retenção/exclusão de interessados conforme LGPD antes de atender dados reais.
+- [ ] Revisar juridicamente e aprovar a política inicial de retenção dos interessados (padrão proposto: 180 dias), a comunicação ao titular e procedimentos LGPD antes de receber dados reais.
+- [ ] Publicar Termos/Política de Privacidade finais e mecanismo operacional de atendimento a solicitações de titulares de dados.
 - [ ] Implementar contratação e cobrança recorrente efetiva dos planos. **Alterar o preço no cadastro não gera boleto, Pix recorrente nem cobrança automática.**
 - [ ] Reconciliar valores cobrados ao cliente, custos Meta e margem da plataforma com relatórios financeiros auditáveis.
 
