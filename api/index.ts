@@ -40,6 +40,7 @@ app.get("/api/health", (c) =>
     time: nowIso(),
     d1: Boolean(c.env.DB),
     r2: Boolean(c.env.MEDIA),
+    staging: c.env.TIGU_STAGING === "1",
     whatsapp: { embedded: Boolean(c.env.WHATSAPP_APP_ID && c.env.WHATSAPP_EMBEDDED_CONFIG_ID), mock: c.env.WHATSAPP_MOCK === "1" },
     payments: { mercadopago: Boolean(c.env.MP_ACCESS_TOKEN), mock: c.env.PAYMENTS_MOCK === "1" },
   })
@@ -61,6 +62,7 @@ export default {
 
   /** Cron (wrangler [triggers] crons): dispara lembretes/confirmações. */
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    if (env.TIGU_STAGING === "1") return; // Nenhum disparo agendado na homologação.
     ctx.waitUntil(
       (async () => {
         try {
