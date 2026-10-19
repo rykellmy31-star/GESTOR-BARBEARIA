@@ -342,7 +342,12 @@ superRouter.get("/messages", async (c) => {
   const status = c.req.query("status") || "";
   const where = status ? "WHERE j.status = ?1" : "";
   const { results } = await c.env.DB
-    .prepare(`SELECT j.id, j.company_id, c.slug, j.kind, j.status, j.attempts, j.scheduled_at, j.sent_at, j.last_error, j.price_cents, j.cost_cents, j.captured_at, j.demo
+    .prepare(`SELECT j.id, j.company_id, c.slug, j.kind, j.status, j.attempts, j.scheduled_at, j.sent_at, j.last_error, j.price_cents, j.cost_cents, j.captured_at, j.demo,
+               CASE WHEN j.status='sending' AND j.provider_msg_id=''
+                 AND (j.last_error LIKE 'Envio sem confirmação%'
+                  OR j.last_error LIKE 'Pendente de conferência%'
+                  OR j.last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes'))
+                 THEN 1 ELSE 0 END AS requires_review
                FROM message_jobs j JOIN companies c ON c.id=j.company_id ${where} ORDER BY j.id DESC LIMIT 200`)
     .bind(...(status ? [status] : []))
     .all();
