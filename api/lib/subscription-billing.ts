@@ -164,6 +164,13 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
       !Number.isFinite(amount) || Math.round(amount*100)!==inv.amount_cents) {
     return {ok:false,status:"mismatch",activated:false,message:"Pix não corresponde à fatura original."};
   }
+  // Pagamento aprovado de fatura antiga exige conciliação assistida quando
+  // outra fatura posterior já foi paga: não substituir o plano atual.
+  const newerPaid=await db.prepare(`SELECT id FROM subscription_invoices
+    WHERE company_id=?1 AND id>?2 AND status='paid' LIMIT 1`)
+    .bind(inv.company_id,inv.id).first<{id:number}>();
+  if (newerPaid) return {ok:false,status:"manual_review",activated:false,
+    message:"Pagamento antigo aprovado após uma fatura mais recente. Conciliação manual necessária."};
   const at=nowIso();
   // D1.batch é transacional: somente uma confirmação de uma fatura aberta
   // atualiza o período. Repetir Webhook/Poll jamais acrescenta outros meses.
