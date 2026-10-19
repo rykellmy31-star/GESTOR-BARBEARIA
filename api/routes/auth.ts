@@ -49,7 +49,7 @@ authRouter.post("/login", async (c) => {
 
 async function rateAccount(c: { env: Env }, email: string): Promise<boolean> {
   const { rateLimit } = await import("../lib/auth");
-  return rateLimit(`login:${email}`, 8, 15 * 60_000);
+  return rateLimit(c.env, `login:${email}`, 8, 15 * 60_000);
 }
 
 authRouter.post("/logout", async (c) => {

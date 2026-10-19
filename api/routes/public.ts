@@ -115,7 +115,7 @@ publicRouter.get("/availability-month", async (c) => {
 publicRouter.post("/bookings", async (c) => {
   const ip = c.req.header("cf-connecting-ip") || "local";
   const { rateLimit } = await import("../lib/auth");
-  if (!rateLimit(`book:${ip}:${c.req.param("slug")}`, 12, 5 * 60_000)) return err(c, "Muitas tentativas de agendamento. Aguarde alguns minutos.", 429);
+  if (!(await rateLimit(c.env, `book:${ip}:${c.req.param("slug")}`, 12, 5 * 60_000))) return err(c, "Muitas tentativas de agendamento. Aguarde alguns minutos.", 429);
   const parsed = createBookingSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
   const s = ctxSettings(c);

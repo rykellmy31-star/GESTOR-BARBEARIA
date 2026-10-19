@@ -22,6 +22,7 @@ import { billingRouter } from "./routes/billing";
 import { reconcileSubscriptionPix } from "./lib/subscription-billing";
 import { uploadsRouter } from "./routes/uploads";
 import { originGuard } from "./lib/auth";
+import { purgeRequestRateLimits } from "./lib/rate-limit";
 import { processDueJobs } from "./lib/messaging/jobs";
 import { expirePendingTopups, reconcilePendingTopups } from "./lib/topup";
 import { nowIso } from "./lib/utils";
@@ -129,6 +130,7 @@ export default {
               if (n < 200) break;
             }
             await purgeOldSalesRateLimits(env.DB);
+            await purgeRequestRateLimits(env.DB);
             console.log("[privacy] leads expirados removidos:", removed);
           }
           // Reconsulta apenas a cada 10 minutos, evitando custo excessivo

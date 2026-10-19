@@ -1,12 +1,12 @@
 // ============================================================================
 // Autenticação global (1 usuário → N empresas) + sessões D1 + CSRF por origin
-// + rate limit em memória (adequado p/ escala inicial; trocar por Durable
-// Objects/Turnstile quando houver tráfego real).
+// + limites persistentes e atômicos no D1, compartilhados entre Workers.
 // ============================================================================
 import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { createFactory } from "hono/factory";
 import { sha256hex } from "./crypto";
+import { persistentRateLimit } from "./rate-limit";
 import type { Env, SessionUser } from "../types";
 import { err, nowIso } from "./utils";
 
@@ -123,34 +123,17 @@ export const originGuard = factory.createMiddleware(async (c, next) => {
 });
 
 // ── rate limiting ───────────────────────────────────────────────────────────
-interface Bucket {
-  count: number;
-  resetAt: number;
-}
-const buckets = new Map<string, Bucket>();
-
-/** true se permitido; incrementa bucket. */
-export function rateLimit(key: string, limit: number, windowMs: number): boolean {
-  const now = Date.now();
-  const b = buckets.get(key);
-  if (!b || b.resetAt < now) {
-    buckets.set(key, { count: 1, resetAt: now + windowMs });
-    if (buckets.size > 5000) {
-      for (const [k, v] of buckets) if (v.resetAt < now) buckets.delete(k);
-    }
-    return true;
-  }
-  if (b.count >= limit) return false;
-  b.count++;
-  return true;
+/** Compartilha tentativas entre instâncias, sem guardar IP/e-mail em claro. */
+export function rateLimit(env: Env, key: string, limit: number, windowMs: number): Promise<boolean> {
+  return persistentRateLimit(env.DB, env.SESSION_SECRET || "dev-request-limit-key", key, limit, windowMs);
 }
 
 export const authRateLimit =
   (limit = 10, windowMs = 5 * 60_000) =>
   async (c: Context<{ Bindings: Env }>, next: () => Promise<void>) => {
-    const ip = c.req.header("cf-connecting-ip") || c.req.header("x-forwarded-for")?.split(",")[0] || "local";
+    const ip = c.req.header("cf-connecting-ip") || "local";
     const scope = c.req.path.replace(/^\/api\/c\/[a-z0-9-]+/, "");
-    if (!rateLimit(`auth:${ip}:${scope}`, limit, windowMs)) {
+    if (!(await rateLimit(c.env, `auth:${ip}:${scope}`, limit, windowMs))) {
       return err(c, "Muitas tentativas. Aguarde alguns minutos e tente novamente.", 429);
     }
     await next();

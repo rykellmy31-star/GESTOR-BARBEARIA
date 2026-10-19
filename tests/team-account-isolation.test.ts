@@ -1,7 +1,9 @@
 /// <reference types="@cloudflare/vitest-pool-workers" />
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
-import schema from "../migrations/0001_init.sql";
+import schema1 from "../migrations/0001_init.sql";
+import schema6 from "../migrations/0006_request_rate_limits.sql";
+const schema = schema1 + "\n" + schema6;
 import { app } from "../api/index";
 import { sha256hex } from "../api/lib/crypto";
 import type { Env } from "../api/types";

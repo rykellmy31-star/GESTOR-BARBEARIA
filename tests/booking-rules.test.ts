@@ -17,6 +17,7 @@ import schema0002 from "../migrations/0002_whatsapp_identity.sql";
 import schema0003 from "../migrations/0003_sales_leads.sql";
 import schema0004 from "../migrations/0004_start_trial.sql";
 import schema0005 from "../migrations/0005_subscription_pix.sql";
+import schema0006 from "../migrations/0006_request_rate_limits.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
@@ -68,6 +69,7 @@ beforeAll(async () => {
   await runSqlScript(schema0003);
   await runSqlScript(schema0004);
   await runSqlScript(schema0005);
+  await runSqlScript(schema0006);
   const hash = await hashPassword(PW);
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   await db.batch([
