@@ -1424,12 +1424,12 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
       throw new Error("Rede externa inesperada: "+endpoint);
     });
     try {
-      const first=await request(e,url+"/pix",owner.cookie,"POST");
+      const first=await request(e,url+"/pix",owner.cookie,"POST",{plan_code:"free"});
       expect(first.status).toBe(200);
       const invoice:any=await first.json();
       expect(invoice.invoice.qr_code_text).toBe("pix-copia-cola-teste");
       expect(invoice.invoice.amount_cents).toBe(1999);
-      const repeat=await request(e,url+"/pix",owner.cookie,"POST");
+      const repeat=await request(e,url+"/pix",owner.cookie,"POST",{plan_code:"free"});
       expect((await repeat.json() as any).invoice.id).toBe(invoice.invoice.id);
       expect(paymentCalls).toBe(1);
       const before=await db.prepare("SELECT status,period_end FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
@@ -1468,7 +1468,7 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
         payment_method_id:"credit_card",currency_id:"BRL",transaction_amount:19.99}),{status:200});
     });
     try {
-      const created=await request(e,url+"/pix",owner.cookie,"POST");
+      const created=await request(e,url+"/pix",owner.cookie,"POST",{plan_code:"free"});
       expect(created.status).toBe(200);
       const invoice:any=(await created.json() as any).invoice;
       const response=await request(e,url+"/pix/verify",owner.cookie,"POST",{invoice_id:invoice.id});
@@ -1487,9 +1487,9 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
     const e=billingEnv(),st={...e,TIGU_STAGING:"1"} as Env;
     const fetchMock=vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("rede proibida"));
     try {
-      const blocked=await request(st,"/api/c/"+a.slug+"/billing/pix",a.cookie,"POST");
+      const blocked=await request(st,"/api/c/"+a.slug+"/billing/pix",a.cookie,"POST",{plan_code:"free"});
       expect(blocked.status).toBe(503);
-      const forbidden=await request(e,"/api/c/"+b.slug+"/billing/pix",a.cookie,"POST");
+      const forbidden=await request(e,"/api/c/"+b.slug+"/billing/pix",a.cookie,"POST",{plan_code:"free"});
       expect(forbidden.status).toBe(403);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {fetchMock.mockRestore();}
