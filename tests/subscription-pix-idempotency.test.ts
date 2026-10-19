@@ -82,4 +82,16 @@ describe("regressão D1: confirmação Pix idempotente", () => {
     expect(repeated.meta.changes).toBe(0);
   });
 
+  it("não deixa Pix antigo sobrescrever plano de fatura mais recente paga", async () => {
+    await db.prepare("INSERT INTO subscription_invoices (id,company_id,code,plan_code,amount_cents,status,provider_payment_id) VALUES (9005,9001,'TIGU-TEST-9005','free',1999,'failed','9005')").run();
+    await db.prepare("INSERT INTO subscription_invoices (id,company_id,code,plan_code,amount_cents,status,provider_payment_id) VALUES (9006,9001,'TIGU-TEST-9006','scale',12990,'paid','9006')").run();
+    const result = await db.prepare(`UPDATE subscription_invoices SET status='paid',paid_at='2026-10-19T15:00:00Z'
+      WHERE id=9005 AND status IN ('pending','expired','failed')
+      AND NOT EXISTS (SELECT 1 FROM subscription_invoices newer
+        WHERE newer.company_id=subscription_invoices.company_id
+        AND newer.id>subscription_invoices.id AND newer.status='paid')`).run();
+    expect(result.meta.changes).toBe(0);
+    expect((await db.prepare("SELECT status FROM subscription_invoices WHERE id=9005").first<{status:string}>())?.status).toBe("failed");
+  });
+
 });
