@@ -11,6 +11,7 @@ import { DEFAULT_SETTINGS } from "../lib/settings";
 
 import { sha256hex } from "../lib/crypto";
 import { consumePasswordReset } from "../lib/password-reset";
+import { changePasswordAtomically } from "../lib/password-change";
 
 export const authRouter = new Hono<{ Bindings: Env }>();
 
@@ -33,7 +34,7 @@ authRouter.post("/login", async (c) => {
     return err(c, "E-mail ou senha incorretos", 401);
   }
   if (!u.active) return err(c, "Conta desativada. Contate o suporte Tigu.", 403);
-  await createSession(c, u.id);
+  if (!(await createSession(c,u.id,u.password_hash))) return err(c,"Credenciais alteradas durante o login. Tente novamente.",409);
   await db.batch([
     db.prepare(`UPDATE users SET last_login_at = ?2 WHERE id = ?1`).bind(u.id, nowIso()),
     db.prepare(`DELETE FROM password_resets WHERE user_id = ?1 AND used_at IS NULL`).bind(u.id),
@@ -165,11 +166,10 @@ authRouter.post("/password", requireAuth, async (c) => {
   const u = c.get("user");
   const row = await c.env.DB.prepare(`SELECT password_hash FROM users WHERE id = ?1`).bind(u.id).first<{ password_hash: string }>();
   if (!row || !(await verifyPassword(parsed.data.current, row.password_hash))) return err(c, "Senha atual incorreta", 401);
-  await c.env.DB.batch([
-    c.env.DB.prepare(`UPDATE users SET password_hash = ?1, must_change_password = 0 WHERE id = ?2`).bind(await hashPassword(parsed.data.next), u.id),
-    c.env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?1`).bind(u.id),
-  ]);
-  await createSession(c, u.id);
+  const newHash=await hashPassword(parsed.data.next);
+  if (!(await changePasswordAtomically(c.env.DB,u.id,row.password_hash,newHash)))
+    return err(c,"A senha foi alterada por outra operação. Entre novamente.",409);
+  if (!(await createSession(c,u.id,newHash))) return err(c,"Credenciais alteradas. Entre novamente.",409);
   await audit(c.env.DB, u, "password.change", "user", u.id, {}, { companyId: null, scope: "platform" });
   return json(c, { ok: true, message: "Senha alterada. Outras sessões foram encerradas." });
 });

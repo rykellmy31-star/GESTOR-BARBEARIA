@@ -32,16 +32,20 @@ function secretOf(env: Env): string {
   return env.SESSION_SECRET || "dev-insecure-secret-change-me";
 }
 
-export async function createSession(c: Context<{ Bindings: Env }>, userId: number): Promise<void> {
+export async function createSession(c: Context<{ Bindings: Env }>, userId: number, expectedPasswordHash?: string): Promise<boolean> {
   // assinatura: token_hash derivado de token aleatório + segredo + uid
   const token = Array.from(crypto.getRandomValues(new Uint8Array(24))).map((b) => b.toString(16).padStart(2, "0")).join("");
   const tokenHash = await sha(`${token}:${secretOf(c.env)}:${userId}`);
   const expiresAt = new Date(Date.now() + COOKIE_OPTS.maxAge * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
-  await c.env.DB.batch([
-    c.env.DB.prepare(`INSERT OR REPLACE INTO sessions (token_hash, user_id, expires_at, last_seen_at, created_at) VALUES (?1,?2,?3,?3,?4)`).bind(tokenHash, userId, expiresAt, nowIso()),
+  const results=await c.env.DB.batch([
+    c.env.DB.prepare(`INSERT INTO sessions(token_hash,user_id,expires_at,last_seen_at,created_at)
+      SELECT ?1,id,?3,?3,?4 FROM users WHERE id=?2 AND active=1 AND (?5 IS NULL OR password_hash=?5)`)
+      .bind(tokenHash,userId,expiresAt,nowIso(),expectedPasswordHash??null),
     c.env.DB.prepare(`DELETE FROM sessions WHERE expires_at < ?1`).bind(nowIso()),
   ]);
+  if (results[0].meta.changes!==1) return false;
   setCookie(c, COOKIE_NAME, `uid.${userId}.${token}`, COOKIE_OPTS);
+  return true;
 }
 
 export async function destroySession(c: Context<{ Bindings: Env }>): Promise<void> {
