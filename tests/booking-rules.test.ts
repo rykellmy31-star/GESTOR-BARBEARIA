@@ -915,3 +915,33 @@ describe("Roteamento HTTP dos painéis React", () => {
     expect(resolveApiUrl("/api/c/alfa/barbers", "/c/alfa")).toBe("/api/c/alfa/barbers");
   });
 });
+
+
+describe("Troca obrigatória de senha após reset do suporte", () => {
+  it("bloqueia recursos da plataforma até a troca da senha provisória", async () => {
+    const at = new Date().toISOString().replace(/\\.\\d{3}Z$/, "Z");
+    const email = "troca-senha-" + Date.now() + "@teste.com";
+    await db.prepare(
+      "INSERT INTO users (name,email,password_hash,platform_role,active,must_change_password,created_at) VALUES ('SuporteTeste',?1,?2,'superadmin',1,1,?3)"
+    ).bind(email, await hashPassword(PW), at).run();
+    const login = await api("/api/auth/login", {
+      method: "POST", body: JSON.stringify({ email, password: PW })
+    });
+    expect(login.status).toBe(200);
+    expect(login.body.next).toBe("/alterar-senha");
+    expect(login.body.user.must_change_password).toBe(true);
+    const provisionalCookie = login.cookie!;
+    expect((await api("/api/super/settings", {}, provisionalCookie)).status).toBe(403);
+    const before = await api("/api/auth/me", {}, provisionalCookie);
+    expect(before.body.user.must_change_password).toBe(true);
+    const changed = await api("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ current: PW, next: "NovaSenhaDiferente#2026" })
+    }, provisionalCookie);
+    expect(changed.status).toBe(200);
+    const after = await api("/api/auth/me", {}, changed.cookie);
+    expect(after.body.user.must_change_password).toBe(false);
+    expect((await api("/api/super/settings", {}, changed.cookie)).status).toBe(200);
+    expect((await api("/api/super/settings", {}, provisionalCookie)).status).toBe(401);
+  });
+});
