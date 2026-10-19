@@ -1290,3 +1290,69 @@ describe("Privacidade e retenção de dados de interessados", () => {
     expect(await db.prepare("SELECT fingerprint FROM sales_lead_rate_limits WHERE fingerprint='recent-fingerprint-test'").first()).not.toBeNull();
   });
 });
+
+
+describe("Tigu Start R$ 19,99 e teste grátis por 15 dias", () => {
+  it("cadastra assinatura de teste com término exato de 15 dias", async () => {
+    const mail = "trial15-" + crypto.randomUUID() + "@teste.com";
+    const response = await api("/api/auth/register", { method: "POST", body: JSON.stringify({
+      company_name: "Barbearia Trial 15", email: mail, password: PW,
+      name: "Proprietário Teste", phone: ""
+    }) });
+    expect(response.status).toBe(201);
+    const slug = response.body.company.slug;
+    const record = await db.prepare(
+      "SELECT s.status,s.started_at,s.period_end,p.price_cents_month FROM companies c JOIN subscriptions s ON s.company_id=c.id JOIN plans p ON p.code=s.plan_code WHERE c.slug=?1"
+    ).bind(slug).first<{status:string;started_at:string;period_end:string;price_cents_month:number}>();
+    expect(record?.status).toBe("trial");
+    expect(record?.price_cents_month).toBe(1999);
+    expect(record?.period_end).toBeTruthy();
+    const duration = new Date(record!.period_end).getTime() - new Date(record!.started_at).getTime();
+    expect(duration).toBe(15 * 24 * 60 * 60 * 1000);
+    const stillActive = await api("/api/c/" + slug + "/admin/bookings", {}, response.cookie);
+    expect(stillActive.status).toBe(200);
+    const noCharge = await db.prepare(
+      "SELECT COUNT(*) AS n FROM topups WHERE company_id=(SELECT id FROM companies WHERE slug=?1)"
+    ).bind(slug).first<{n:number}>();
+    expect(noCharge?.n).toBe(0);
+  });
+
+  it("encerrado o teste, bloqueia novas operações sem apagar consultas ou cobrar", async () => {
+    const mail = "trial-end-" + crypto.randomUUID() + "@teste.com";
+    const sign = await api("/api/auth/register", { method: "POST", body: JSON.stringify({
+      company_name: "Barbearia Trial End",email: mail,password: PW,name:"Proprietário Teste",phone:""
+    })});
+    expect(sign.status).toBe(201);
+    const slug = sign.body.company.slug;
+    const end = new Date(Date.now() - 60_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    await db.prepare("UPDATE subscriptions SET period_end=?1 WHERE company_id=(SELECT id FROM companies WHERE slug=?2)")
+      .bind(end,slug).run();
+    expect((await api("/api/c/" + slug + "/config")).status).toBe(200);
+    expect((await api("/api/c/" + slug + "/admin/bookings",{},sign.cookie)).status).toBe(200);
+    expect((await api("/api/c/" + slug + "/admin/bookings",{method:"POST",body:"{}"},sign.cookie)).status).toBe(402);
+    expect((await api("/api/c/" + slug + "/bookings",{method:"POST",body:"{}"})).status).toBe(402);
+    expect((await api("/api/c/" + slug + "/orders",{method:"POST",body:"{}"})).status).toBe(402);
+    const unauthenticated = await api("/api/c/" + slug + "/admin/bookings",{method:"POST",body:"{}"});
+    expect(unauthenticated.status).toBe(401);
+    const latest = await db.prepare(
+      "SELECT COUNT(*) AS n FROM topups WHERE company_id=(SELECT id FROM companies WHERE slug=?1)"
+    ).bind(slug).first<{n:number}>();
+    expect(latest?.n).toBe(0);
+
+    // Ativação manual pelo Superadmin: não cria cobrança automática.
+    await db.prepare("UPDATE subscriptions SET status='active' WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+      .bind(slug).run();
+    const allowed = await api("/api/c/" + slug + "/admin/bookings",{method:"POST",body:"{}"},sign.cookie);
+    expect(allowed.status).not.toBe(402);
+  });
+
+  it("mantém status ativo liberado e bloqueia status de inadimplência", async () => {
+    const { canOperateSubscription } = await import("../api/lib/trial");
+    const now = new Date("2026-10-19T12:00:00.000Z");
+    expect(canOperateSubscription({plan_code:"free",status:"trial",period_end:"2026-11-03T12:00:00Z"},now)).toBe(true);
+    expect(canOperateSubscription({plan_code:"free",status:"trial",period_end:"2026-10-19T12:00:00Z"},now)).toBe(false);
+    expect(canOperateSubscription({plan_code:"free",status:"active",period_end:"2020-01-01T00:00:00Z"},now)).toBe(true);
+    expect(canOperateSubscription({plan_code:"free",status:"past_due",period_end:null},now)).toBe(false);
+    expect(canOperateSubscription({plan_code:"free",status:"cancelled",period_end:null},now)).toBe(false);
+  });
+});
