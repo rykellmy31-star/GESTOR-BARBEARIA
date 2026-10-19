@@ -6,12 +6,13 @@ import {
   ShoppingBag, Store, Users, Wallet, AlertTriangle, type LucideIcon
 } from "lucide-react";
 
-type View = "platform" | "vendas" | "barbearia" | "agenda" | "mensagens" | "carteira" | "loja";
+type View = "platform" | "vendas" | "interessados" | "barbearia" | "agenda" | "mensagens" | "carteira" | "loja";
 type NavItem = { key: View; title: string; subtitle: string; icon: LucideIcon };
 
 const navigation: NavItem[] = [
   { key: "platform", title: "Superadmin Tigu", subtitle: "Visão da plataforma", icon: ShieldCheck },
   { key: "vendas", title: "Página de vendas", subtitle: "Contratação e contato", icon: MessageCircle },
+  { key: "interessados", title: "Interessados", subtitle: "Pedidos de contratação", icon: Users },
   { key: "barbearia", title: "Painel da barbearia", subtitle: "Indicadores e equipe", icon: LayoutDashboard },
   { key: "agenda", title: "Agenda", subtitle: "Próximos horários", icon: CalendarDays },
   { key: "mensagens", title: "WhatsApp", subtitle: "Lembretes e envios", icon: MessageCircle },
@@ -163,6 +164,7 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
               ["Inspecionar créditos", "carteira"],
               ["Ver automações", "mensagens"],
               ["Ver contato de vendas", "vendas"],
+              ["Ver pedidos de contratação", "interessados"],
             ] as const).map(([name, key]) => (
               <button key={key} type="button" onClick={() => onNavigate(key)}
                 className="flex w-full items-center justify-between rounded-xl border border-[#303039] px-3 py-3 text-left text-sm text-zinc-300 transition hover:border-[#d4af37]/60 hover:text-[#d4af37]">
@@ -217,6 +219,34 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
         Você cadastrará seu número e e-mail em Superadmin → Config. plataforma → Contato da página de vendas.
         Quando o backend estiver conectado, as informações salvas aparecerão automaticamente na página inicial de contratação.
       </div>
+    </div>
+  );
+
+  if (view === "interessados") return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+        <Metric label="Novas solicitações" value="4" caption="Dados fictícios de demonstração" icon={Users} />
+        <Metric label="Em negociação" value="2" caption="Sem cobrança ou ativação" icon={MessageCircle} />
+        <Metric label="Atendimentos encerrados" value="3" caption="Simulação do funil comercial" icon={CheckCircle2} />
+      </div>
+      <Panel title="Interessados nos planos" aside={<Tag tone="gold">Exemplo, sem clientes reais</Tag>}>
+        <div className="space-y-3">
+          {[
+            ["Barbearia Modelo", "Ana Exemplo", "Pro", "Novo"],
+            ["Studio Fictício", "Bruno Demonstração", "Scale", "Contato realizado"],
+            ["Barbearia Teste", "Carlos Simulação", "Pro", "Em negociação"],
+          ].map(([company, contact, plan, status]) => (
+            <div key={company} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#303039] bg-[#111115] p-4">
+              <div>
+                <p className="text-sm font-semibold text-zinc-100">{company}</p>
+                <p className="mt-1 text-xs text-zinc-400">{contact} · Plano {plan}</p>
+              </div>
+              <Tag tone={status === "Novo" ? "gold" : "green"}>{status}</Tag>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 text-xs leading-relaxed text-zinc-500">No Superadmin funcional, você poderá visualizar os contatos enviados com consentimento, registrar observações e atualizar o andamento. Nenhum desses registros é real.</p>
+      </Panel>
     </div>
   );
 
