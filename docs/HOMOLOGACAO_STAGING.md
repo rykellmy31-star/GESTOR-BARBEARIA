@@ -131,3 +131,12 @@ As flags `security.session_secret_ready` e `security.encryption_key_ready` no he
 O script `scripts/staging.mjs` usa um contrato **estrito**. Rejeita mudanças de nome de Worker, rotas personalizadas, recursos adicionais, variáveis desconhecidas (especialmente credenciais de pagamento), alteração de `run_worker_first`, múltiplos bancos D1, buckets R2 extras e cron ativo. A validação ocorre antes de migrar ou publicar. O CI executa testes positivos e negativos desse contrato.
 
 Não rode `npm run deploy` nem `npm run db:migrate:remote` para homologação: esses comandos usam a configuração principal. Use exclusivamente `npm run staging:migrate` e `npm run staging:deploy`, depois de `npm run staging:validate`.
+
+
+## Teste de privacidade dos interessados
+
+Na homologação, execute `npm run staging:migrate` antes de usar `/superadmin/leads`: a tabela `sales_leads` vem da migração `0003_sales_leads.sql`. Com uma conta de Superadmin **fictícia**, confira os controles de retenção: padrão de **180 dias**, opções 30/90/180/365, alteração com auditoria e exclusão individual de um contato de testes, com confirmação e justificativa.
+
+O endpoint público `GET /api/marketing/privacy` revela somente o prazo atual, para ser mostrado na página de contratação. Na homologação o **cron está desligado**; por isso, a exclusão de dados vencidos deve ser acionada manualmente pelo Superadmin para testes. No ambiente comercial futuro, o cron elimina diariamente, às 03:05 UTC, até 2.000 solicitações vencidas por execução (10 lotes de 200). Hashes antigos do limitador de tentativas são eliminados após 48 horas.
+
+**Atenção:** o prazo inicial de 180 dias é uma opção técnica provisória. Antes de aceitar dados de clientes de verdade, valide a política de privacidade e a base legal com orientação adequada. Não use dados reais nos testes.
