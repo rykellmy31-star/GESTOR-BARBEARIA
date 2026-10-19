@@ -1154,3 +1154,44 @@ describe("Cloudflare Turnstile no atendimento comercial", () => {
     } finally { calls.mockRestore(); }
   });
 });
+
+
+describe("Prontidão de autenticação em homologação", () => {
+  it("informa presença de secrets sem expor seus valores no health", async () => {
+    const secret = "secret-de-teste-ficticio-com-mais-de-trinta-e-dois-caracteres";
+    const encryption = "chave-ficticia-exclusiva-da-homologacao-com-32-ou-mais-caracteres";
+    const response = await app.request("/api/health", {}, {
+      ...env, DB: db, APP_ENV: "production", TIGU_STAGING: "1",
+      SESSION_SECRET: secret, MSG_ENC_KEY: encryption,
+    } as Env);
+    expect(response.status).toBe(200);
+    const content = await response.json() as any;
+    expect(content.staging).toBe(true);
+    expect(content.security).toEqual({
+      session_secret_ready: true, encryption_key_ready: true,
+    });
+    const raw = JSON.stringify(content);
+    expect(raw).not.toContain(secret);
+    expect(raw).not.toContain(encryption);
+    const absent = await app.request("/api/health", {}, {
+      ...env, DB: db, APP_ENV: "production", TIGU_STAGING: "1",
+      SESSION_SECRET: "", MSG_ENC_KEY: "",
+    } as Env);
+    expect((await absent.json() as any).security).toEqual({
+      session_secret_ready: false, encryption_key_ready: false,
+    });
+  });
+
+  it("não cria sessão de login em produção sem secret forte", async () => {
+    const response = await app.request("/api/auth/login", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "dono@a.test", password: PW }),
+    }, {
+      ...env, DB: db, APP_ENV: "production", SESSION_SECRET: "curto",
+    } as Env);
+    expect(response.status).toBe(500);
+    expect(response.headers.get("set-cookie")).toBeNull();
+    const result = await response.json() as any;
+    expect(result.detail).toBeUndefined();
+  });
+});
