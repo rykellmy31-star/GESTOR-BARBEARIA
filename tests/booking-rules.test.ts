@@ -23,6 +23,7 @@ import { mpProvider, pickPaymentProvider } from "../api/lib/payments";
 import { app } from "../api/index";
 import { encryptSecret } from "../api/lib/crypto";
 import { loadCompanySettings } from "../api/lib/settings";
+import { resolveApiUrl } from "../src/lib/api";
 import { reconcilePendingTopups } from "../api/lib/topup";
 import { manualAdjustment, creditTopup, reserveForJob, releaseJobReservation, captureJobCharge, refundJobCharge, getWallet, resolveUncertainNotSent } from "../api/lib/wallet";
 
@@ -898,5 +899,19 @@ describe("Cadastro seguro e recuperação de conta", () => {
       "SELECT attempts FROM password_resets WHERE user_id=(SELECT id FROM users WHERE email=?1) ORDER BY id DESC LIMIT 1"
     ).bind(email).first<{ attempts: number }>();
     expect(row?.attempts).toBe(5);
+  });
+});
+
+describe("Roteamento HTTP dos painéis React", () => {
+  it("não duplica /super nem /auth no painel administrativo", () => {
+    expect(resolveApiUrl("/super/users", "/superadmin/users")).toBe("/api/super/users");
+    expect(resolveApiUrl("/super/settings", "/superadmin/settings")).toBe("/api/super/settings");
+    expect(resolveApiUrl("/super/companies/2/plan", "/superadmin/companies")).toBe("/api/super/companies/2/plan");
+    expect(resolveApiUrl("/settings", "/superadmin/settings")).toBe("/api/super/settings");
+    expect(resolveApiUrl("/marketing/contact", "/superadmin/settings")).toBe("/api/super/marketing/contact");
+    expect(resolveApiUrl("/auth/login", "/login")).toBe("/api/auth/login");
+    expect(resolveApiUrl("/marketing/contact", "/")).toBe("/api/marketing/contact");
+    expect(resolveApiUrl("/bookings", "/c/barbearia-navalha/admin")).toBe("/api/c/barbearia-navalha/bookings");
+    expect(resolveApiUrl("/api/c/alfa/barbers", "/c/alfa")).toBe("/api/c/alfa/barbers");
   });
 });
