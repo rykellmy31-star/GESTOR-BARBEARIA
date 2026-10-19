@@ -16,6 +16,9 @@
 - [x] Rotas do Superadmin normalizadas para não duplicar o prefixo HTTP.
 - [x] Senha temporária exige alteração antes de acessar os painéis. Recuperação pública em produção não inventa entrega de código que não existe.
 - [x] Ambiente de homologação preparado com recursos separados e bloqueio de provedores reais.
+- [x] Validação estrita do Worker de homologação impede rotas externas, bindings D1/R2 extras e cron; o CI testa os bloqueios.
+- [x] Diagnóstico remoto somente-leitura pronto para conferir Worker, D1, R2, secrets e permissões sem criar dados.
+- [x] Sessões de produção falham sem SESSION_SECRET forte; health expõe somente flags booleanas de prontidão.
 
 ## Ainda necessário antes da entrega comercial
 
@@ -24,6 +27,7 @@
 - [ ] Criar banco D1, bucket R2 e Worker de homologação na conta Cloudflare.
 - [ ] Aplicar migrations remotas no banco **correto**, cadastrar superadmin de teste e configurar secrets exclusivos.
 - [ ] Publicar e validar end-to-end login, alteração de senha, cadastro, agenda, catálogo, carrinho, estoque e painéis via URL de homologação.
+- [ ] Rodar o diagnóstico `STAGING_URL=https://tigu-staging.SUA_SUBCONTA.workers.dev npm run staging:smoke` **após** configurar secrets e publicar. Preparar contas fictícias apenas após isolamento confirmado.
 - [ ] Configurar projeto Cloudflare de produção separado, domínios, cookies, backups, observabilidade, proteção contra abuso e rollback.
 - [ ] Confirmar a publicação real do Cloudflare Pages. Build do GitHub não garante que a versão mais recente já está visível no endereço.
 
