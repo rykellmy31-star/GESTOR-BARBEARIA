@@ -17,7 +17,9 @@ import schema0002 from "../migrations/0002_whatsapp_identity.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
-import { ingestWhatsappWebhook, scheduleBookingMessage, cancelPendingJobs } from "../api/lib/messaging/jobs";
+import { ingestWhatsappWebhook, scheduleBookingMessage, cancelPendingJobs, processDueJobs } from "../api/lib/messaging/jobs";
+import { metaProvider } from "../api/lib/messaging/provider";
+import { encryptSecret } from "../api/lib/crypto";
 import { loadCompanySettings } from "../api/lib/settings";
 import { reconcilePendingTopups } from "../api/lib/topup";
 import { manualAdjustment, creditTopup, reserveForJob, releaseJobReservation, captureJobCharge, refundJobCharge, getWallet } from "../api/lib/wallet";
@@ -449,5 +451,62 @@ describe("Pix: recuperar confirmação sem webhook", () => {
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+});
+
+describe("WhatsApp: incerteza de envio nunca autoriza duplicidade", () => {
+  it("classifica timeout, resposta 5xx e HTTP 2xx sem ID como resultados incertos", async () => {
+    const credentials = { APP_ENV: "development" };
+    const token = await encryptSecret(credentials, "token-para-teste");
+    const context = {
+      env: credentials,
+      db,
+      demo: false,
+      conn: { access_token_enc: token, phone_number_id: "META-A-TESTE" }
+    } as Parameters<typeof metaProvider.sendTemplate>[0];
+    const input = { to: "5573999990030", templateCode: "tigu_lembrete", language: "pt_BR", variables: [] };
+    const network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network timeout"));
+    try {
+      const timeout = await metaProvider.sendTemplate(context, input);
+      expect(timeout).toMatchObject({ accepted: false, uncertain: true, permanent: false });
+      network.mockResolvedValue(new Response(JSON.stringify({ error: { code: 131056, message: "server unavailable" } }), { status: 503 }));
+      const serverError = await metaProvider.sendTemplate(context, input);
+      expect(serverError).toMatchObject({ accepted: false, uncertain: true, permanent: false });
+      network.mockResolvedValue(new Response(JSON.stringify({ messages: [] }), { status: 200 }));
+      const missingId = await metaProvider.sendTemplate(context, input);
+      expect(missingId).toMatchObject({ accepted: false, uncertain: true, permanent: false });
+      network.mockResolvedValue(new Response(JSON.stringify({ error: { message: "too many requests" } }), { status: 429 }));
+      const rateLimited = await metaProvider.sendTemplate(context, input);
+      expect(rateLimited).toMatchObject({ accepted: false, permanent: false });
+      expect(rateLimited.uncertain).toBeFalsy();
+    } finally {
+      network.mockRestore();
+    }
+  });
+
+  it("não volta à fila depois que um Worker expirou em estado de envio indeterminado", async () => {
+    const companyId = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
+      .first<{ id: number }>())!.id;
+    const now = new Date();
+    const lastAttemptAt = new Date(now.getTime() - 12 * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const dueAt = new Date(now.getTime() - 15 * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const ins = await db.prepare(
+      `INSERT INTO message_jobs (company_id, kind, to_phone, template_code,
+         language, status, scheduled_at, fire_deadline, attempts, last_attempt_at,
+         price_cents, reserved_cents, provider_msg_id, idempotency_key)
+       VALUES (?1,'test','5573999990030','tigu_lembrete','pt_BR','sending',
+         ?2,?3,1,?4,0,0,'',?5)`
+    ).bind(companyId, dueAt, new Date(now.getTime() + 60 * 60000).toISOString(), lastAttemptAt, `stuck-${Date.now()}`).run();
+    const jobId = ins.meta.last_row_id as number;
+    const first = await processDueJobs(env as Env, { now, companyId });
+    const second = await processDueJobs(env as Env, { now, companyId });
+    expect(first.sent).toBe(0);
+    expect(second.sent).toBe(0);
+    const row = await db.prepare(
+      "SELECT status, attempts, last_error FROM message_jobs WHERE id=?1"
+    ).bind(jobId).first<{ status: string; attempts: number; last_error: string }>();
+    expect(row?.status).toBe("sending");
+    expect(row?.attempts).toBe(1);
+    expect(row?.last_error).toMatch(/Pendente de conferência/);
   });
 });
