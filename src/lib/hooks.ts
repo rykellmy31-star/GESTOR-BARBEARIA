@@ -52,7 +52,7 @@ export function useAuth() {
   const changePassword = useMutation({
     mutationFn: (data: { current: string; next: string }) => api.post("/auth/password", data),
   });
-  const recover = useMutation({ mutationFn: (email: string) => api.post<{ message: string; demo_code?: string }>("/auth/recover", { email }) });
+  const recover = useMutation({ mutationFn: (email: string) => api.post<{ message: string; demo_code?: string; support_required?: boolean }>("/auth/recover", { email }) });
   const recoverVerify = useMutation({ mutationFn: (d: { email: string; code: string; password: string }) => api.post("/auth/recover/verify", d) });
   return { me, user: me.data ?? null, login, logout, register, changePassword, recover, recoverVerify, refetchMe: me.refetch };
 }
