@@ -172,7 +172,10 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
     // Assim uma fatura já consumida não estende o período novamente, mesmo
     // quando duas notificações chegam no mesmo segundo.
     db.prepare(`UPDATE subscription_invoices SET status='paid',paid_at=?1,updated_at=?1
-      WHERE id=?2 AND status IN ('pending','expired','failed')`)
+      WHERE id=?2 AND status IN ('pending','expired','failed')
+        AND NOT EXISTS (SELECT 1 FROM subscription_invoices newer
+          WHERE newer.company_id=subscription_invoices.company_id
+          AND newer.id>subscription_invoices.id AND newer.status='paid')`)
       .bind(at,inv.id),
     db.prepare(`UPDATE subscriptions SET status='active',plan_code=?3,
       period_end=strftime('%Y-%m-%dT%H:%M:%SZ',
