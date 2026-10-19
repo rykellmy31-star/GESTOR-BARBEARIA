@@ -15,6 +15,7 @@ import { confirmTopupFromProvider } from "../lib/topup";
 import { loadPlatformSettings, setPlatformSetting, platformSettingKeys, type PlatformKey } from "../lib/settings";
 import { DEFAULT_SETTINGS } from "../lib/settings";
 import { loadSalesContact, saveSalesContact, salesContactSchema } from "../lib/marketing";
+import { changePlan, listPublicPlans, planCodeSchema, planEditSchema } from "../lib/plans";
 import { processDueJobs } from "../lib/messaging/jobs";
 import { randomHex } from "../lib/utils";
 
@@ -297,6 +298,27 @@ superRouter.post("/jobs/:id/refund", async (c) => {
   const ok = await refundJobCharge(db, job.company_id, job.id, job.price_cents, `Estorno manual Tigu: ${parsed.data.justification.trim()}`, (c.get("user") as { id: number }).id);
   await audit(db, c.get("user"), "job.refund", "message_job", job.id, { justification: parsed.data.justification, cents: job.price_cents }, { companyId: job.company_id, scope: "platform" });
   return json(c, { ok });
+});
+
+// ── planos de contratação da plataforma (não efetua cobrança recorrente) ─────
+superRouter.get("/plans", async (c) =>
+  json(c, { plans: await listPublicPlans(c.env.DB), automatic_billing: false })
+);
+
+superRouter.put("/plans/:code", async (c) => {
+  const code = planCodeSchema.safeParse(c.req.param("code"));
+  const parsed = planEditSchema.safeParse(await c.req.json().catch(() => null));
+  if (!code.success || !parsed.success) return err(c, "Plano ou configuração inválida.", 422);
+  if (code.data === "free" && parsed.data.price_cents_month !== 0)
+    return err(c, "O plano Start gratuito deve permanecer com preço mensal zero.", 422);
+  const previous = (await listPublicPlans(c.env.DB)).find(p => p.code === code.data);
+  if (!previous) return err(c, "Plano inexistente.", 404);
+  const result = await changePlan(c.env.DB, code.data, parsed.data);
+  if (result.meta?.changes !== 1) return err(c, "Não foi possível atualizar o plano.", 409);
+  await audit(c.env.DB, c.get("user"), "platform.plan_update", "plan", code.data,
+    { before: previous, after: parsed.data, automatic_billing: false },
+    { companyId: null, scope: "platform" });
+  return json(c, { ok: true, plan: (await listPublicPlans(c.env.DB)).find(p => p.code === code.data) });
 });
 
 // ── precificação (global e por empresa) ─────────────────────────────────────
