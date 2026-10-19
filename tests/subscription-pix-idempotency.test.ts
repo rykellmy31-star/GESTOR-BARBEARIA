@@ -124,4 +124,24 @@ describe("regressão D1: confirmação Pix idempotente", () => {
     }
   });
 
+  it("recusa divergência de valor sem ativar assinatura", async () => {
+    const now = "2026-10-19T16:00:00Z";
+    await db.prepare("INSERT INTO companies (id,slug,name,status,plan_code,created_at,updated_at) VALUES (9011,'billing-mismatch-test','Billing Mismatch Test','active','free',?1,?1)").bind(now).run();
+    await db.prepare("INSERT INTO subscriptions (company_id,plan_code,status,period_end,updated_at) VALUES (9011,'free','trial','2026-10-20T16:00:00Z',?1)").bind(now).run();
+    await db.prepare("INSERT INTO subscription_invoices (id,company_id,code,plan_code,amount_cents,status,provider_payment_id) VALUES (9011,9011,'TIGU-TEST-9011','scale',12990,'pending','9011')").run();
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id:9011,status:"approved",external_reference:"TIGU-TEST-9011",
+      transaction_amount:19.99,currency_id:"BRL",payment_method_id:"pix"
+    }),{status:200})));
+    try {
+      const result = await confirmSubscriptionPix({...env,DB:db,MP_ACCESS_TOKEN:"test-token",TIGU_STAGING:"0"} as Env,"9011");
+      expect(result).toMatchObject({ok:false,status:"mismatch",activated:false});
+      expect((await db.prepare("SELECT status FROM subscription_invoices WHERE id=9011").first<{status:string}>())?.status).toBe("pending");
+      expect((await db.prepare("SELECT plan_code FROM subscriptions WHERE company_id=9011").first<{plan_code:string}>())?.plan_code).toBe("free");
+    } finally {
+      vi.stubGlobal("fetch",original);
+    }
+  });
+
 });
