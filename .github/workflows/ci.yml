@@ -41,5 +41,7 @@ jobs:
         run: |
           grep -R -q 'Sistema desenvolvido por' dist/assets
           grep -R -q 'Carlos Rykellmy Santos Correia' dist/assets
+          grep -R -q 'Filtrar agendamentos por barbeiro' dist/assets
+          grep -R -q 'Profissional:' dist/assets
       - name: Rodar testes
         run: npm test
