@@ -74,4 +74,12 @@ describe("regressão D1: confirmação Pix idempotente", () => {
     expect(after).toEqual(before);
   });
 
+  it("permite conciliar fatura marcada failed quando o gateway aprova tardiamente", async () => {
+    await db.prepare("INSERT INTO subscription_invoices (id,company_id,code,plan_code,amount_cents,status,provider_payment_id) VALUES (9004,9001,'TIGU-TEST-9004','pro',4990,'failed','9004')").run();
+    const result = await db.prepare("UPDATE subscription_invoices SET status='paid',paid_at=?1 WHERE id=9004 AND status IN ('pending','expired','failed')").bind("2026-10-19T14:10:00Z").run();
+    expect(result.meta.changes).toBe(1);
+    const repeated = await db.prepare("UPDATE subscription_invoices SET status='paid' WHERE id=9004 AND status IN ('pending','expired','failed')").run();
+    expect(repeated.meta.changes).toBe(0);
+  });
+
 });
