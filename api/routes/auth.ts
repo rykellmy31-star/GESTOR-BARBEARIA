@@ -147,7 +147,7 @@ authRouter.post("/register", async (c) => {
 async function myCompanies(db: D1Database, userId: number) {
   const { results } = await db
     .prepare(
-      `SELECT c.slug, c.name, c.status, m.role, p.name AS plan
+      `SELECT c.slug, c.name, c.status, m.role, p.name AS plan, s.status AS subscription_status, s.period_end AS trial_end, p.price_cents_month
        FROM company_memberships m JOIN companies c ON c.id = m.company_id
        JOIN subscriptions s ON s.company_id = c.id JOIN plans p ON p.code = s.plan_code
        WHERE m.user_id = ?1 AND m.active = 1 ORDER BY c.name`
