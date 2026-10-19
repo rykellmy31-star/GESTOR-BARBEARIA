@@ -269,6 +269,35 @@ superRouter.put("/wallets/:companyId/policy", async (c) => {
 });
 
 // ── pagamentos / recargas / reembolsos ──────────────────────────────────────
+// ── mensalidades Pix dos planos — acompanhamento, sem liberação manual ──────
+superRouter.get("/subscription-invoices", async (c) => {
+  const status = c.req.query("status") || "";
+  const query = (c.req.query("q") || "").trim().slice(0, 80);
+  const allowed = ["", "creating", "pending", "paid", "expired", "failed"];
+  if (!allowed.includes(status)) return err(c, "Situação de fatura inválida.", 422);
+  const db = c.env.DB;
+  // Não retornar QR Code, token ou dados do titular ao dashboard global.
+  const [list, totals] = await Promise.all([
+    db.prepare(`SELECT i.id,i.code,i.company_id,c.name AS company_name,c.slug,
+        i.plan_code,i.amount_cents,i.status,i.provider_payment_id,
+        i.expires_at,i.paid_at,i.created_at,i.updated_at
+      FROM subscription_invoices i JOIN companies c ON c.id=i.company_id
+      WHERE (?1='' OR i.status=?1)
+        AND (?2='' OR c.name LIKE ?3 OR c.slug LIKE ?3 OR i.code LIKE ?3)
+      ORDER BY i.created_at DESC,i.id DESC LIMIT 100`)
+      .bind(status,query,`%${query}%`).all(),
+    db.prepare(`SELECT
+      COUNT(*) AS total,
+      COALESCE(SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END),0) AS paid_count,
+      COALESCE(SUM(CASE WHEN status='paid' THEN amount_cents ELSE 0 END),0) AS paid_cents,
+      COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END),0) AS pending_count,
+      COALESCE(SUM(CASE WHEN status='creating' THEN 1 ELSE 0 END),0) AS creating_count,
+      COALESCE(SUM(CASE WHEN status IN ('failed','expired') THEN 1 ELSE 0 END),0) AS closed_count
+      FROM subscription_invoices`).first(),
+  ]);
+  return json(c, { invoices: list.results, summary: totals, limit: 100 });
+});
+
 superRouter.get("/topups", async (c) => {
   const status = c.req.query("status") || "";
   const { results } = await c.env.DB
