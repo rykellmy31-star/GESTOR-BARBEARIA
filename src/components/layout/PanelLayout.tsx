@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Bell, Calendar, ChevronRight, LayoutDashboard, LogOut, Menu, MessageSquare, Scissors, Settings as SettingsIcon, ShieldCheck, Sparkles, Store, Tag, Users, X, ClipboardList, Wallet, UsersRound } from "lucide-react";
+import { Bell, Calendar, ChevronRight, LayoutDashboard, LogOut, Menu, MessageSquare, Scissors, Settings as SettingsIcon, ShieldCheck, Sparkles, Store, Tag, Users, X, ClipboardList, Wallet, UsersRound, CreditCard } from "lucide-react";
 import { clsx } from "clsx";
 import { useAuth, useConfig, useNotifications } from "@/lib/hooks";
 import { siteBase } from "@/lib/api";
@@ -70,6 +70,7 @@ const adminNav = [
   { to: "clientes", label: "Clientes", icon: Users },
   { to: "mensagens", label: "WhatsApp", icon: MessageSquare },
   { to: "carteira", label: "Carteira de créditos", icon: Wallet },
+  { to: "assinatura", label: "Assinatura e Pix", icon: CreditCard },
   { to: "configuracoes", label: "Configurações", icon: SettingsIcon },
   { to: "demonstracao", label: "Demonstração", icon: Sparkles },
 ];
@@ -90,7 +91,7 @@ function TrialStatusBanner({ end, cents }: { end: string; cents: number }) {
         {expired
           ? `Novas operações estão pausadas. O Start custa ${price}/mês. Entre em contato com o suporte Tigu para ativar.`
           : `Após o prazo, o Start custa ${price}/mês, mediante ativação assistida.`}
-        {" "}Nenhuma cobrança automática é realizada.
+        {" "}A cobrança só acontece quando você gerar e pagar um Pix.
       </p>
     </div>
   );
@@ -104,6 +105,16 @@ export function AdminLayout() {
   const [menu, setMenu] = useState(false);
   const user = me.data;
   const activeCompany = user?.companies?.find(company => `/c/${company.slug}` === base);
+  const expires = activeCompany?.trial_end ? new Date(activeCompany.trial_end).getTime() : 0;
+  const expired = Boolean(activeCompany &&
+    (activeCompany.subscription_status === "trial" || activeCompany.subscription_status === "active") &&
+    (!Number.isFinite(expires) || expires <= Date.now()));
+  useEffect(() => {
+    if (expired && activeCompany?.role === "owner" &&
+        location.pathname !== `${base}/admin/assinatura`) {
+      navigate(`${base}/admin/assinatura`, {replace:true});
+    }
+  }, [expired, activeCompany?.role, base, navigate]);
   const trial = activeCompany?.subscription_status === "trial" && activeCompany?.trial_end
     ? { end: activeCompany.trial_end, cents: activeCompany.price_cents_month ?? 1999 }
     : null;
@@ -172,6 +183,11 @@ export function AdminLayout() {
           )}
           <main className="p-4 pb-20 sm:p-6">
             {trial && <TrialStatusBanner end={trial.end} cents={trial.cents} />}
+            {expired && (
+              <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                Sua assinatura venceu. <NavLink to="assinatura" className="font-semibold underline">Pagar mensalidade via Pix</NavLink>.
+              </div>
+            )}
             <Outlet />
           </main>
         </div>
