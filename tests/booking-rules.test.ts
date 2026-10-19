@@ -16,6 +16,7 @@ import schema0001 from "../migrations/0001_init.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
+import { ingestWhatsappWebhook } from "../api/lib/messaging/jobs";
 import { manualAdjustment, creditTopup, reserveForJob, releaseJobReservation, captureJobCharge, refundJobCharge, getWallet } from "../api/lib/wallet";
 
 const db = env.DB as unknown as D1Database;
@@ -246,5 +247,69 @@ describe("carteira do Tigu: operações e cobrança sem duplicidade", () => {
       `reserve:job-${jobId}`, `capture:job-${jobId}`, `refund:job-${jobId}`,
       `reserve:job-${secondJobId}`, `release:job-${secondJobId}`).first<{ n: number }>();
     expect(last?.n).toBe(7);
+  });
+});
+
+describe("webhooks Meta isolados por barbearia e opt-in explícito", () => {
+  it("não altera jobs de outro número; aceita entrega válida uma só vez e ignora evento atrasado", async () => {
+    const companyA = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{ id: number }>())!.id;
+    const companyB = (await db.prepare("SELECT id FROM companies WHERE slug='bravo'").first<{ id: number }>())!.id;
+    await db.batch([
+      db.prepare("INSERT OR REPLACE INTO whatsapp_connections (company_id,status,phone_number_id,display_phone) VALUES (?1,'connected','META-A-TESTE','5573999990010')").bind(companyA),
+      db.prepare("INSERT OR REPLACE INTO whatsapp_connections (company_id,status,phone_number_id,display_phone) VALUES (?1,'connected','META-B-TESTE','5573999990020')").bind(companyB),
+    ]);
+    const now = new Date().toISOString();
+    const msgId = "wamid.tigu-cross-tenant-01";
+    const ins = await db.prepare(
+      `INSERT INTO message_jobs (company_id,kind,to_phone,template_code,status,scheduled_at,
+        fire_deadline,price_cents,capture_on,idempotency_key,provider_msg_id)
+        VALUES (?1,'reminder','5573999990030','test_reminder','sent',?2,?2,0,'sent',?3,?4)`
+    ).bind(companyA, now, "job-tenant-webhook-01", msgId).run();
+    const jobId = ins.meta.last_row_id;
+
+    const event = (phone: string, status: string, timestamp: string) => ({
+      entry: [{ changes: [{ value: {
+        metadata: { phone_number_id: phone },
+        statuses: [{ id: msgId, status, timestamp }]
+      } }] }]
+    });
+
+    const foreign = await ingestWhatsappWebhook(env as Env, event("META-B-TESTE", "delivered", "100"));
+    expect(foreign.updated).toBe(0);
+    expect((await db.prepare("SELECT status FROM message_jobs WHERE id=?1").bind(jobId).first<{ status: string }>())!.status).toBe("sent");
+    expect((await db.prepare("SELECT COUNT(*) n FROM message_webhook_events WHERE event_uid='wa:status:wamid.tigu-cross-tenant-01:delivered:100'").first<{ n: number }>())!.n).toBe(0);
+
+    const valid = await ingestWhatsappWebhook(env as Env, event("META-A-TESTE", "delivered", "100"));
+    expect(valid.updated).toBe(1);
+    expect((await db.prepare("SELECT status FROM message_jobs WHERE id=?1").bind(jobId).first<{ status: string }>())!.status).toBe("delivered");
+
+    const duplicate = await ingestWhatsappWebhook(env as Env, event("META-A-TESTE", "delivered", "100"));
+    expect(duplicate.updated).toBe(0);
+    await ingestWhatsappWebhook(env as Env, event("META-A-TESTE", "read", "101"));
+    const late = await ingestWhatsappWebhook(env as Env, event("META-A-TESTE", "failed", "99"));
+    expect(late.updated).toBe(1); // evento auditado, porém sem regressão de estado
+    expect((await db.prepare("SELECT status FROM message_jobs WHERE id=?1").bind(jobId).first<{ status: string }>())!.status).toBe("read");
+  });
+
+  it("receber uma mensagem não cria autorização automática para notificações", async () => {
+    const companyA = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{ id: number }>())!.id;
+    const companyB = (await db.prepare("SELECT id FROM companies WHERE slug='bravo'").first<{ id: number }>())!.id;
+    const phone = "5573999997788";
+    const incoming = {
+      entry: [{ changes: [{ value: {
+        metadata: { phone_number_id: "META-B-TESTE" },
+        contacts: [{ profile: { name: "Cliente de teste" } }],
+        messages: [{ id: "wamid.tigu-incoming-optin-01", from: phone, type: "text", text: { body: "Olá" } }]
+      } }] }]
+    };
+    expect((await ingestWhatsappWebhook(env as Env, incoming)).updated).toBe(1);
+    const b = await db.prepare(
+      "SELECT whatsapp_optin,lgpd_consent_at FROM customers WHERE company_id=?1 AND phone=?2"
+    ).bind(companyB, phone).first<{ whatsapp_optin: number; lgpd_consent_at: string | null }>();
+    expect(b?.whatsapp_optin).toBe(0);
+    expect(b?.lgpd_consent_at).toBeNull();
+    const a = await db.prepare("SELECT id FROM customers WHERE company_id=?1 AND phone=?2").bind(companyA, phone).first();
+    expect(a).toBeNull();
+    expect((await ingestWhatsappWebhook(env as Env, incoming)).updated).toBe(0);
   });
 });
