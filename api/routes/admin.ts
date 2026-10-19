@@ -356,6 +356,7 @@ adminRouter.post("/barbers", async (c) => {
   const parsed = barberSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
   const db = P(c); const id = cid(c);
+  if (!(await companyOwnsIds(db,"services",id,parsed.data.service_ids))) return err(c,"Serviço inválido para esta empresa",422);
   const limit = await planLimit(db, id, "max_barbers");
   if (limit >= 0) {
     const count = await db.prepare(`SELECT COUNT(*) n FROM barbers WHERE company_id=?1 AND active=1`).bind(id).first<{ n: number }>();
@@ -364,14 +365,30 @@ adminRouter.post("/barbers", async (c) => {
   const slug = await uniqueSlug(db, "barbers", slugify(parsed.data.name));
   const ins = await db.prepare(`INSERT INTO barbers (company_id, slug, name, specialty, bio, photo, work_days, work_start, work_end, break_start, break_end, active, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)`).bind(id, slug, parsed.data.name.trim(), parsed.data.specialty, parsed.data.bio, parsed.data.photo, JSON.stringify(parsed.data.work_days), parsed.data.work_start, parsed.data.work_end, parsed.data.break_start, parsed.data.break_end, parsed.data.active ? 1 : 0, nowIso()).run();
   const barberId = ins.meta.last_row_id as number;
-  await syncBarberServices(db, barberId, parsed.data.service_ids);
+  await syncBarberServices(db, id, barberId, parsed.data.service_ids);
   return json(c, { ok: true, id: barberId, slug });
 });
 
-async function syncBarberServices(db: D1Database, barberId: number, serviceIds: number[]) {
+async function companyOwnsIds(db:D1Database,table:"services"|"barbers",companyId:number,ids:number[]) {
+  const unique=[...new Set(ids)];
+  if (!unique.length) return true;
+  const rows=await db.prepare(`SELECT id FROM ${table} WHERE company_id=?1 AND id IN (${unique.map((_,i)=>`?${i+2}`).join(",")})`).bind(companyId,...unique).all();
+  return rows.results.length===unique.length;
+}
+async function syncBarberServices(db:D1Database,companyId:number,barberId:number,serviceIds:number[]) {
   await db.batch([
-    db.prepare(`DELETE FROM service_barbers WHERE barber_id = ?1`).bind(barberId),
-    ...serviceIds.map((sid) => db.prepare(`INSERT OR IGNORE INTO service_barbers (service_id, barber_id) VALUES (?1,?2)`).bind(sid, barberId)),
+    db.prepare("DELETE FROM service_barbers WHERE barber_id=?1 AND barber_id IN(SELECT id FROM barbers WHERE company_id=?2)").bind(barberId,companyId),
+    ...[...new Set(serviceIds)].map(sid=>db.prepare(`INSERT OR IGNORE INTO service_barbers(service_id,barber_id)
+      SELECT s.id,b.id FROM services s JOIN barbers b ON b.company_id=s.company_id
+      WHERE s.id=?1 AND b.id=?2 AND s.company_id=?3`).bind(sid,barberId,companyId)),
+  ]);
+}
+async function syncServiceBarbers(db:D1Database,companyId:number,serviceId:number,barberIds:number[]) {
+  await db.batch([
+    db.prepare("DELETE FROM service_barbers WHERE service_id=?1 AND service_id IN(SELECT id FROM services WHERE company_id=?2)").bind(serviceId,companyId),
+    ...[...new Set(barberIds)].map(bid=>db.prepare(`INSERT OR IGNORE INTO service_barbers(service_id,barber_id)
+      SELECT s.id,b.id FROM services s JOIN barbers b ON b.company_id=s.company_id
+      WHERE s.id=?1 AND b.id=?2 AND s.company_id=?3`).bind(serviceId,bid,companyId)),
   ]);
 }
 
@@ -382,13 +399,14 @@ adminRouter.put("/barbers/:id", async (c) => {
   const b = await db.prepare(`SELECT id FROM barbers WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<{ id: number }>();
   if (!b) return err(c, "Barbeiro não encontrado", 404);
   const d = parsed.data as Record<string, unknown>;
+  if ("service_ids" in d && !(await companyOwnsIds(db,"services",id,d.service_ids as number[]))) return err(c,"Serviço inválido para esta empresa",422);
   const sets: string[] = []; const binds: (string | number | null)[] = [];
   const map: Record<string, string> = { name: "name", specialty: "specialty", bio: "bio", photo: "photo", work_start: "work_start", work_end: "work_end", break_start: "break_start", break_end: "break_end" };
   for (const [k, col] of Object.entries(map)) if (k in d) { sets.push(`${col} = ?`); binds.push(String(d[k])); }
   if ("work_days" in d) { sets.push("work_days = ?"); binds.push(JSON.stringify(d.work_days)); }
   if ("active" in d) { sets.push("active = ?"); binds.push(d.active ? 1 : 0); }
-  if (sets.length) await db.prepare(`UPDATE barbers SET ${sets.join(", ")} WHERE id = ?1 AND company_id = ?2`).bind(...binds, b.id, id).run();
-  if ("service_ids" in d) await syncBarberServices(db, b.id, (d.service_ids as number[]) ?? []);
+  if (sets.length) await db.prepare(`UPDATE barbers SET ${sets.join(", ")} WHERE id = ? AND company_id = ?`).bind(...binds, b.id, id).run();
+  if ("service_ids" in d) await syncBarberServices(db, id, b.id, (d.service_ids as number[]) ?? []);
   return json(c, { ok: true });
 });
 adminRouter.delete("/barbers/:id", async (c) => {
@@ -407,7 +425,7 @@ async function planLimit(db: D1Database, companyId: number, col: "max_barbers" |
 function safeArr(v: string): number[] { try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch { return []; } }
 
 // ── serviços ─────────────────────────────────────────────────────────────────
-const serviceSchema = z.object({ name: z.string().min(2).max(80), description: z.string().max(300).default(""), price_cents: z.number().int().min(0).max(10_000_000), duration_min: z.number().int().min(5).max(480), category: z.string().max(40).default("cabelo"), photo: z.string().max(500).default(""), active: z.boolean().default(true), show_in_catalog: z.boolean().default(true) });
+const serviceSchema = z.object({ name: z.string().min(2).max(80), description: z.string().max(300).default(""), price_cents: z.number().int().min(0).max(10_000_000), duration_min: z.number().int().min(5).max(480), category: z.string().max(40).default("cabelo"), photo: z.string().max(500).default(""), active: z.boolean().default(true), show_in_catalog: z.boolean().default(true), barber_ids: z.array(z.number().int().positive()).default([]) });
 adminRouter.get("/services", async (c) => {
   const { results } = await P(c).prepare(`SELECT * FROM services WHERE company_id=?1 ORDER BY sort, name`).bind(cid(c)).all();
   const links = await P(c).prepare(`SELECT sb.service_id, sb.barber_id FROM service_barbers sb JOIN services s ON s.id=sb.service_id WHERE s.company_id=?1`).bind(cid(c)).all();
@@ -419,9 +437,11 @@ adminRouter.post("/services", async (c) => {
   const parsed = serviceSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
   const db = P(c); const id = cid(c);
+  if (!(await companyOwnsIds(db,"barbers",id,parsed.data.barber_ids))) return err(c,"Barbeiro inválido para esta empresa",422);
   const slug = await uniqueSlug(db, "services", slugify(parsed.data.name));
   const ins = await db.prepare(`INSERT INTO services (company_id, slug, name, description, price_cents, duration_min, category, photo, active, show_in_catalog, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`)
     .bind(id, slug, parsed.data.name.trim(), parsed.data.description, parsed.data.price_cents, parsed.data.duration_min, parsed.data.category, parsed.data.photo, parsed.data.active ? 1 : 0, parsed.data.show_in_catalog ? 1 : 0, nowIso()).run();
+  await syncServiceBarbers(db,id,Number(ins.meta.last_row_id),parsed.data.barber_ids);
   return json(c, { ok: true, id: ins.meta.last_row_id });
 });
 adminRouter.put("/services/:id", async (c) => {
@@ -431,16 +451,12 @@ adminRouter.put("/services/:id", async (c) => {
   const cur = await db.prepare(`SELECT id FROM services WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<{ id: number }>();
   if (!cur) return err(c, "Serviço não encontrado", 404);
   const d = parsed.data as Record<string, unknown>;
+  if ("barber_ids" in d && !(await companyOwnsIds(db,"barbers",id,d.barber_ids as number[]))) return err(c,"Barbeiro inválido para esta empresa",422);
   const sets: string[] = []; const binds: (string | number)[] = [];
   for (const k of ["name", "description", "price_cents", "duration_min", "category", "photo"] as const) if (k in d) { sets.push(`${k} = ?`); binds.push(d[k] as string | number); }
   for (const k of ["active", "show_in_catalog"] as const) if (k in d) { sets.push(`${k} = ?`); binds.push(d[k] ? 1 : 0); }
-  if (sets.length) await db.prepare(`UPDATE services SET ${sets.join(", ")} WHERE id=?1 AND company_id=?2`).bind(...binds, cur.id, id).run();
-  if ("barber_ids" in d) {
-    await db.batch([
-      db.prepare(`DELETE FROM service_barbers WHERE service_id = ?1 AND barber_id IN (SELECT id FROM barbers WHERE company_id = ?2)`).bind(cur.id, id),
-      ...((d.barber_ids as number[]) ?? []).map((bid) => db.prepare(`INSERT OR IGNORE INTO service_barbers (service_id, barber_id) SELECT ?1, id FROM barbers WHERE id=?2 AND company_id=?1`).bind(cur.id, bid)),
-    ]);
-  }
+  if (sets.length) await db.prepare(`UPDATE services SET ${sets.join(", ")} WHERE id=? AND company_id=?`).bind(...binds, cur.id, id).run();
+  if ("barber_ids" in d) await syncServiceBarbers(db,id,cur.id,d.barber_ids as number[]);
   return json(c, { ok: true });
 });
 adminRouter.delete("/services/:id", async (c) => {
@@ -479,7 +495,7 @@ adminRouter.put("/products/:id", async (c) => {
   const sets: string[] = []; const binds: (string | number)[] = [];
   for (const k of ["name", "description", "price_cents", "category", "photo"] as const) if (k in d) { sets.push(`${k} = ?`); binds.push(d[k] as string | number); }
   for (const k of ["active", "featured"] as const) if (k in d) { sets.push(`${k} = ?`); binds.push(d[k] ? 1 : 0); }
-  if (sets.length) await db.prepare(`UPDATE products SET ${sets.join(", ")} WHERE id=?1 AND company_id=?2`).bind(...binds, cur.id, id).run();
+  if (sets.length) await db.prepare(`UPDATE products SET ${sets.join(", ")} WHERE id=? AND company_id=?`).bind(...binds, cur.id, id).run();
   return json(c, { ok: true });
 });
 adminRouter.post("/products/:id/stock", async (c) => {

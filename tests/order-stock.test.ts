@@ -13,6 +13,42 @@ const ctx={waitUntil:()=>{},passThroughOnException:()=>{}} as unknown as Executi
 beforeAll(async()=>{
   for(const schema of [schema1,schema6]) for(const sql of schema.replace(/--[^\n]*/g,"").split(";").map(s=>s.trim()).filter(Boolean)) await db.prepare(sql).run();
 });
+
+describe("catálogo: edição e vínculos isolados",()=>{
+  it("edita vários campos do produto sem confundir parâmetros nem alterar outra empresa",async()=>{
+    const a=await fixture(),b=await fixture();
+    expect((await a.request(`/admin/products/${a.productId}`,{name:"Pomada nova",price_cents:2599,active:false},"PUT")).status).toBe(200);
+    expect(await db.prepare("SELECT name,price_cents,active,stock FROM products WHERE id=?1").bind(a.productId).first()).toEqual({name:"Pomada nova",price_cents:2599,active:0,stock:5});
+    expect((await a.request(`/admin/products/${b.productId}`,{name:"Invasão"},"PUT")).status).toBe(404);
+    expect(await db.prepare("SELECT name FROM products WHERE id=?1").bind(b.productId).first("name")).toBe("Pomada");
+  });
+  it("edita profissional e recusa serviço estrangeiro antes de qualquer alteração",async()=>{
+    const a=await fixture(),b=await fixture();
+    const barberId=Number((await db.prepare("INSERT INTO barbers(company_id,slug,name) VALUES (?1,'zeca','Zeca')").bind(a.companyId).run()).meta.last_row_id);
+    const foreignService=Number((await db.prepare("INSERT INTO services(company_id,slug,name,price_cents,duration_min) VALUES (?1,'foreign','Foreign',1000,30)").bind(b.companyId).run()).meta.last_row_id);
+    expect((await a.request(`/admin/barbers/${barberId}`,{name:"Zeca novo",work_start:"08:30",work_days:[1,2,3]},"PUT")).status).toBe(200);
+    expect(await db.prepare("SELECT name,work_start,work_days FROM barbers WHERE id=?1").bind(barberId).first()).toEqual({name:"Zeca novo",work_start:"08:30",work_days:"[1,2,3]"});
+    expect((await a.request(`/admin/barbers/${barberId}`,{name:"Não deve mudar",service_ids:[foreignService]},"PUT")).status).toBe(422);
+    expect(await db.prepare("SELECT name FROM barbers WHERE id=?1").bind(barberId).first("name")).toBe("Zeca novo");
+    expect(await db.prepare("SELECT count(*) n FROM service_barbers WHERE barber_id=?1").bind(barberId).first("n")).toBe(0);
+  });
+  it("cria e edita serviço com os barbeiros corretos e preserva vínculo ao recusar outra empresa",async()=>{
+    const a=await fixture(),b=await fixture();
+    const own=Number((await db.prepare("INSERT INTO barbers(company_id,slug,name) VALUES (?1,'own','Próprio')").bind(a.companyId).run()).meta.last_row_id);
+    const foreign=Number((await db.prepare("INSERT INTO barbers(company_id,slug,name) VALUES (?1,'foreign','Estrangeiro')").bind(b.companyId).run()).meta.last_row_id);
+    const created=await a.request("/admin/services",{name:"Corte catálogo",price_cents:3000,duration_min:30,barber_ids:[own]});
+    expect(created.status).toBe(200);
+    const {id}=await created.json() as {id:number};
+    expect(await db.prepare("SELECT barber_id FROM service_barbers WHERE service_id=?1").bind(id).first("barber_id")).toBe(own);
+    expect((await a.request(`/admin/services/${id}`,{name:"Corte atualizado",price_cents:3500,barber_ids:[own]},"PUT")).status).toBe(200);
+    expect(await db.prepare("SELECT name,price_cents FROM services WHERE id=?1").bind(id).first()).toEqual({name:"Corte atualizado",price_cents:3500});
+    expect((await a.request(`/admin/services/${id}`,{name:"Não deve mudar",barber_ids:[foreign]},"PUT")).status).toBe(422);
+    expect(await db.prepare("SELECT name FROM services WHERE id=?1").bind(id).first("name")).toBe("Corte atualizado");
+    expect(await db.prepare("SELECT barber_id FROM service_barbers WHERE service_id=?1").bind(id).first("barber_id")).toBe(own);
+    expect((await a.request(`/admin/services/${id}`,{barber_ids:[]},"PUT")).status).toBe(200);
+    expect(await db.prepare("SELECT count(*) n FROM service_barbers WHERE service_id=?1").bind(id).first("n")).toBe(0);
+  });
+});
 async function fixture(stock=5){
   const slug=`stock-${crypto.randomUUID()}`;
   const companyId=Number((await db.prepare("INSERT INTO companies(slug,name) VALUES (?1,'Loja')").bind(slug).run()).meta.last_row_id);
