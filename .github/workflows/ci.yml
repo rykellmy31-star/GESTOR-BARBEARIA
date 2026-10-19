@@ -45,5 +45,8 @@ jobs:
           grep -R -q 'Profissional:' dist/assets
           grep -R -q 'Prévia sem API conectada' dist/assets
           grep -R -q 'Planos e valores da página de vendas' dist/assets
+          grep -R -q 'Solicitar atendimento comercial' dist/assets
+          grep -R -q 'Enviar solicitação de atendimento' dist/assets
+          grep -R -q 'Interessados nos planos' dist/assets
       - name: Rodar testes
         run: npm test
