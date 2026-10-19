@@ -26,7 +26,10 @@ export async function sha(s: string): Promise<string> {
 }
 
 function secretOf(env: Env): string {
-  return env.SESSION_SECRET || (env.APP_ENV === "production" ? "" : "dev-insecure-secret-change-me");
+  if (env.APP_ENV === "production" && (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32)) {
+    throw new Error("SESSION_SECRET forte não configurado. Configure um secret exclusivo de pelo menos 32 caracteres.");
+  }
+  return env.SESSION_SECRET || "dev-insecure-secret-change-me";
 }
 
 export async function createSession(c: Context<{ Bindings: Env }>, userId: number): Promise<void> {
