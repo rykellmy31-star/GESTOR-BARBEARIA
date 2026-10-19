@@ -62,4 +62,16 @@ describe("regressão D1: confirmação Pix idempotente", () => {
     expect(end?.period_end).toBe(await db.prepare("SELECT strftime('%Y-%m-%dT%H:%M:%SZ',?1,'+1 month') AS date").bind(initial!.period_end).first<{date:string}>().then(r=>r?.date));
   });
 
+  it("não ativa assinatura quando a fatura ainda não está paga", async () => {
+    await db.prepare("INSERT INTO subscription_invoices (id,company_id,code,plan_code,amount_cents,status,provider_payment_id) VALUES (9003,9001,'TIGU-TEST-9003','scale',12990,'pending','9003')").run();
+    const at = "2026-10-19T14:02:00Z";
+    const before = await db.prepare("SELECT period_end,plan_code FROM subscriptions WHERE company_id=9001").first<{period_end:string;plan_code:string}>();
+    const result = await db.prepare(`UPDATE subscriptions SET plan_code='scale',period_end=strftime('%Y-%m-%dT%H:%M:%SZ',period_end,'+1 month')
+      WHERE company_id=9001 AND changes()=1 AND EXISTS
+      (SELECT 1 FROM subscription_invoices WHERE id=9003 AND status='paid' AND paid_at=?1)`).bind(at).run();
+    expect(result.meta.changes).toBe(0);
+    const after = await db.prepare("SELECT period_end,plan_code FROM subscriptions WHERE company_id=9001").first<{period_end:string;plan_code:string}>();
+    expect(after).toEqual(before);
+  });
+
 });
