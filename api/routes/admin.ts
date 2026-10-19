@@ -14,6 +14,7 @@ import { companySettingsSchema, saveCompanySettings } from "../lib/settings";
 import { audit } from "../lib/audit";
 import { hashPassword } from "../lib/crypto";
 import { changeOrderStatus } from "../lib/orders";
+import { createTeamAccount } from "../lib/team-accounts";
 import { IMAGE_EXTENSIONS, MAX_IMAGE_BYTES, hasImageSignature, readUploadBody } from "../lib/image-upload";
 import { resolveBlockRequest } from "../lib/block-requests";
 import { barberCapacitySql } from "../lib/barber-capacity";
@@ -571,28 +572,19 @@ adminRouter.post("/team", async (c) => {
   const email = parsed.data.email.trim().toLowerCase();
   if (parsed.data.role === "barber" && !parsed.data.barber_id) return err(c, "Vincule o profissional ao barbeiro", 400);
   if (parsed.data.barber_id) {
-    const barber = await db.prepare("SELECT id FROM barbers WHERE id=?1 AND company_id=?2").bind(parsed.data.barber_id,id).first();
+    const barber = await db.prepare("SELECT id FROM barbers WHERE id=?1 AND company_id=?2 AND active=1").bind(parsed.data.barber_id,id).first();
     if (!barber) return err(c, "Barbeiro inválido para esta empresa", 400);
   }
   const clash = await db.prepare(`SELECT m.id FROM company_memberships m JOIN users u ON u.id=m.user_id WHERE m.company_id=?1 AND u.email=?2`).bind(id, email).first();
   if (clash) return err(c, "Este e-mail já participa desta barbearia", 409);
-  let userId = (await db.prepare(`SELECT id FROM users WHERE email=?1`).bind(email).first<{ id: number }>())?.id ?? 0;
-  // Conta global existente só pode ser vinculada por fluxo com consentimento.
-  // Conhecer o e-mail não autoriza administrar sua identidade.
-  if (userId) return err(c, "Este e-mail já possui conta. Solicite ao suporte o vínculo seguro do acesso existente.", 409);
-  let created = false;
-  if (!userId) {
-    const ins = await db.prepare(`INSERT INTO users (platform_role, name, email, password_hash, active, must_change_password, created_at) VALUES ('user',?1,?2,?3,1,1,?4)`)
-      .bind(parsed.data.name.trim(), email, await hashPassword(parsed.data.password), nowIso()).run();
-    userId = ins.meta.last_row_id as number;
-    created = true;
-  }
-  await db.batch([
-    db.prepare(`INSERT OR REPLACE INTO company_memberships (company_id, user_id, role, barber_id, active, created_at) VALUES (?1,?2,?3,?4,1,?5)`).bind(id, userId, parsed.data.role, parsed.data.barber_id ?? null, nowIso()),
-    db.prepare(`INSERT INTO notifications (company_id, audience, user_id, title, body, kind) VALUES (?1,'barber',?2,?3,?4,'system')`).bind(id, userId, `Você entrou na equipe ${ctxSettings(c).shop_name}`, "Guarde seu e-mail e senha; o painel do profissional abre em /painel."),
-  ]);
-  await audit(db, c.get("user"), created ? "team.create" : "team.link", "membership", userId, { email, role: parsed.data.role }, { companyId: id });
-  return json(c, { ok: true, user_id: userId, created }, 201);
+  const result = await createTeamAccount(db, {
+    companyId: id, name: parsed.data.name.trim(), email,
+    passwordHash: await hashPassword(parsed.data.password), role: parsed.data.role,
+    barberId: parsed.data.barber_id, welcomeTitle: `Você entrou na equipe ${ctxSettings(c).shop_name}`,
+  });
+  if (!result.ok) return err(c, result.message, 409);
+  await audit(db, c.get("user"), "team.create", "membership", result.userId, { email, role: parsed.data.role }, { companyId: id });
+  return json(c, { ok: true, user_id: result.userId, created: true }, 201);
 });
 
 adminRouter.put("/team/:membershipId", async (c) => {
@@ -1030,21 +1022,17 @@ adminRouter.post("/barbers/:id/credentials", async (c) => {
   if (!parsed.success) return err(c, "e-mail obrigatório (senha mín. 10)", 400, parsed.error.flatten().fieldErrors);
   const db = P(c); const id = cid(c);
   const barberId = await bookingIdParam(c);
-  const barber = await db.prepare(`SELECT id, name FROM barbers WHERE id=?1 AND company_id=?2`).bind(barberId, id).first<{ id: number; name: string }>();
+  const barber = await db.prepare(`SELECT id, name FROM barbers WHERE id=?1 AND company_id=?2 AND active=1`).bind(barberId, id).first<{ id: number; name: string }>();
   if (!barber) return err(c, "Barbeiro não encontrado", 404);
   const email = parsed.data.email.trim().toLowerCase();
   const generated = parsed.data.password ? "" : `Tigu!${crypto.randomUUID().replace(/-/g,"" )}`;
   const pw = parsed.data.password || generated;
-  let userId = (await db.prepare(`SELECT id FROM users WHERE email=?1`).bind(email).first<{ id: number }>())?.id ?? 0;
-  // Conta global existente só pode ser vinculada por fluxo com consentimento.
-  // Conhecer o e-mail não autoriza administrar sua identidade.
-  if (userId) return err(c, "Este e-mail já possui conta. Solicite ao suporte o vínculo seguro do acesso existente.", 409);
-  if (!userId) {
-    const ins = await db.prepare(`INSERT INTO users (platform_role, name, email, password_hash, active, must_change_password, created_at) VALUES ('user',?1,?2,?3,1,1,?4)`).bind(parsed.data.name || barber.name, email, await hashPassword(pw), nowIso()).run();
-    userId = ins.meta.last_row_id as number;
-  }
-  await db.prepare(`INSERT INTO company_memberships (company_id, user_id, role, barber_id, active, created_at) VALUES (?1,?2,'barber',?3,1,?4) ON CONFLICT(company_id, user_id) DO UPDATE SET role='barber', barber_id=excluded.barber_id, active=1`).bind(id, userId, barber.id, nowIso()).run();
-  await audit(db, c.get("user"), "barber.credentials.create", "user", userId, { email, barber_id: barber.id }, { companyId: id });
+  const result = await createTeamAccount(db, {
+    companyId: id, name: parsed.data.name || barber.name, email,
+    passwordHash: await hashPassword(pw), role: "barber", barberId: barber.id,
+  });
+  if (!result.ok) return err(c, result.message, 409);
+  await audit(db, c.get("user"), "barber.credentials.create", "user", result.userId, { email, barber_id: barber.id }, { companyId: id });
   return json(c, { ok: true, email, password: parsed.data.password ? undefined : generated, note: "Guarde esta senha — ela não será exibida novamente." }, 201);
 });
 
