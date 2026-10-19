@@ -138,3 +138,16 @@ A migração `0004_start_trial.sql` altera o Start de R$ 0,00 para R$ 19,99 some
 O Superadmin, em Config. plataforma, pode agora **editar o preço do Start**, que deve permanecer maior que zero. O painel da barbearia funcional mostra o prazo restante e a mensalidade. O Pages estático, sem Worker/D1, demonstra apenas o visual e não registra testes reais.
 
 **Deploy pendente:** aplicar `npm run staging:migrate` no D1 isolado e publicar o Worker de homologação. Não há confirmação de publicação na Cloudflare apenas porque o GitHub Actions aprovou o build.
+
+
+## Escolher Start, Pro ou Scale ao terminar o teste grátis (Pix)
+
+A página do assinante `/c/<slug>/admin/assinatura` agora permite escolher **Start, Pro ou Scale**. Os preços e limites vêm de `/api/c/<slug>/billing/status` e da tabela `plans`, editável pelo Superadmin; os valores R$ 19,99, R$ 49,90 e R$ 129,90 são apenas os defaults atuais.
+
+Quando terminar o teste de 15 dias, o dono poderá selecionar o plano e gerar seu **Pix**. A fatura tem plano, valor e referência próprios e **não é recarga de carteira WhatsApp**. A escolha isolada não altera recursos: só uma confirmação aprovada via consulta ao Mercado Pago (valor em BRL, método pix, id e referência correspondentes) pode ativar a assinatura.
+
+Assinantes de Pro podem selecionar Scale na mesma tela, com upgrade após o Pix aprovado. O tempo restante da assinatura atual é preservado e acrescenta-se um novo mês ao vencimento; **não há abatimento proporcional**. Downgrade de plano ativo só depois do vencimento atual. Repetir a consulta ou webhook não pode adicionar meses duplicados.
+
+A página `/preview?tela=vendas` ganhou um exemplo ilustrativo da tela de escolha pós-teste. A simulação não gera QR Code real, não coleta pagamentos e não altera assinaturas. A validação do gateway e o deploy comercial continuam pendentes, assim como credenciais reais, webhook, conciliação e testes financeiros em ambiente controlado.
+
+**Pix de renovação não equivale a Pix Automático**: na implementação atual o cliente autoriza cada pagamento separadamente.
