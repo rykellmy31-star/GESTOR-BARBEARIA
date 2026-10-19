@@ -64,6 +64,7 @@ export const tenantMiddleware =
 
     if (opts.auth !== "none") {
       if (!user) return err(c, "Não autenticado. Faça login para continuar.", 401);
+      if (user.must_change_password) return err(c, "Altere sua senha provisória antes de acessar a barbearia.", 403);
       const m = await getMembership(c.env.DB, user.id, company.id);
       if (!m) return err(c, "Você não tem acesso a esta barbearia.", 403);
       if (opts.auth === "admin" && !["owner", "manager"].includes(m.role)) return err(c, "Apenas proprietário/gerente acessam este recurso.", 403);
