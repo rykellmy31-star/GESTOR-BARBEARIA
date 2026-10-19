@@ -258,7 +258,7 @@ publicRouter.post("/orders", async (c) => {
   const company = c.get("company") as { id: number };
   const db = c.env.DB;
   const ids = parsed.data.items.map((i) => i.productId);
-  const ph = ids.map((_, i) => `?${i + 1}`).join(",");
+  const ph = ids.map((_, i) => `?${i + 2}`).join(",");
   const prods = await db.prepare(`SELECT id, name, price_cents, stock, active FROM products WHERE company_id = ?1 AND id IN (${ph})`).bind(company.id, ...ids).all<{ id: number; name: string; price_cents: number; stock: number; active: number }>();
   const map = new Map(prods.results.map((p) => [p.id, p]));
   let total = 0;
@@ -276,7 +276,7 @@ publicRouter.post("/orders", async (c) => {
       ...parsed.data.items.map((it) =>
         db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, qty, unit_price_cents) SELECT id, ?1, ?2, ?3, ?4 FROM orders WHERE code = ?5`).bind(it.productId, map.get(it.productId)!.name, it.qty, map.get(it.productId)!.price_cents, code)
       ),
-      ...parsed.data.items.map((it) => db.prepare(`UPDATE products SET stock = stock - ?1 WHERE id = ?2 AND company_id = ?3 AND stock >= ?1`).bind(it.qty, it.productId, company.id)),
+      ...parsed.data.items.map((it) => db.prepare(`UPDATE products SET stock = stock - ?1 WHERE id = ?2 AND company_id = ?3`).bind(it.qty, it.productId, company.id)),
       ...parsed.data.items.map((it) => db.prepare(`INSERT INTO stock_movements (company_id, product_id, delta, reason, ref, created_at) VALUES (?1,?2,-?3,'pedido',?4,?5)`).bind(company.id, it.productId, it.qty, code, nowIso())),
       db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin','Novo pedido da loja',?2,'order')`).bind(company.id, `${parsed.data.name} • ${parsed.data.items.length} item(ns) • ${brl(total)} • pedido ${code}`),
     ]);

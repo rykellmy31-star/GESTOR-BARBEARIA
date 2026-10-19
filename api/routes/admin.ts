@@ -13,6 +13,7 @@ import { assertSlotAllowed, slotKeysFor, type BarberRow, type ServiceRow } from 
 import { companySettingsSchema, saveCompanySettings } from "../lib/settings";
 import { audit } from "../lib/audit";
 import { hashPassword } from "../lib/crypto";
+import { changeOrderStatus } from "../lib/orders";
 import { getWallet, manualAdjustment } from "../lib/wallet";
 import { createTopup, confirmTopupFromProvider } from "../lib/topup";
 import { getConnection, sendImmediate, resolvePricing, processDueJobs } from "../lib/messaging/jobs";
@@ -482,16 +483,17 @@ adminRouter.put("/products/:id", async (c) => {
   return json(c, { ok: true });
 });
 adminRouter.post("/products/:id/stock", async (c) => {
-  const parsed = z.object({ delta: z.number().int(), reason: z.string().min(3).max(120).default("Ajuste manual") }).safeParse(await c.req.json().catch(() => null));
+  const parsed = z.object({ delta: z.number().int().min(-100000).max(100000).refine(v=>v!==0), reason: z.string().min(3).max(120).default("Ajuste manual") }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "delta (inteiro) é obrigatório", 400);
   const db = P(c); const id = cid(c);
   const cur = await db.prepare(`SELECT id, stock FROM products WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<{ id: number; stock: number }>();
   if (!cur) return err(c, "Produto não encontrado", 404);
   try {
-    await db.batch([
+    const results = await db.batch([
       db.prepare(`UPDATE products SET stock = stock + ?1 WHERE id=?2 AND company_id=?3 AND stock + ?1 >= 0`).bind(parsed.data.delta, cur.id, id),
-      db.prepare(`INSERT INTO stock_movements (company_id, product_id, delta, reason, ref, created_at) VALUES (?1,?2,?3,?4,'painel',?5)`).bind(id, cur.id, parsed.data.delta, parsed.data.reason.trim(), nowIso()),
+      db.prepare(`INSERT INTO stock_movements (company_id, product_id, delta, reason, ref, created_at) SELECT ?1,?2,?3,?4,'painel',?5 WHERE changes()=1`).bind(id, cur.id, parsed.data.delta, parsed.data.reason.trim(), nowIso()),
     ]);
+    if (results[0].meta.changes!==1) return err(c,"Estoque insuficiente ou alterado por outra operação",409);
   } catch {
     return err(c, "Estoque não pode ficar negativo", 409);
   }
@@ -508,27 +510,14 @@ adminRouter.get("/orders", async (c) => {
   if (ids.length) items = (await db.prepare(`SELECT * FROM order_items WHERE order_id IN (${ids.map((_, i) => `?${i + 1}`).join(",")})`).bind(...ids).all()).results as typeof items;
   return json(c, { orders: results.map((o: Record<string, unknown>) => ({ ...o, items: items.filter((i) => i.order_id === Number(o.id)) })) });
 });
-adminRouter.post("/orders/:id/status", async (c) => {
-  const parsed = z.object({ status: z.enum(["pago", "entregue", "cancelado"]) }).safeParse(await c.req.json().catch(() => null));
+async function orderStatusHandler(c: import("hono").Context<{ Bindings: Env }>) {
+  const parsed = z.object({ status: z.enum(["novo", "pago", "entregue", "cancelado"]) }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "status inválido", 400);
-  const db = P(c); const id = cid(c);
-  const o = await db.prepare(`SELECT * FROM orders WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<{ id: number; code: string; status: string }>();
-  if (!o) return err(c, "Pedido não encontrado", 404);
-  const flow: Record<string, string[]> = { novo: ["pago", "cancelado"], pago: ["entregue", "cancelado"], entregue: [], cancelado: [] };
-  if (!(flow[o.status] ?? []).includes(parsed.data.status)) return err(c, `Transição ${o.status} → ${parsed.data.status} não permitida`, 409);
-  const stmts = [db.prepare(`UPDATE orders SET status=?1, updated_at=?2 WHERE id=?3 AND company_id=?4`).bind(parsed.data.status, nowIso(), o.id, id)];
-  if (parsed.data.status === "cancelado") {
-    const items = (await db.prepare(`SELECT product_id, qty FROM order_items WHERE order_id=?1`).bind(o.id).all<{ product_id: number; qty: number }>()).results;
-    for (const it of items) {
-      if (!it.product_id) continue;
-      stmts.push(db.prepare(`UPDATE products SET stock = MIN(100000, stock + ?1) WHERE id=?2 AND company_id=?3`).bind(it.qty, it.product_id, id));
-      stmts.push(db.prepare(`INSERT INTO stock_movements (company_id, product_id, delta, reason, ref, created_at) VALUES (?1,?2,?3,'estorno de pedido cancelado',?4,?5)`).bind(id, it.product_id, it.qty, o.code, nowIso()));
-    }
-  }
-  stmts.push(db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin',?2,?3,'order')`).bind(id, `Pedido ${o.code}: ${parsed.data.status}`, `Status alterado no painel`));
-  await db.batch(stmts);
-  return json(c, { ok: true });
-});
+  const result = await changeOrderStatus(P(c),cid(c),await bookingIdParam(c),parsed.data.status);
+  if (!result.ok) return err(c,result.message,result.status);
+  return json(c,result);
+}
+adminRouter.post("/orders/:id/status", orderStatusHandler);
 
 // ── avaliações ───────────────────────────────────────────────────────────────
 adminRouter.get("/reviews", async (c) => {
@@ -1028,29 +1017,7 @@ adminRouter.patch("/bookings/:id/status", async (c) => {
   return json(c, { ok: true });
 });
 
-adminRouter.patch("/orders/:id/status", async (c) => {
-  const parsed = z.object({ status: z.enum(["pago", "entregue", "cancelado", "novo"]) }).safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "status inválido", 400);
-  const db = P(c); const id = cid(c);
-  const o = await db.prepare(`SELECT * FROM orders WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<{ id: number; code: string; status: string }>();
-  if (!o) return err(c, "Pedido não encontrado", 404);
-  const st = parsed.data.status;
-  if (st === "novo" || o.status === st) return json(c, { ok: true, status: o.status });
-  const upd = await db.prepare(`UPDATE orders SET status=?1, updated_at=?2 WHERE id=?3 AND company_id=?4 AND status != 'entregue'`).bind(st, nowIso(), o.id, id).run();
-  if (!upd.meta?.changes && st !== "pago") return err(c, "Transição não permitida a partir de 'entregue'", 409);
-  if (st === "cancelado") {
-    const items = (await db.prepare(`SELECT product_id, qty FROM order_items WHERE order_id=?1`).bind(o.id).all<{ product_id: number | null; qty: number }>()).results;
-    const stmts: D1PreparedStatement[] = [];
-    for (const it of items) {
-      if (!it.product_id) continue;
-      stmts.push(db.prepare(`UPDATE products SET stock = MIN(100000, stock + ?1) WHERE id=?2 AND company_id=?3`).bind(it.qty, it.product_id, id));
-      stmts.push(db.prepare(`INSERT INTO stock_movements (company_id, product_id, delta, reason, ref, created_at) VALUES (?1,?2,?3,'estorno de pedido cancelado',?4,?5)`).bind(id, it.product_id, it.qty, o.code, nowIso()));
-    }
-    if (stmts.length) await db.batch(stmts);
-  }
-  await db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin',?2,?3,'order')`).bind(id, `Pedido ${o.code}: ${st}`, "Status alterado no painel").run();
-  return json(c, { ok: true });
-});
+adminRouter.patch("/orders/:id/status", orderStatusHandler);
 
 adminRouter.post("/block-requests/:id/approve", async (c) => resolveBlockReq(c, true));
 adminRouter.post("/block-requests/:id/reject", async (c) => resolveBlockReq(c, false));
