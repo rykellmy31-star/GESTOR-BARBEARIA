@@ -118,3 +118,37 @@ export async function expirePendingTopups(env: Env, companyId?: number): Promise
     .run();
   return res.meta?.changes ?? 0;
 }
+
+
+/**
+ * Recupera confirmações de Pix quando o webhook não foi recebido ou falhou.
+ * Executar periodicamente pelo cron, em lotes pequenos; o gateway é consultado
+ * antes de qualquer crédito e a carteira impede lançamentos duplicados.
+ */
+export async function reconcilePendingTopups(
+  env: Env,
+  limit = 20
+): Promise<{ checked: number; credited: number; errors: number }> {
+  const db = env.DB;
+  const batchSize = Math.max(1, Math.min(50, Math.trunc(limit)));
+  const { results } = await db.prepare(
+    `SELECT provider_payment_id FROM topup_orders
+     WHERE provider='mercadopago' AND status IN ('pending','expired')
+       AND provider_payment_id IS NOT NULL AND provider_payment_id <> ''
+       AND created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-48 hours')
+     ORDER BY created_at DESC LIMIT ?1`
+  ).bind(batchSize).all<{ provider_payment_id: string }>();
+  const out = { checked: 0, credited: 0, errors: 0 };
+  for (const row of results) {
+    out.checked++;
+    try {
+      const res = await confirmTopupFromProvider(env, row.provider_payment_id, "poll");
+      if (res.credited) out.credited++;
+      else if (!res.ok) out.errors++;
+    } catch (e) {
+      out.errors++;
+      console.error("[pix-reconcile]", String(e).slice(0, 200));
+    }
+  }
+  return out;
+}
