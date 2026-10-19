@@ -23,6 +23,7 @@ import { originGuard } from "./lib/auth";
 import { processDueJobs } from "./lib/messaging/jobs";
 import { expirePendingTopups, reconcilePendingTopups } from "./lib/topup";
 import { nowIso } from "./lib/utils";
+import { loadSalesContact, publicSalesContact } from "./lib/marketing";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -44,6 +45,11 @@ app.get("/api/health", (c) =>
     whatsapp: { embedded: Boolean(c.env.WHATSAPP_APP_ID && c.env.WHATSAPP_EMBEDDED_CONFIG_ID), mock: c.env.WHATSAPP_MOCK === "1" },
     payments: { mercadopago: Boolean(c.env.MP_ACCESS_TOKEN), mock: c.env.PAYMENTS_MOCK === "1" },
   })
+);
+
+/** Página comercial pública (sem expor contatos desativados). */
+app.get("/api/marketing/contact", async (c) =>
+  c.json({ contact: publicSalesContact(await loadSalesContact(c.env.DB)) })
 );
 
 app.use("/api/*", originGuard);
