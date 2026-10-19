@@ -21,6 +21,11 @@
 - [x] Diagnóstico remoto somente-leitura pronto para conferir Worker, D1, R2, secrets e permissões sem criar dados.
 - [x] Sessões de produção falham sem SESSION_SECRET forte; health expõe somente flags booleanas de prontidão.
 
+- [x] Recuperação de senha com consumo único transacional; repetição no mesmo segundo não troca a senha nem revoga sessões posteriores.
+- [x] Cadastro de equipe não vincula e-mails globais sem consentimento; reset da barbearia não alcança Superadmin nem contas de outras empresas.
+- [x] Colisão de chave de agendamento não revela reserva, cliente ou token de cancelamento de outra empresa.
+- [x] Senhas provisórias geradas por fonte criptográfica, com troca obrigatória e revogação de códigos antigos no reset.
+
 ## Ainda necessário antes da entrega comercial
 
 ### Infraestrutura e implantação (necessita conta Cloudflare autorizada)
@@ -63,8 +68,8 @@
 - [ ] Definir rotina operacional de revisão de mensagens incertas, com prazo para desbloquear reservas.
 - [ ] Revisar e disponibilizar Termos de Uso, Política de Privacidade, proteção LGPD e aceite explícito no cadastro.
 - [ ] Configurar recuperação de acesso self-service com provedor de e-mail transacional ou manter suporte verificado formalmente.
-- [ ] Trocar o rate limit em memória por proteção persistente/Cloudflare Turnstile ou equivalente em cadastros e autenticação.
-- [ ] Corrigir/avaliar avisos de segurança das dependências com atualização testada.
+- [x] Limites de autenticação, cadastro, recuperação e agendamento persistidos atomicamente no D1 (migração 0006), com fingerprint e limpeza de janelas antigas. WAF/Turnstile por domínio ainda exige configuração externa.
+- [x] Auditoria completa de dependências (produção e desenvolvimento) com zero vulnerabilidades após atualização do React Router, ferramentas Workers/Vitest e Tailwind/PostCSS.
 
 ### Critério para integrar à main
 
