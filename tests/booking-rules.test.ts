@@ -85,7 +85,7 @@ beforeAll(async () => {
     db.prepare(`INSERT INTO company_settings (company_id,data,updated_at) VALUES (?1,'{"timezone":"America/Bahia","currency":"BRL","slot_min":15,"horizon_days":30}',?2)`).bind(b, now),
     db.prepare(`INSERT INTO company_memberships (company_id,user_id,role,active,created_at) VALUES (?1,?2,'owner',1,?3)`).bind(a, ua, now),
     db.prepare(`INSERT INTO company_memberships (company_id,user_id,role,active,created_at) VALUES (?1,?2,'owner',1,?3)`).bind(b, ub, now),
-    db.prepare(`INSERT INTO subscriptions (company_id,plan_code,status,updated_at) VALUES (?1,'pro','active',?2)`).bind(a, now),
+    db.prepare(`INSERT INTO subscriptions (company_id,plan_code,status,period_end,updated_at) VALUES (?1,'pro','active',strftime('%Y-%m-%dT%H:%M:%SZ',?2,'+30 days'),?2)`).bind(a, now),
     db.prepare(`INSERT INTO wallets (company_id,updated_at) VALUES (?1,?2)`).bind(a, now),
     db.prepare(`INSERT INTO barbers (company_id,slug,name,specialty,work_days,work_start,work_end,break_start,break_end,active,sort,created_at)
                 VALUES (?1,'zeca','Zeca','Fade','[1,2,3,4,5]','09:00','18:00','12:00','13:00',1,0,?2)`).bind(a, now),
