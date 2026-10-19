@@ -2,7 +2,7 @@ import { useState } from "react";
 import { PlayCircle } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Badge, Button, Select, Spinner, useToast } from "@/components/ui";
+import { Badge, Button, Select, Spinner, Modal, Field, Input, useToast } from "@/components/ui";
 import { H, Money, Table, Td, Tr } from "./shared";
 
 const TONE: Record<string, "gold" | "green" | "red" | "gray" | "amber" | "blue"> = { scheduled: "amber", sending: "amber", blocked_funds: "amber", sent: "green", delivered: "green", read: "blue", failed: "red", cancelled: "gray" };
@@ -10,10 +10,27 @@ const TONE: Record<string, "gold" | "green" | "red" | "gray" | "amber" | "blue">
 export function SuperMessages() {
   const qc = useQueryClient(); const toast = useToast();
   const [status, setStatus] = useState("");
+  const [reviewJob, setReviewJob] = useState<any | null>(null);
+  const [decision, setDecision] = useState<"not_sent" | "confirmed_sent">("not_sent");
+  const [justification, setJustification] = useState("");
+  const [providerId, setProviderId] = useState("");
+  const closeReview = () => { setReviewJob(null); setJustification(""); setProviderId(""); };
   const q = useQuery({ queryKey: ["super-messages", status], queryFn: () => api.get<any>(`/super/messages${status ? `?status=${status}` : ""}`).then((d) => d.jobs as any[]), refetchInterval: 20_000 });
   const run = useMutation({
     mutationFn: () => api.post<any>("/super/messages/run-cron", {}),
     onSuccess: (r: any) => { toast.push("ok", `Lote executado: ${r.processed ?? 0} processados, ${r.failed ?? 0} falhas.`); qc.invalidateQueries({ queryKey: ["super-messages"] }); },
+    onError: (e: any) => toast.push("err", e.message),
+  });
+  const resolve = useMutation({
+    mutationFn: () => api.post<any>(`/super/messages/${reviewJob.id}/resolve`, {
+      decision, justification,
+      ...(decision === "confirmed_sent" ? { provider_message_id: providerId.trim() } : {}),
+    }),
+    onSuccess: () => {
+      toast.push("ok", "Conciliação registrada. Verifique o extrato financeiro.");
+      closeReview();
+      qc.invalidateQueries({ queryKey: ["super-messages"] });
+    },
     onError: (e: any) => toast.push("err", e.message),
   });
   return (
@@ -33,12 +50,34 @@ export function SuperMessages() {
               <Td>{j.attempts}</Td>
               <Td className="text-xs">{j.scheduled_at?.slice(5, 16) ?? "—"}</Td>
               <Td><Money cents={j.price_cents} /></Td><Td><Money cents={j.cost_cents} /></Td>
-              <Td className="max-w-[220px] truncate text-[11px] text-red-300/80"><span title={j.last_error || ""}>{j.requires_review ? "CONFERIR • " : ""}{j.last_error || ""}</span></Td>
+              <Td className="max-w-[220px] text-[11px] text-red-300/80">
+                <span className="block max-w-[220px] truncate" title={j.last_error || ""}>{j.last_error || ""}</span>
+                {j.requires_review === 1 && <button type="button" className="mt-1 text-amber-300 underline" onClick={() => { setReviewJob(j); setDecision("not_sent"); setJustification(""); setProviderId(""); }}>Conferir envio</button>}
+              </Td>
             </Tr>
           ))}
           {(q.data ?? []).length === 0 && <Tr><Td className="py-6 text-zinc-500">Fila vazia neste filtro.</Td><Td /><Td /><Td /><Td /><Td /><Td /><Td /><Td /></Tr>}
         </Table>
       )}
+      <Modal open={!!reviewJob} onClose={closeReview} title={`Conferir mensagem #${reviewJob?.id ?? ""}`}>
+        <div className="space-y-3">
+          <p className="text-sm text-amber-200">Resultado indeterminado: verifique o histórico do número da barbearia no provedor antes de tomar uma decisão. Nunca reenvie às cegas.</p>
+          <p className="text-xs text-zinc-400">Barbearia: {reviewJob?.slug ?? "—"} · Crédito reservado: <Money cents={reviewJob?.price_cents ?? 0} /></p>
+          <Field label="Resultado verificado">
+            <Select value={decision} onChange={(e) => setDecision(e.target.value as "not_sent" | "confirmed_sent")}>
+              <option value="not_sent">Confirmei que NÃO foi enviada — liberar reserva</option>
+              <option value="confirmed_sent">Confirmei envio na Meta — registrar ID e aplicar política de cobrança</option>
+            </Select>
+          </Field>
+          {decision === "confirmed_sent" && <Field label="ID oficial da mensagem (wamid...)"><Input value={providerId} onChange={(e) => setProviderId(e.target.value)} placeholder="wamid.HBg..." /></Field>}
+          <Field label="Justificativa e evidência (mín. 20 caracteres)">
+            <textarea className="w-full rounded-xl border border-line bg-ink p-3 text-sm text-zinc-100" rows={4} value={justification} onChange={(e) => setJustification(e.target.value)} placeholder="Onde e como o resultado foi conferido?" />
+          </Field>
+          <Button className="btn-gold w-full justify-center py-2" disabled={resolve.isPending || justification.trim().length < 20 || (decision === "confirmed_sent" && !/^wamid[.][A-Za-z0-9._:-]{6,}$/.test(providerId.trim()))} onClick={() => resolve.mutate()}>
+            {resolve.isPending ? "Registrando..." : "Registrar conciliação"}
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
