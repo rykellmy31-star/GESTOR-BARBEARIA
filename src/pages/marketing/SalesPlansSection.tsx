@@ -95,7 +95,7 @@ export function SalesPlansSection() {
         })}
       </div>
       <p className="mt-4 text-center text-xs leading-relaxed text-zinc-500">
-        O teste gratuito dura 15 dias. Ao terminar, novas operações ficam limitadas até a ativação manual. Nenhum plano é cobrado automaticamente. Créditos para mensagens são cobrados separadamente.
+        O teste dura 15 dias. Depois, escolha Start, Pro ou Scale no painel e pague a mensalidade via Pix para continuar. Não há débito automático; créditos para mensagens são cobrados separadamente.
       </p>
     </section>
   );
