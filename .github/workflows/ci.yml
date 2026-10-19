@@ -23,6 +23,8 @@ jobs:
           cache: npm
       - name: Instalar dependencias
         run: npm ci
+      - name: Auditar dependencias de producao
+        run: npm audit --omit=dev --audit-level=high
       - name: Verificar tipos
         run: npm run check:types
       - name: Gerar dist antes dos testes Workers
