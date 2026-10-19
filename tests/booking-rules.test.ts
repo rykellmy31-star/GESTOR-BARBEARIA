@@ -1312,7 +1312,7 @@ describe("Tigu Start R$ 19,99 e teste grátis por 15 dias", () => {
     const stillActive = await api("/api/c/" + slug + "/admin/bookings", {}, response.cookie);
     expect(stillActive.status).toBe(200);
     const noCharge = await db.prepare(
-      "SELECT COUNT(*) AS n FROM topups WHERE company_id=(SELECT id FROM companies WHERE slug=?1)"
+      "SELECT COUNT(*) AS n FROM topup_orders WHERE company_id=(SELECT id FROM companies WHERE slug=?1)"
     ).bind(slug).first<{n:number}>();
     expect(noCharge?.n).toBe(0);
   });
@@ -1335,7 +1335,7 @@ describe("Tigu Start R$ 19,99 e teste grátis por 15 dias", () => {
     const unauthenticated = await api("/api/c/" + slug + "/admin/bookings",{method:"POST",body:"{}"});
     expect(unauthenticated.status).toBe(401);
     const latest = await db.prepare(
-      "SELECT COUNT(*) AS n FROM topups WHERE company_id=(SELECT id FROM companies WHERE slug=?1)"
+      "SELECT COUNT(*) AS n FROM topup_orders WHERE company_id=(SELECT id FROM companies WHERE slug=?1)"
     ).bind(slug).first<{n:number}>();
     expect(latest?.n).toBe(0);
 
