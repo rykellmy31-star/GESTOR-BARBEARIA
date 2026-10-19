@@ -520,3 +520,102 @@ describe("WhatsApp: incerteza de envio nunca autoriza duplicidade", () => {
     expect(row?.last_error).toMatch(/Pendente de conferência/);
   });
 });
+
+describe("Superadmin: conciliação de WhatsApp sem reenvio", () => {
+  let superCookie = "";
+  const makeUncertain = async (suffix: string) => {
+    const companyId = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
+      .first<{ id: number }>())!.id;
+    const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    const walletBefore = (await getWallet(db, companyId))!;
+    const ins = await db.prepare(
+      `INSERT INTO message_jobs (company_id,kind,to_phone,template_code,status,
+         scheduled_at,fire_deadline,price_cents,language,idempotency_key,last_error,last_attempt_at)
+       VALUES (?1,'reminder','5573999993333','tigu_lembrete','scheduled',
+         ?2,?2,10,'pt_BR',?3,'',?2)`
+    ).bind(companyId, now, `ops-${suffix}-${Date.now()}`).run();
+    const jobId = ins.meta.last_row_id as number;
+    const reserved = await reserveForJob(db, companyId, jobId, 10, false);
+    expect(reserved.ok).toBe(true);
+    await db.prepare(
+      `UPDATE message_jobs SET status='sending',
+         last_error='Envio sem confirmação do provedor: timeout',attempts=1 WHERE id=?1`
+    ).bind(jobId).run();
+    expect((await getWallet(db, companyId))!.reserved_cents).toBe(walletBefore.reserved_cents + 10);
+    return { companyId, jobId, walletBefore };
+  };
+
+  it("impede conta comum de encerrar mensagem, e devolve reserva sem lançar débito quando não enviada", async () => {
+    const { companyId, jobId, walletBefore } = await makeUncertain("not-sent");
+    const payload = { decision: "not_sent", justification: "Conferi o painel do provedor e confirmei que não enviou." };
+    const forbidden = await api(`/api/super/messages/${jobId}/resolve`,
+      { method: "POST", body: JSON.stringify(payload) }, cookieA);
+    expect(forbidden.status).toBe(403);
+
+    const hashed = await hashPassword(PW);
+    await db.prepare(
+      `INSERT INTO users(platform_role,name,email,password_hash,active)
+       VALUES ('superadmin','Operador Tigu','ops@tigu.test',?1,1)`
+    ).bind(hashed).run();
+    const login = await api("/api/auth/login", { method: "POST", body: JSON.stringify({
+      email: "ops@tigu.test", password: PW
+    }) });
+    expect(login.status).toBe(200);
+    superCookie = login.cookie ?? "";
+    expect(superCookie.length).toBeGreaterThan(0);
+
+    const done = await api(`/api/super/messages/${jobId}/resolve`,
+      { method: "POST", body: JSON.stringify(payload) }, superCookie);
+    expect(done.status).toBe(200);
+    expect(done.body.status).toBe("failed");
+    const updated = await db.prepare(
+      "SELECT status,reserved_cents,refunded_at,captured_at FROM message_jobs WHERE id=?1"
+    ).bind(jobId).first<{ status: string; reserved_cents: number; refunded_at: string | null; captured_at: string | null }>();
+    expect(updated?.status).toBe("failed");
+    expect(updated?.reserved_cents).toBe(0);
+    expect(updated?.refunded_at).not.toBeNull();
+    expect(updated?.captured_at).toBeNull();
+    expect((await getWallet(db, companyId))!.reserved_cents).toBe(walletBefore.reserved_cents);
+    expect((await getWallet(db, companyId))!.balance_cents).toBe(walletBefore.balance_cents);
+    const repeated = await api(`/api/super/messages/${jobId}/resolve`,
+      { method: "POST", body: JSON.stringify(payload) }, superCookie);
+    expect(repeated.status).toBe(409);
+    const auditRow = await db.prepare(
+      "SELECT action FROM audit_log WHERE entity='message_job' AND entity_id=?1 AND action='message.resolve.not_sent'"
+    ).bind(String(jobId)).first<{ action: string }>();
+    expect(auditRow?.action).toBe("message.resolve.not_sent");
+  });
+
+  it("exige ID Meta único e cobra uma única vez ao confirmar envio verificado", async () => {
+    const { companyId, jobId, walletBefore } = await makeUncertain("confirmed-sent");
+    const bad = await api(`/api/super/messages/${jobId}/resolve`, { method: "POST", body: JSON.stringify({
+      decision: "confirmed_sent", provider_message_id: "invalido",
+      justification: "Mensagem confirmada manualmente no painel do provedor."
+    }) }, superCookie);
+    expect(bad.status).toBe(422);
+    const metaId = `wamid.TiguConfirmed${jobId}Example`;
+    const payload = {
+      decision: "confirmed_sent", provider_message_id: metaId,
+      justification: "Verifiquei o identificador no painel oficial de mensagens Meta."
+    };
+    const ok = await api(`/api/super/messages/${jobId}/resolve`,
+      { method: "POST", body: JSON.stringify(payload) }, superCookie);
+    expect(ok.status).toBe(200);
+    expect(ok.body.status).toBe("sent");
+    expect(ok.body.captured).toBe(true);
+    const updated = await db.prepare(
+      "SELECT status,provider_msg_id,captured_at,reserved_cents FROM message_jobs WHERE id=?1"
+    ).bind(jobId).first<{ status: string; provider_msg_id: string; captured_at: string | null; reserved_cents: number }>();
+    expect(updated?.provider_msg_id).toBe(metaId);
+    expect(updated?.captured_at).not.toBeNull();
+    expect(updated?.reserved_cents).toBe(0);
+    expect((await getWallet(db, companyId))!.balance_cents).toBe(walletBefore.balance_cents - 10);
+    expect((await getWallet(db, companyId))!.reserved_cents).toBe(walletBefore.reserved_cents);
+    expect((await api(`/api/super/messages/${jobId}/resolve`,
+      { method: "POST", body: JSON.stringify(payload) }, superCookie)).status).toBe(409);
+    const ledger = await db.prepare(
+      "SELECT COUNT(*) n FROM wallet_transactions WHERE idempotency_key=?1"
+    ).bind(`capture:job-${jobId}`).first<{ n: number }>();
+    expect(ledger?.n).toBe(1);
+  });
+});
