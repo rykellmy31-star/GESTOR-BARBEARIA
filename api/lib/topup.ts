@@ -80,6 +80,21 @@ export async function confirmTopupFromProvider(env: Env, externalId: string, via
       }
       return { ok: true, status: providerStatus, credited: false };
     }
+    // Pagamento aprovado não basta: confira que a ordem pertence ao Tigu,
+    // foi paga em reais, via Pix, e pelo valor EXATO do pedido.
+    if (t.provider === "mercadopago") {
+      const detail = st.detail || {};
+      const externalReference = String(detail.external_reference ?? "");
+      const currency = String(detail.currency_id ?? "");
+      const method = String(detail.payment_method_id ?? "");
+      const amountPaid = Number(detail.transaction_amount);
+      const amountPaidCents = Number.isFinite(amountPaid) ? Math.round(amountPaid * 100) : NaN;
+      if (externalReference !== t.code || currency !== "BRL" || method !== "pix" ||
+          amountPaidCents !== t.amount_cents || String(detail.id ?? "") !== String(t.provider_payment_id ?? "")) {
+        return { ok: false, status: "mismatch", credited: false,
+          message: "Dados do pagamento não correspondem ao pedido (valor, referência, método ou moeda)." };
+      }
+    }
   }
   const credited = await creditTopup(db, t.company_id, t.amount_cents, t.id, via === "manual" ? `Confirmação manual pelo Tigu: ${justification}` : via === "mock" ? "Confirmação simulada (ambiente de demonstração)" : "Pix aprovado (re-consultado no gateway)");
   if (credited) {
