@@ -15,6 +15,7 @@ declare module "cloudflare:test" {
 import schema0001 from "../migrations/0001_init.sql";
 import schema0002 from "../migrations/0002_whatsapp_identity.sql";
 import schema0003 from "../migrations/0003_sales_leads.sql";
+import schema0004 from "../migrations/0004_start_trial.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
@@ -64,6 +65,7 @@ beforeAll(async () => {
   await runSqlScript(schema0001);
   await runSqlScript(schema0002);
   await runSqlScript(schema0003);
+  await runSqlScript(schema0004);
   const hash = await hashPassword(PW);
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   await db.batch([
@@ -979,10 +981,15 @@ describe("Planos comerciais com preço dinâmico e permissão de Superadmin", ()
     expect(login.status).toBe(200);
     const cookie = login.cookie!;
     const free = publicResult.body.plans.find((p:any)=>p.code==="free");
+    expect(free.price_cents_month).toBe(1999);
     expect((await api("/api/super/plans/free",{method:"PUT",body:JSON.stringify({
-      name:free.name,price_cents_month:500,max_barbers:free.max_barbers,
+      name:free.name,price_cents_month:0,max_barbers:free.max_barbers,
       max_messages_month:free.max_messages_month,whatsapp_enabled:false,store_enabled:true
     })},cookie)).status).toBe(422);
+    expect((await api("/api/super/plans/free",{method:"PUT",body:JSON.stringify({
+      name:free.name,price_cents_month:1999,max_barbers:free.max_barbers,
+      max_messages_month:free.max_messages_month,whatsapp_enabled:false,store_enabled:true
+    })},cookie)).status).toBe(200);
     expect((await api("/api/super/plans/pro",{method:"PUT",body:JSON.stringify({...changed,max_barbers:0})},cookie)).status).toBe(422);
     try {
       const saved = await api("/api/super/plans/pro",{method:"PUT",body:JSON.stringify(changed)},cookie);
