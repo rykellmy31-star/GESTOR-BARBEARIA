@@ -54,6 +54,7 @@ export interface SendTemplateResult {
   providerMessageId?: string;
   /** retryable: erro transitório (rate limit, rede) → manter reserva e tentar de novo */
   permanent: boolean;
+  uncertain?: boolean; // sem confirmação de aceite ou rejeição pelo provedor
   error?: string;
   /** custo estimado da mensagem (informativo p/ margem; cobrança real é a regra da plataforma) */
   providerCostCents?: number;
