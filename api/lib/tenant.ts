@@ -9,6 +9,7 @@ import type { Env, SessionUser } from "../types";
 import { err } from "./utils";
 import { loadCompanySettings } from "./settings";
 import { currentUserOptional } from "./auth";
+import { canOperateSubscription, requiresSubscriptionToWrite, subscriptionAccess } from "./trial";
 import type { CompanySettings } from "./settings";
 
 export interface CompanyRow {
@@ -58,6 +59,17 @@ export const tenantMiddleware =
     const company = await findCompanyBySlug(c.env.DB, slug);
     if (!company) return err(c, "Esta barbearia não existe (ou o endereço mudou).", 404);
     if (company.status === "suspended") return err(c, `Esta barbearia está temporariamente suspensa${company.suspend_reason ? `: ${company.suspend_reason}` : ""}.`, 403);
+
+    // Evita novas reservas/alterações após o fim dos 15 dias, sem apagar
+    // informações nem impedir consulta ou cancelamento de reservas existentes.
+    const writeRequiresSubscription = requiresSubscriptionToWrite(
+      c.req.method, c.req.path, opts.auth !== "none"
+    );
+    if (writeRequiresSubscription) {
+      const subscription = await subscriptionAccess(c.env.DB, company.id);
+      if (!canOperateSubscription(subscription)) return err(c,
+        "Seu período de teste terminou ou a assinatura está inativa. Fale com o suporte Tigu para continuar. Nenhuma cobrança será feita automaticamente.", 402);
+    }
 
     const user: SessionUser | null = await currentUserOptional(c);
     const settings = await loadCompanySettings(c.env.DB, company.id);
