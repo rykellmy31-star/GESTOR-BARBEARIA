@@ -564,12 +564,19 @@ adminRouter.post("/team", async (c) => {
   const db = P(c); const id = cid(c);
   const email = parsed.data.email.trim().toLowerCase();
   if (parsed.data.role === "barber" && !parsed.data.barber_id) return err(c, "Vincule o profissional ao barbeiro", 400);
+  if (parsed.data.barber_id) {
+    const barber = await db.prepare("SELECT id FROM barbers WHERE id=?1 AND company_id=?2").bind(parsed.data.barber_id,id).first();
+    if (!barber) return err(c, "Barbeiro inválido para esta empresa", 400);
+  }
   const clash = await db.prepare(`SELECT m.id FROM company_memberships m JOIN users u ON u.id=m.user_id WHERE m.company_id=?1 AND u.email=?2`).bind(id, email).first();
   if (clash) return err(c, "Este e-mail já participa desta barbearia", 409);
   let userId = (await db.prepare(`SELECT id FROM users WHERE email=?1`).bind(email).first<{ id: number }>())?.id ?? 0;
+  // Conta global existente só pode ser vinculada por fluxo com consentimento.
+  // Conhecer o e-mail não autoriza administrar sua identidade.
+  if (userId) return err(c, "Este e-mail já possui conta. Solicite ao suporte o vínculo seguro do acesso existente.", 409);
   let created = false;
   if (!userId) {
-    const ins = await db.prepare(`INSERT INTO users (platform_role, name, email, password_hash, active, must_change_password, created_at) VALUES ('user',?1,?2,?3,1,0,?4)`)
+    const ins = await db.prepare(`INSERT INTO users (platform_role, name, email, password_hash, active, must_change_password, created_at) VALUES ('user',?1,?2,?3,1,1,?4)`)
       .bind(parsed.data.name.trim(), email, await hashPassword(parsed.data.password), nowIso()).run();
     userId = ins.meta.last_row_id as number;
     created = true;
@@ -591,6 +598,11 @@ adminRouter.put("/team/:membershipId", async (c) => {
   if (!m) return err(c, "Membro não encontrado", 404);
   if (m.role === "owner") return err(c, "O papel de dono não é editável pelo painel (use o suporte Tigu).", 403);
   const d = parsed.data;
+  if (d.reset_password) {
+    const otherCompany = await db.prepare("SELECT id FROM company_memberships WHERE user_id=?1 AND company_id<>?2 LIMIT 1").bind(m.user_id,id).first();
+    if (m.platform_role === "superadmin" || otherCompany)
+      return err(c, "A senha desta conta global só pode ser redefinida pelo próprio usuário ou pelo suporte Tigu.", 403);
+  }
   if (d.active === false) {
     await db.prepare(`UPDATE company_memberships SET active=0 WHERE id=?1`).bind(m.id).run();
     await db.prepare(`DELETE FROM sessions WHERE user_id=?1 AND user_id IN (SELECT user_id FROM company_memberships WHERE company_id=?2)`).bind(m.user_id, id).run();
@@ -607,8 +619,11 @@ adminRouter.put("/team/:membershipId", async (c) => {
     await db.prepare(`UPDATE company_memberships SET role=?1, barber_id=?2 WHERE id=?3 AND company_id=?4`).bind(role, barberId, m.id, id).run();
   }
   if (d.reset_password) {
-    await db.prepare(`UPDATE users SET password_hash=?1, must_change_password=1 WHERE id=?2`).bind(await hashPassword(d.reset_password), m.user_id).run();
-    await db.prepare(`DELETE FROM sessions WHERE user_id=?1`).bind(m.user_id).run();
+    await db.batch([
+      db.prepare(`UPDATE users SET password_hash=?1, must_change_password=1 WHERE id=?2`).bind(await hashPassword(d.reset_password),m.user_id),
+      db.prepare(`DELETE FROM sessions WHERE user_id=?1`).bind(m.user_id),
+      db.prepare(`UPDATE password_resets SET used_at=?1 WHERE user_id=?2 AND used_at IS NULL`).bind(nowIso(),m.user_id),
+    ]);
   }
   await audit(db, c.get("user"), "team.update", "membership", m.id, { role: d.role, reset: Boolean(d.reset_password) }, { companyId: id });
   return json(c, { ok: true });
@@ -1067,11 +1082,14 @@ adminRouter.post("/barbers/:id/credentials", async (c) => {
   const barber = await db.prepare(`SELECT id, name FROM barbers WHERE id=?1 AND company_id=?2`).bind(barberId, id).first<{ id: number; name: string }>();
   if (!barber) return err(c, "Barbeiro não encontrado", 404);
   const email = parsed.data.email.trim().toLowerCase();
-  const generated = parsed.data.password ? "" : `Demo!${Math.random().toString(36).slice(2, 10)}`;
+  const generated = parsed.data.password ? "" : `Tigu!${crypto.randomUUID().replace(/-/g,"" )}`;
   const pw = parsed.data.password || generated;
   let userId = (await db.prepare(`SELECT id FROM users WHERE email=?1`).bind(email).first<{ id: number }>())?.id ?? 0;
+  // Conta global existente só pode ser vinculada por fluxo com consentimento.
+  // Conhecer o e-mail não autoriza administrar sua identidade.
+  if (userId) return err(c, "Este e-mail já possui conta. Solicite ao suporte o vínculo seguro do acesso existente.", 409);
   if (!userId) {
-    const ins = await db.prepare(`INSERT INTO users (platform_role, name, email, password_hash, active, must_change_password, created_at) VALUES ('user',?1,?2,?3,1,0,?4)`).bind(parsed.data.name || barber.name, email, await hashPassword(pw), nowIso()).run();
+    const ins = await db.prepare(`INSERT INTO users (platform_role, name, email, password_hash, active, must_change_password, created_at) VALUES ('user',?1,?2,?3,1,1,?4)`).bind(parsed.data.name || barber.name, email, await hashPassword(pw), nowIso()).run();
     userId = ins.meta.last_row_id as number;
   }
   await db.prepare(`INSERT INTO company_memberships (company_id, user_id, role, barber_id, active, created_at) VALUES (?1,?2,'barber',?3,1,?4) ON CONFLICT(company_id, user_id) DO UPDATE SET role='barber', barber_id=excluded.barber_id, active=1`).bind(id, userId, barber.id, nowIso()).run();
