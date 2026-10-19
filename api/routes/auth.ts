@@ -10,6 +10,7 @@ import { audit } from "../lib/audit";
 import { DEFAULT_SETTINGS } from "../lib/settings";
 
 import { sha256hex } from "../lib/crypto";
+import { consumePasswordReset } from "../lib/password-reset";
 
 export const authRouter = new Hono<{ Bindings: Env }>();
 
@@ -211,9 +212,17 @@ authRouter.post("/recover", async (c) => {
   return json(c, generic);
 });
 
+const resetPasswordSchema = z.object({
+  email: z.string().trim().email().max(254),
+  code: z.string().trim().regex(/^[A-Za-z0-9]{10}$/),
+  password: z.string().min(10).max(128),
+});
+
 authRouter.post("/recover/verify", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { email?: string; code?: string; password?: string };
-  const email = (body.email || "").trim().toLowerCase();
+  const parsed = resetPasswordSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return err(c, "Código inválido ou senha fora dos limites (10 a 128 caracteres)", 422);
+  const body = parsed.data;
+  const email = body.email.toLowerCase();
   const db = c.env.DB;
   const u = await db.prepare(`SELECT id FROM users WHERE email = ?1 AND active = 1`).bind(email).first<{ id: number }>();
   if (!u) return err(c, "Código inválido", 400);
@@ -236,20 +245,10 @@ authRouter.post("/recover/verify", async (c) => {
   }
   const at = nowIso();
   const pwHash = await hashPassword(body.password);
-  const results = await db.batch([
-    db.prepare(
-      `UPDATE password_resets SET used_at=?1 WHERE id=?2 AND used_at IS NULL
-       AND attempts<5 AND expires_at>?1`
-    ).bind(at, existing.id),
-    db.prepare(
-      `UPDATE users SET password_hash=?1,must_change_password=0
-       WHERE id=?2 AND EXISTS(SELECT 1 FROM password_resets
-         WHERE id=?3 AND used_at=?4 AND code_hash=?5)`
-    ).bind(pwHash, u.id, existing.id, at, codeHash),
-    db.prepare(`DELETE FROM sessions WHERE user_id=?1`).bind(u.id),
-  ]);
-  if (results[0].meta?.changes !== 1 || results[1].meta?.changes !== 1)
-    return err(c, "Código já utilizado ou expirado", 409);
+  const consumed = await consumePasswordReset(db, {
+    resetId: existing.id, userId: u.id, codeHash, passwordHash: pwHash, at,
+  });
+  if (!consumed) return err(c, "Código já utilizado ou expirado", 409);
   await audit(db, null, "password.reset", "user", u.id, {}, { companyId: null, scope: "platform" });
   return json(c, { ok: true, message: "Senha redefinida. Faça login com a nova senha." });
 });
