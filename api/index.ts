@@ -24,6 +24,7 @@ import { processDueJobs } from "./lib/messaging/jobs";
 import { expirePendingTopups, reconcilePendingTopups } from "./lib/topup";
 import { nowIso } from "./lib/utils";
 import { loadSalesContact, publicSalesContact } from "./lib/marketing";
+import { listPublicPlans } from "./lib/plans";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -50,6 +51,11 @@ app.get("/api/health", (c) =>
 /** Página comercial pública (sem expor contatos desativados). */
 app.get("/api/marketing/contact", async (c) =>
   c.json({ contact: publicSalesContact(await loadSalesContact(c.env.DB)) })
+);
+
+/** Preços e limites da página de contratação vêm do D1, não do bundle React. */
+app.get("/api/marketing/plans", async (c) =>
+  c.json({ plans: await listPublicPlans(c.env.DB), automatic_billing: false })
 );
 
 app.use("/api/*", originGuard);
