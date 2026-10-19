@@ -18,7 +18,9 @@ import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
 import { ingestWhatsappWebhook, scheduleBookingMessage, cancelPendingJobs, processDueJobs } from "../api/lib/messaging/jobs";
-import { metaProvider } from "../api/lib/messaging/provider";
+import { metaProvider, resolveProvider } from "../api/lib/messaging/provider";
+import { mpProvider, pickPaymentProvider } from "../api/lib/payments";
+import { app } from "../api/index";
 import { encryptSecret } from "../api/lib/crypto";
 import { loadCompanySettings } from "../api/lib/settings";
 import { reconcilePendingTopups } from "../api/lib/topup";
@@ -690,5 +692,67 @@ describe("Superadmin: revisão de WhatsApp com resultado incerto", () => {
     const after = (await getWallet(db, companyA))!;
     expect(after.balance_cents).toBe(before.balance_cents);
     expect(after.reserved_cents).toBe(before.reserved_cents);
+  });
+});
+
+describe("Tigu homologação: isolamento contra integrações reais", () => {
+  const stagingEnv = () => ({
+    ...env, DB: db, APP_ENV: "production",
+    TIGU_STAGING: "1", WHATSAPP_MOCK: "1",
+    PAYMENTS_MOCK: "0",
+    MP_ACCESS_TOKEN: "token-que-nao-deve-ser-usado"
+  }) as Env;
+
+  it("bloqueia pagamentos externos mesmo com token por engano", async () => {
+    const st = stagingEnv();
+    expect(pickPaymentProvider(st, false).provider).toBeNull();
+    const calls = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Não usar rede externa"));
+    try {
+      const created = await mpProvider(st).createPixPayment({
+        amountCents: 1000, externalReference: "TESTE", description: "teste", payerEmail: "pessoa@teste.invalid"
+      });
+      expect(created.ok).toBe(false);
+      expect((await mpProvider(st).getPaymentStatus("123")).status).toBe("error");
+      expect(calls).not.toHaveBeenCalled();
+    } finally {
+      calls.mockRestore();
+    }
+  });
+
+  it("bloqueia Meta real e aceita apenas provedor mock", async () => {
+    const st = stagingEnv();
+    const metaConn = {
+      id: 2, company_id: 1, provider: "meta_cloud" as const, status: "connected" as const,
+      phone_number_id: "123456", access_token_enc: "token-invalido"
+    };
+    const calls = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Meta não deve ser chamada"));
+    try {
+      const provider = await resolveProvider({ env: st, db, conn: metaConn as any, demo: false });
+      expect(provider.provider).toBeNull();
+      const result = await metaProvider.sendTemplate(
+        { env: st, db, conn: metaConn as any, demo: false },
+        { to: "5573999990030", templateCode: "tigu_lembrete", language: "pt_BR", variables: [] }
+      );
+      expect(result).toMatchObject({ accepted: false, permanent: true });
+      const mock = await resolveProvider({
+        env: st, db, demo: false,
+        conn: { ...metaConn, provider: "mock" } as any
+      });
+      expect(mock.provider?.kind).toBe("mock");
+      expect(calls).not.toHaveBeenCalled();
+    } finally {
+      calls.mockRestore();
+    }
+  });
+
+  it("rejeita webhooks públicos de terceiros sem afetar D1", async () => {
+    const st = stagingEnv();
+    for (const path of ["/api/webhooks/whatsapp", "/api/webhooks/mercadopago"]) {
+      const res = await app.request(path,
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: { id: "123" } }) },
+        st
+      );
+      expect(res.status).toBe(403);
+    }
   });
 });
