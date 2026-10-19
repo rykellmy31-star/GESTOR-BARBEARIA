@@ -423,19 +423,11 @@ superRouter.post("/messages/:id/resolve", async (c) => {
   if (!uncertain) return err(c, "Esta mensagem não está em revisão por envio indeterminado.", 409);
 
   if (d.decision === "not_sent") {
-    if (job.captured_at) return err(c, "Esta mensagem já tem cobrança registrada: concilie o lançamento antes.", 409);
-    if (job.reserved_cents > 0) {
-      const { releaseJobReservation } = await import("../lib/wallet");
-      if (!await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents))
-        return err(c, "Falha ao liberar créditos; nenhuma confirmação aplicada.", 503);
-    }
-    const result = await db.prepare(
-      `UPDATE message_jobs SET status='failed', last_error=?1, next_attempt_at=NULL, updated_at=?2
-       WHERE id=?3 AND company_id=?4 AND status='sending' AND provider_msg_id=''`
-    ).bind("Conciliação manual: envio NÃO confirmado; " + d.justification, nowIso(), id, job.company_id).run();
-    if (!result.meta?.changes) return err(c, "O envio foi alterado por outra operação. Atualize o painel.", 409);
-    await audit(db, c.get("user"), "message.resolve.not_sent", "message_job", id,
-      { decision: "not_sent", justification: d.justification }, { companyId: job.company_id, scope: "platform" });
+    // Todos os caminhos de encerramento usam a MESMA operação atômica D1.
+    const outcome = await resolveUncertainNotSent(
+      db, job.company_id, job.id, c.get("user").id, d.justification
+    );
+    if (!outcome.ok) return err(c, outcome.error || "Encerramento recusado", 409);
     return json(c, { ok: true, status: "failed", credited: false });
   }
 
