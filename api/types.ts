@@ -9,6 +9,8 @@ export interface Env {
   /** Chave para cifrar tokens de WhatsApp em repouso (AES-256-GCM). */
   MSG_ENC_KEY?: string;
   APP_ENV?: string;
+  /** Worker isolado de homologação: impede provedores e webhooks reais. */
+  TIGU_STAGING?: string;
 
   // ── WhatsApp (Meta Cloud API) — APP-level; credenciais por empresa vêm do DB ──
   /** URL pública da plataforma (usada em callbacks/links), ex.: https://tigu.com.br */
