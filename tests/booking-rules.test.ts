@@ -1660,3 +1660,55 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
   });
 
 });
+
+
+describe("Mensalidades Pix visíveis somente no Superadmin", () => {
+  it("lista faturas sem expor códigos Pix, filtra por status e impede acesso de barbearias", async () => {
+    expect((await api("/api/super/subscription-invoices")).status).toBe(401);
+    expect((await api("/api/super/subscription-invoices", {}, cookieA)).status).toBe(403);
+
+    const company = await db.prepare("SELECT id,slug,name FROM companies WHERE slug='alfa' OR slug='a' ORDER BY id ASC LIMIT 1")
+      .first<{id:number;slug:string;name:string}>();
+    const selected = company ?? await db.prepare("SELECT id,slug,name FROM companies ORDER BY id ASC LIMIT 1")
+      .first<{id:number;slug:string;name:string}>();
+    expect(selected).not.toBeNull();
+    const unique = crypto.randomUUID();
+    const idPending = "TIGU-SUB-EXEMPLO-PENDENTE-" + unique;
+    const idPaid = "TIGU-SUB-EXEMPLO-PAGO-" + unique;
+    const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    await db.batch([
+      db.prepare(`INSERT INTO subscription_invoices
+        (company_id,code,plan_code,amount_cents,status,provider_payment_id,qr_code_text,qr_code_base64,created_at,updated_at)
+        VALUES (?1,?2,'free',1999,'pending',?3,'COPIA-E-COLA-SEGREDO','BASE64-PIX-SEGREDO',?4,?4)`)
+        .bind(selected!.id,idPending,"fake-provider-"+unique,now),
+      db.prepare(`INSERT INTO subscription_invoices
+        (company_id,code,plan_code,amount_cents,status,provider_payment_id,paid_at,created_at,updated_at)
+        VALUES (?1,?2,'pro',4990,'paid',?3,?4,?4,?4)`)
+        .bind(selected!.id,idPaid,"fake-approved-"+unique,now),
+    ]);
+
+    const email = "super-finance-"+unique+"@tigu.test";
+    await db.prepare("INSERT INTO users (platform_role,name,email,password_hash,active,created_at) VALUES ('superadmin','Admin financeiro',?1,?2,1,?3)")
+      .bind(email,await hashPassword(PW),now).run();
+    const login=await api("/api/auth/login",{method:"POST",body:JSON.stringify({email,password:PW})});
+    expect(login.status).toBe(200);
+    const cookie=login.cookie!;
+
+    const all=await api("/api/super/subscription-invoices",{},cookie);
+    expect(all.status).toBe(200);
+    expect(all.body.invoices.some((i:any)=>i.code===idPaid&&i.amount_cents===4990)).toBe(true);
+    expect(all.body.summary.paid_cents).toBeGreaterThanOrEqual(4990);
+    expect(all.body.summary.pending_count).toBeGreaterThanOrEqual(1);
+    expect(all.body.limit).toBe(100);
+    expect(JSON.stringify(all.body)).not.toContain("COPIA-E-COLA-SEGREDO");
+    expect(JSON.stringify(all.body)).not.toContain("BASE64-PIX-SEGREDO");
+
+    const paid=await api("/api/super/subscription-invoices?status=paid&q="+encodeURIComponent(idPaid),{},cookie);
+    expect(paid.status).toBe(200);
+    expect(paid.body.invoices).toHaveLength(1);
+    expect(paid.body.invoices[0].code).toBe(idPaid);
+    const pending=await api("/api/super/subscription-invoices?status=pending&q="+encodeURIComponent(idPending),{},cookie);
+    expect(pending.body.invoices.map((i:any)=>i.code)).toEqual([idPending]);
+    expect((await api("/api/super/subscription-invoices?status=forged",{},cookie)).status).toBe(422);
+  });
+});
