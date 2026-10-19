@@ -10,7 +10,7 @@ const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const run = (command,args,cwd=root) => execFileSync(command,args,{cwd,stdio:"inherit"});
 
 run(npm,["audit","--audit-level=moderate"]);
-for (const script of ["validate.mjs","staging.mjs","staging-config.mjs","staging-config.test.mjs","ci-policy.test.mjs","staging-smoke.mjs","create-super.mjs"])
+for (const script of ["validate.mjs","local-e2e.mjs","staging.mjs","staging-config.mjs","staging-config.test.mjs","ci-policy.test.mjs","staging-smoke.mjs","create-super.mjs"])
   run(process.execPath,["--check",join(root,"scripts",script)]);
 run(process.execPath,["--test",join(root,"scripts/staging-config.test.mjs"),join(root,"scripts/ci-policy.test.mjs")]);
 

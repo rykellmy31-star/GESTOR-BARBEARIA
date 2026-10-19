@@ -30,7 +30,8 @@
     "staging:deploy": "node scripts/staging.mjs deploy",
     "staging:super": "node scripts/staging.mjs super",
     "staging:smoke": "node scripts/staging-smoke.mjs",
-    "validate": "node scripts/validate.mjs"
+    "validate": "node scripts/validate.mjs",
+    "test:local-e2e": "npm run build && node scripts/local-e2e.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
