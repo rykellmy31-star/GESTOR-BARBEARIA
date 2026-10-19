@@ -108,3 +108,26 @@ O formulário `/contratar?plano=pro` (ou `scale`) agora utiliza **Cloudflare Tur
 4. Faça também o teste negativo: pedido sem Turnstile ou com token inválido deve ser rejeitado com HTTP 422; sem chaves deve ser recusado com HTTP 503. Essas verificações estão incluídas no GitHub Actions.
 
 **Atenção:** as chaves devem ser próprias para o domínio (staging vs. comercial). O simples fato de salvar o contato no Superadmin não configura o Turnstile. Em desenvolvimento local os testes dispensam Turnstile, mas nenhum Worker marcado como produção o dispensa. Configurar chaves reais ou aprovadas para o domínio antes de aceitar dados de usuários.
+
+
+## Verificação remota somente-leitura
+
+Depois de implantar o Worker **de homologação** e cadastrar os secrets (ambos com **pelo menos 32 caracteres aleatórios**), rode o diagnóstico sem fornecer senha ou dados reais:
+
+```bash
+STAGING_URL=https://tigu-staging.SUA_SUBCONTA.workers.dev npm run staging:smoke
+```
+
+O script `scripts/staging-smoke.mjs` aceita apenas a raiz HTTPS de `tigu-staging.<subconta>.workers.dev` (ou `localhost:8787` para desenvolvimento). **Não faz POST, PUT, PATCH, DELETE, cadastros, cobrança ou alteração de banco.**
+
+Antes de qualquer outra consulta, exige que `/api/health` confirme o ambiente `staging=true`, banco D1 e bucket R2, valores booleanos de secrets prontos, WhatsApp mock e ausência de integrações financeiras/Meta reais. Interrompe sem prosseguir se o servidor não corresponder a esse contrato.
+
+Depois disso verifica planos no D1, contato da vitrine, exigência de Turnstile, sessão anônima sem usuário e recusa de leitura dos interessados (`/api/super/leads` HTTP 401). **Não verifica login com senha, novos cadastros, reservas ou mutações**: esses fluxos exigem testes funcionais separados, com contas e dados fictícios, depois de proteger o Worker por Cloudflare Access/WAF.
+
+As flags `security.session_secret_ready` e `security.encryption_key_ready` no health são apenas booleanos: **não revelam os secrets**. O sistema agora também recusa criar uma sessão em produção se `SESSION_SECRET` estiver ausente ou tiver menos de 32 caracteres.
+
+### Validação de recursos antes de deploy
+
+O script `scripts/staging.mjs` usa um contrato **estrito**. Rejeita mudanças de nome de Worker, rotas personalizadas, recursos adicionais, variáveis desconhecidas (especialmente credenciais de pagamento), alteração de `run_worker_first`, múltiplos bancos D1, buckets R2 extras e cron ativo. A validação ocorre antes de migrar ou publicar. O CI executa testes positivos e negativos desse contrato.
+
+Não rode `npm run deploy` nem `npm run db:migrate:remote` para homologação: esses comandos usam a configuração principal. Use exclusivamente `npm run staging:migrate` e `npm run staging:deploy`, depois de `npm run staging:validate`.
