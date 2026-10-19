@@ -10,7 +10,7 @@ import { err, json, nowIso, uniqueSlug, slugify } from "../lib/utils";
 import { requireSuper } from "../lib/auth";
 import { audit } from "../lib/audit";
 import { hashPassword } from "../lib/crypto";
-import { ensureWallet, getWallet, manualAdjustment } from "../lib/wallet";
+import { ensureWallet, getWallet, manualAdjustment, resolveUncertainNotSent } from "../lib/wallet";
 import { confirmTopupFromProvider } from "../lib/topup";
 import { loadPlatformSettings, setPlatformSetting, platformSettingKeys, type PlatformKey } from "../lib/settings";
 import { DEFAULT_SETTINGS } from "../lib/settings";
@@ -353,6 +353,29 @@ superRouter.get("/messages", async (c) => {
     .all();
   return json(c, { jobs: results });
 });
+
+/** Somente superadmin, com verificação humana de NÃO envio na Meta. */
+superRouter.post("/messages/:id/resolve-not-sent", async (c) => {
+  const parsed = z.object({
+    confirmed_not_sent: z.literal(true),
+    evidence: z.string().trim().min(20).max(500),
+  }).strict().safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return err(c, "Confirmação explícita e evidência (20–500 caracteres) obrigatórias.", 422);
+  const id = idParam(c);
+  const db = c.env.DB;
+  const job = await db.prepare("SELECT company_id FROM message_jobs WHERE id=?1")
+    .bind(id).first<{ company_id: number }>();
+  if (!job) return err(c, "Mensagem não encontrada", 404);
+  const outcome = await resolveUncertainNotSent(
+    db, job.company_id, id, c.get("user").id, parsed.data.evidence
+  );
+  if (!outcome.ok) return err(c, outcome.error || "Encerramento recusado", 409);
+  return json(c, {
+    ok: true,
+    message: "Encerrado após comprovação de não envio, sem cobrança; reserva liberada.",
+  });
+});
+
 superRouter.post("/messages/run-cron", async (c) => {
   const companyId = c.req.query("companyId") ? Number(c.req.query("companyId")) : undefined;
   const out = await processDueJobs(c.env, { companyId, limit: 60 });
