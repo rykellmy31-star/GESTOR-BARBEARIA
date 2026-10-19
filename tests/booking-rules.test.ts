@@ -23,7 +23,7 @@ import { mpProvider, pickPaymentProvider } from "../api/lib/payments";
 import { app } from "../api/index";
 import { encryptSecret } from "../api/lib/crypto";
 import { loadCompanySettings } from "../api/lib/settings";
-import { resolveApiUrl } from "../src/lib/api";
+import { resolveApiUrl } from "../api/lib/url";
 import { reconcilePendingTopups } from "../api/lib/topup";
 import { manualAdjustment, creditTopup, reserveForJob, releaseJobReservation, captureJobCharge, refundJobCharge, getWallet, resolveUncertainNotSent } from "../api/lib/wallet";
 
