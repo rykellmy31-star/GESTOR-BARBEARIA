@@ -1039,7 +1039,7 @@ describe("Solicitações comerciais sem cobrança ou ativação", () => {
     expect(row.price_snapshot_cents).toBe(plan.price_cents_month);
     expect(row.email).toBe(email);
     expect(row.phone).toBe("73999999999");
-    expect(row.consent_at).toMatch(/^\\d{4}-/);
+    expect(row.consent_at).toMatch(/^\d{4}-/);
     expect((await api("/api/marketing/leads",{method:"POST",body})).status).toBe(409);
     for (let n=0;n<3;n++) expect((await api("/api/marketing/leads",{method:"POST",body})).status).toBe(409);
     expect((await api("/api/marketing/leads",{method:"POST",body})).status).toBe(429);
