@@ -14,6 +14,7 @@ import { companySettingsSchema, saveCompanySettings } from "../lib/settings";
 import { audit } from "../lib/audit";
 import { hashPassword } from "../lib/crypto";
 import { changeOrderStatus } from "../lib/orders";
+import { resolveBlockRequest } from "../lib/block-requests";
 import { getWallet, manualAdjustment } from "../lib/wallet";
 import { createTopup, confirmTopupFromProvider } from "../lib/topup";
 import { getConnection, sendImmediate, resolvePricing, processDueJobs } from "../lib/messaging/jobs";
@@ -328,21 +329,7 @@ adminRouter.get("/block-requests", async (c) => {
 adminRouter.post("/block-requests/:id/resolve", async (c) => {
   const parsed = z.object({ approve: z.boolean() }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "approve precisa ser true/false", 400);
-  const db = P(c);
-  const id = cid(c);
-  const r = await db.prepare(`SELECT * FROM block_requests WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<{ id: number; barber_id: number; date: string; start_min: number; end_min: number; status: string }>();
-  if (!r) return err(c, "Pedido não encontrado", 404);
-  if (r.status !== "pendente") return err(c, "Já resolvido", 409);
-  const stmts = [db.prepare(`UPDATE block_requests SET status=?1, resolved_at=?2 WHERE id=?3`).bind(parsed.data.approve ? "aprovado" : "recusado", nowIso(), r.id)];
-  if (parsed.data.approve) {
-    const { localToUtc } = await import("../lib/time");
-    const startIso = localToUtc(ctxSettings(c).timezone, r.date, r.start_min).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const endIso = localToUtc(ctxSettings(c).timezone, r.date, r.end_min).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const code = `BLK-${Date.now().toString(36).toUpperCase()}`;
-    stmts.push(db.prepare(`INSERT INTO bookings (company_id, code, barber_id, service_id, starts_at, ends_at, price_cents, status, origin, customer_name, customer_phone, notes, cancel_token, created_at, updated_at) VALUES (?1,?2,?3,NULL,?4,?5,0,'bloqueio','barbeiro','Bloqueio aprovado','',?6,'x',?7,?7)`).bind(id, code, r.barber_id, startIso, endIso, `pedido #${r.id}`, nowIso()));
-  }
-  await db.batch(stmts);
-  return json(c, { ok: true });
+  return resolveBlockReq(c,parsed.data.approve);
 });
 
 // ── CRUD barbeiros / serviços / produtos ────────────────────────────────────
@@ -1037,23 +1024,10 @@ adminRouter.patch("/orders/:id/status", orderStatusHandler);
 
 adminRouter.post("/block-requests/:id/approve", async (c) => resolveBlockReq(c, true));
 adminRouter.post("/block-requests/:id/reject", async (c) => resolveBlockReq(c, false));
-async function resolveBlockReq(c: import("hono").Context<{ Bindings: Env }>, ok: boolean) {
-  const db = P(c); const id = cid(c);
-  const r = await db.prepare(`SELECT * FROM block_requests WHERE id=?1 AND company_id=?2`).bind(parseInt(c.req.param("id") || "0", 10), id).first<{ id: number; barber_id: number; date: string; start_min: number; end_min: number; status: string }>();
-  if (!r) return err(c, "Pedido não encontrado", 404);
-  if (r.status !== "pendente") return err(c, "Já resolvido", 409);
-  const stmts = [db.prepare(`UPDATE block_requests SET status=?1, resolved_at=?2 WHERE id=?3`).bind(ok ? "aprovado" : "recusado", nowIso(), r.id)];
-  if (ok) {
-    const clash = await db.prepare(`SELECT COUNT(*) n FROM bookings WHERE barber_id=?1 AND status IN ('pendente','confirmado') AND starts_at < ?3 AND ends_at > ?2`).bind(r.barber_id, new Date(Date.parse(`${r.date}T00:00:00Z`) + r.start_min * 60000).toISOString(), new Date(Date.parse(`${r.date}T00:00:00Z`) + r.end_min * 60000).toISOString()).first<{ n: number }>();
-    if ((clash?.n ?? 0) > 0) return err(c, "Há clientes agendados nesse horário — cancele/remarque antes de aprovar", 409);
-    const code = `BLK-${Date.now().toString(36).toUpperCase()}`;
-    stmts.push(db.prepare(`INSERT INTO bookings (company_id, code, barber_id, service_id, starts_at, ends_at, price_cents, status, origin, customer_name, customer_phone, notes, cancel_token, created_at, updated_at) VALUES (?1,?2,?3,NULL,?4,?5,0,'bloqueio','barbeiro','Bloqueio aprovado','',?6,'x',?7,?7)`).bind(id, code, r.barber_id, new Date(Date.parse(`${r.date}T00:00:00Z`) + r.start_min * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"), new Date(Date.parse(`${r.date}T00:00:00Z`) + r.end_min * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"), `pedido #${r.id}`, nowIso()));
-    const startIso = new Date(Date.parse(`${r.date}T00:00:00Z`) + r.start_min * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const endIso = new Date(Date.parse(`${r.date}T00:00:00Z`) + r.end_min * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
-    for (const k of slotKeysFor(startIso, endIso, 5)) stmts.push(db.prepare(`INSERT OR IGNORE INTO booking_slots (company_id, booking_id, barber_id, slot) SELECT ?1, id, ?2, ?3 FROM bookings WHERE code = ?4`).bind(id, r.barber_id, k, code));
-  }
-  await db.batch(stmts);
-  return json(c, { ok: true });
+async function resolveBlockReq(c: import("hono").Context<{ Bindings: Env }>, approve: boolean) {
+  const result=await resolveBlockRequest(P(c),cid(c),await bookingIdParam(c),approve,ctxSettings(c).timezone);
+  if (!result.ok) return err(c,result.message,result.status);
+  return json(c,result);
 }
 
 /** cria acesso ao painel do barbeiro (usuário global + membership barber) */

@@ -81,30 +81,31 @@ barberRouter.post("/bookings/:id/reschedule", async (c) => {
 });
 
 // pedido de folga/bloqueio → admin aprova
-barberRouter.post("/block-request", async (c) => {
-  const parsed = z
-    .object({
-      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      startMin: z.number().int().min(0).max(1439).optional(),
-      endMin: z.number().int().min(1).max(1440).optional(),
-      reason: z.string().min(3).max(200),
-    })
-    .safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "Dados inválidos", 400);
-  const m = me(c);
-  const d = parsed.data;
-  if (d.startMin != null && d.endMin != null && d.endMin <= d.startMin) return err(c, "fim deve ser depois do início", 400);
-  const db = c.env.DB;
-  const id = cid(c);
-  if (d.startMin == null) {
-    await db.prepare(`INSERT INTO blocked_days (company_id, barber_id, date_from, date_to, kind, reason, created_at) VALUES (?1,?2,?3,?3,'day_off',?4,?5)`).bind(id, m.barber_id, d.day, d.reason.trim(), nowIso()).run();
-    await db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin',?2,?3,'block_request')`).bind(id, `Folga solicitada por ${m.name}`, `${d.day} — ${d.reason.trim()} (aprove em Painel → Agenda)`).run();
-    return json(c, { ok: true, type: "day_off" }, 201);
-  }
-  await db.prepare(`INSERT INTO block_requests (company_id, barber_id, date, start_min, end_min, reason, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)`).bind(id, m.barber_id, d.day, d.startMin, d.endMin, d.reason.trim(), nowIso()).run();
-  await db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin',?2,?3,'block_request')`).bind(id, `Bloqueio solicitado por ${m.name}`, `${d.day} ${fmt(d.startMin!)}–${fmt(d.endMin!)} — ${d.reason.trim()}`).run();
-  return json(c, { ok: true, type: "time_block", note: "Aguarda aprovação do dono" }, 201);
-});
+async function blockRequestHandler(c: import("hono").Context<{ Bindings: Env }>) {
+  const parsed=z.object({
+    day:z.string().optional(),date:z.string().optional(),
+    startMin:z.number().int().min(0).max(1439).optional(),
+    endMin:z.number().int().min(1).max(1440).optional(),
+    reason:z.string().trim().min(3).max(200),
+  }).safeParse(await c.req.json().catch(()=>null));
+  if (!parsed.success) return err(c,"Dados inválidos",400);
+  if (!ctxSettings(c).barber_can_block) return err(c,"O dono desativou bloqueios pelo painel do barbeiro",403);
+  const d=parsed.data,day=d.date||d.day||"",date=new Date(`${day}T12:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==day || (d.date&&d.day&&d.date!==d.day))
+    return err(c,"Data inválida",400);
+  if ((d.startMin==null)!==(d.endMin==null)) return err(c,"Informe início e fim juntos",400);
+  const start=d.startMin??0,end=d.endMin??1440;
+  if (end<=start) return err(c,"Fim deve ser depois do início",400);
+  const m=me(c),db=c.env.DB,id=cid(c);
+  const barber=await db.prepare("SELECT id FROM barbers WHERE id=?1 AND company_id=?2 AND active=1").bind(m.barber_id,id).first();
+  if (!barber) return err(c,"Profissional inválido",403);
+  await db.batch([
+    db.prepare("INSERT INTO block_requests(company_id,barber_id,date,start_min,end_min,reason,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)").bind(id,m.barber_id,day,start,end,d.reason,nowIso()),
+    db.prepare("INSERT INTO notifications(company_id,audience,title,body,kind) VALUES (?1,'admin',?2,?3,'block_request')").bind(id,`Bloqueio solicitado por ${m.name}`,`${day} ${fmt(start)}–${fmt(end)} — ${d.reason}`),
+  ]);
+  return json(c,{ok:true,pending_approval:true,message:"Pedido enviado — aguarda aprovação do dono."},201);
+}
+barberRouter.post("/block-request",blockRequestHandler);
 function fmt(min: number): string { return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`; }
 
 barberRouter.get("/reviews", async (c) => {
@@ -173,26 +174,7 @@ barberRouter.get("/agenda", async (c) => {
   return json(c, { from, to, days: byDay, work_days, blocked: bd.results, bookings: results });
 });
 
-barberRouter.post("/block-requests", async (c) => {
-  const parsed = z
-    .object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), day: z.string().optional(), startMin: z.number().int().min(0).max(1439).optional(), endMin: z.number().int().min(1).max(1440).optional(), reason: z.string().min(3).max(200) })
-    .safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "Dados inválidos", 400);
-  const m = me(c);
-  const d = parsed.data;
-  const day = d.date || d.day || "";
-  const db = c.env.DB;
-  const s = ctxSettings(c);
-  if (!s.barber_can_block) return err(c, "O dono desativou bloqueios pelo painel do barbeiro", 403);
-  if (d.startMin != null && d.endMin != null) {
-    await db.prepare(`INSERT INTO block_requests (company_id, barber_id, date, start_min, end_min, reason, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)`).bind(cid(c), m.barber_id, day, d.startMin, d.endMin, d.reason.trim(), nowIso()).run();
-    await db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin',?2,?3,'block_request')`).bind(cid(c), `Bloqueio solicitado por ${m.name}`, `${day} — ${d.reason.trim()}`).run();
-    return json(c, { ok: true, pending_approval: true, message: "Pedido enviado — aguarda aprovação do dono." }, 201);
-  }
-  await db.prepare(`INSERT INTO blocked_days (company_id, barber_id, date_from, date_to, kind, reason, created_at) VALUES (?1,?2,?3,?3,'day_off',?4,?5)`).bind(cid(c), m.barber_id, day, d.reason.trim(), nowIso()).run();
-  await db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin',?2,?3,'block_request')`).bind(cid(c), `Folga solicitada por ${m.name}`, `${day} — ${d.reason.trim()}`).run();
-  return json(c, { ok: true }, 201);
-});
+barberRouter.post("/block-requests",blockRequestHandler);
 
 barberRouter.get("/block-requests", async (c) => {
   const m = me(c);
