@@ -490,30 +490,49 @@ export async function ingestWhatsappWebhook(env: Env, body: unknown): Promise<In
         if (!st.id) continue;
         events++;
         const uid = `wa:status:${st.id}:${st.status}:${st.timestamp ?? ""}`;
-        const job = await db.prepare(`SELECT id, company_id, status, price_cents, capture_on, captured_at FROM message_jobs WHERE provider_msg_id = ?1`).bind(st.id).first<{ id: number; company_id: number; status: string; price_cents: number; capture_on: string; captured_at: string | null }>();
+        // A metadata.phone_number_id é o número receptor do webhook da Meta.
+        // Nunca processe um status de outra barbearia, mesmo que seu message id exista.
+        if (!comp) continue;
+        const job = await db.prepare(
+          `SELECT id, company_id, status, price_cents, capture_on, captured_at FROM message_jobs
+           WHERE provider_msg_id = ?1 AND company_id = ?2`
+        ).bind(st.id, comp.company_id).first<{ id: number; company_id: number; status: string; price_cents: number; capture_on: string; captured_at: string | null }>();
+        if (!job) continue;
         const ins = await db
           .prepare(`INSERT OR IGNORE INTO message_webhook_events (company_id, job_id, event_uid, status, raw_json, processed, created_at) VALUES (?1,?2,?3,?4,?5,1,?6)`)
-          .bind(comp?.company_id ?? job?.company_id ?? null, job?.id ?? null, uid, st.status ?? "unknown", JSON.stringify(st), now)
+          .bind(comp.company_id, job.id, uid, st.status ?? "unknown", JSON.stringify(st), now)
           .run();
-        if (!ins.meta?.changes || !job) continue; // duplicado ou sem job correspondente (mensagem de fora da plataforma)
+        if (!ins.meta?.changes) continue; // reentrega do webhook (idempotência)
         updated++;
         const status = st.status ?? "";
         if (status === "failed") {
-          await db.prepare(`UPDATE message_jobs SET status='failed', last_error=?1, updated_at=?2 WHERE id=?3 AND status IN ('sent','delivered','read')`).bind(st.errors?.[0]?.title || "falha reportada pelo WhatsApp", now, job.id).run();
+          // Uma entrega já confirmada não pode regredir por webhook fora de ordem.
+          if (job.status !== "sent") continue;
+          const transition = await db.prepare(
+            `UPDATE message_jobs SET status='failed', last_error=?1, updated_at=?2
+             WHERE id=?3 AND company_id=?4 AND status='sent'`
+          ).bind(st.errors?.[0]?.title || "falha reportada pelo WhatsApp", now, job.id, comp.company_id).run();
+          if (!transition.meta?.changes) continue;
           if (job.captured_at) {
             await refundJobCharge(db, job.company_id, job.id, job.price_cents, "Falha de entrega pós-cobrança reportada pelo WhatsApp (estorno automático)");
           } else if (job.capture_on === "delivered") {
             await releaseJobReservation(db, job.company_id, job.id, job.price_cents);
           }
         } else if (status === "delivered") {
-          await db.prepare(`UPDATE message_jobs SET status='delivered', delivered_at=?1, updated_at=?1 WHERE id=?2 AND status='sent'`).bind(now, job.id).run();
-          if (job.capture_on === "delivered" && !job.captured_at) {
+          const transition = await db.prepare(
+            `UPDATE message_jobs SET status='delivered', delivered_at=?1, updated_at=?1
+             WHERE id=?2 AND company_id=?3 AND status='sent'`
+          ).bind(now, job.id, comp.company_id).run();
+          if (transition.meta?.changes && job.capture_on === "delivered" && !job.captured_at) {
             await captureJobCharge(db, job.company_id, job.id, job.price_cents);
             await maybeLowBalanceAlert(db, job.company_id);
           }
         } else if (status === "read") {
-          await db.prepare(`UPDATE message_jobs SET status='read', read_at=?1, updated_at=?1 WHERE id=?2 AND status IN ('sent','delivered')`).bind(now, job.id).run();
-          if (job.capture_on === "delivered") {
+          const transition = await db.prepare(
+            `UPDATE message_jobs SET status='read', read_at=?1, updated_at=?1
+             WHERE id=?2 AND company_id=?3 AND status IN ('sent','delivered')`
+          ).bind(now, job.id, comp.company_id).run();
+          if (transition.meta?.changes && job.capture_on === "delivered") {
             const j2 = await db.prepare(`SELECT captured_at, price_cents FROM message_jobs WHERE id=?1`).bind(job.id).first<{ captured_at: string | null; price_cents: number }>();
             if (!j2?.captured_at) await captureJobCharge(db, job.company_id, job.id, j2?.price_cents ?? job.price_cents);
           }
@@ -536,7 +555,8 @@ export async function ingestWhatsappWebhook(env: Env, body: unknown): Promise<In
           const fromDigits = (m.from || "").replace(/\D/g, "");
           const name = v.contacts?.[0]?.profile?.name ?? "Cliente";
           await db.batch([
-            db.prepare(`INSERT INTO customers (company_id, name, phone, whatsapp_optin, lgpd_consent_at) VALUES (?1,?2,?3,1,?4) ON CONFLICT(company_id, phone) DO UPDATE SET name = COALESCE(NULLIF(customers.name,''), excluded.name)`).bind(comp.company_id, name, fromDigits, now),
+            // Mensagem recebida NÃO equivale a consentimento para lembretes futuros.
+            db.prepare(`INSERT INTO customers (company_id, name, phone, whatsapp_optin) VALUES (?1,?2,?3,0) ON CONFLICT(company_id, phone) DO UPDATE SET name = COALESCE(NULLIF(customers.name,''), excluded.name)`).bind(comp.company_id, name, fromDigits),
             notifyIfNoRecent(db, comp.company_id, "message", "Nova mensagem recebida no WhatsApp da barbearia", `${name}: ${String(m.text?.body ?? "").slice(0, 140)}`),
           ]);
         }
