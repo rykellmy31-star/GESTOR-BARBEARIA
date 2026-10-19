@@ -130,10 +130,11 @@ export const metaProvider: Provider = {
       const msg = data?.error?.message || `HTTP ${res.status}`;
       // códigos Meta típicos: 131047 (re-engagement), 131026 (não entregável), 100 (formato), 131010? etc.
       const retryableCodes = new Set([131056, 131052, 133010, 4, 527]); // rate limit / serviço / auth transient
-      const retryable = res.status >= 500 || (data?.error?.code != null && retryableCodes.has(data.error.code));
-      return { accepted: false, permanent: !retryable, error: msg };
+      const uncertain = res.ok || res.status >= 500;
+      const retryable = res.status === 429 || (data?.error?.code != null && retryableCodes.has(data.error.code));
+      return { accepted: false, permanent: !uncertain && !retryable, uncertain, error: msg };
     } catch (e) {
-      return { accepted: false, permanent: false, error: String(e) }; // rede instável → retry
+      return { accepted: false, permanent: false, uncertain: true, error: String(e) }; // sem confirmação de aceite
     }
   },
   async listTemplates(ctx) {
