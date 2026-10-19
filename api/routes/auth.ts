@@ -181,6 +181,16 @@ authRouter.post("/password", requireAuth, async (c) => {
 // dono de empresa contata o suporte Tigu (superadmin pode gerar/ver código
 // ativo do reset para confirmar por WhatsApp/e-mail manual do próprio suporte).
 authRouter.post("/recover", async (c) => {
+  // Não há entrega de e-mail/SMS transacional configurada. Produção nunca
+  // revela um código no HTTP nem cria um código que ninguém poderá receber.
+  // O suporte pode verificar a identidade e redefinir o acesso no Superadmin.
+  if (c.env.APP_ENV === "production") {
+    return json(c, {
+      ok: true,
+      support_required: true,
+      message: "Para recuperar o acesso, solicite atendimento ao suporte Tigu. Nossa equipe verificará sua identidade antes de redefinir a senha.",
+    });
+  }
   const body = (await c.req.json().catch(() => ({}))) as { email?: string };
   const email = (body.email || "").trim().toLowerCase();
   const db = c.env.DB;
@@ -195,7 +205,7 @@ authRouter.post("/recover", async (c) => {
     db.prepare(`INSERT INTO password_resets (user_id, code_hash, expires_at, created_at) VALUES (?1,?2, strftime('%Y-%m-%dT%H:%M:%SZ','now','+30 minutes'), ?3)`).bind(u.id, codeHash, nowIso()),
   ]);
   await audit(db, null, "password.recover_request", "user", u.id, {}, { companyId: null, scope: "platform" });
-  if (u.demo === 1 || c.env.APP_ENV !== "production") {
+  if (c.env.APP_ENV !== "production") {
     return json(c, { ...generic, demo_code: raw, note: "AMBIENTE DE DEMONSTRAÇÃO: o código é mostrado aqui; em produção ele seria entregue por um canal seguro." });
   }
   return json(c, generic);
@@ -208,15 +218,38 @@ authRouter.post("/recover/verify", async (c) => {
   const u = await db.prepare(`SELECT id FROM users WHERE email = ?1 AND active = 1`).bind(email).first<{ id: number }>();
   if (!u) return err(c, "Código inválido", 400);
   if (!body.password || body.password.length < 10) return err(c, "Nova senha precisa de 10+ caracteres", 422);
-  const codeHash = await sha256hex(`${(body.code || "").toUpperCase()}:${u.id}`);
-  const r = await db.prepare(`SELECT id, attempts FROM password_resets WHERE user_id = ?1 AND code_hash = ?2 AND used_at IS NULL AND expires_at > ?3`).bind(u.id, codeHash, nowIso()).first<{ id: number; attempts: number }>();
-  if (!r) return err(c, "Código inválido ou expirado", 400);
-  if (r.attempts >= 5) return err(c, "Muitas tentativas com este código. Gere um novo.", 429);
-  await db.batch([
-    db.prepare(`UPDATE password_resets SET used_at = ?2 WHERE id = ?1`).bind(r.id, nowIso()),
-    db.prepare(`UPDATE users SET password_hash = ?1, must_change_password = 0 WHERE id = ?2`).bind(await hashPassword(body.password), u.id),
-    db.prepare(`DELETE FROM sessions WHERE user_id = ?1`).bind(u.id),
+  const rawCode = (body.code || "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{10}$/.test(rawCode)) return err(c, "Código inválido ou expirado", 400);
+  const existing = await db.prepare(
+    `SELECT id, code_hash, attempts FROM password_resets
+     WHERE user_id=?1 AND used_at IS NULL AND expires_at>?2
+     ORDER BY id DESC LIMIT 1`
+  ).bind(u.id, nowIso()).first<{ id: number; code_hash: string; attempts: number }>();
+  if (!existing) return err(c, "Código inválido ou expirado", 400);
+  if (existing.attempts >= 5) return err(c, "Muitas tentativas com este código. Gere um novo.", 429);
+  const codeHash = await sha256hex(`${rawCode}:${u.id}`);
+  if (existing.code_hash !== codeHash) {
+    await db.prepare(
+      `UPDATE password_resets SET attempts=attempts+1 WHERE id=?1 AND used_at IS NULL AND attempts<5`
+    ).bind(existing.id).run();
+    return err(c, "Código inválido ou expirado", 400);
+  }
+  const at = nowIso();
+  const pwHash = await hashPassword(body.password);
+  const results = await db.batch([
+    db.prepare(
+      `UPDATE password_resets SET used_at=?1 WHERE id=?2 AND used_at IS NULL
+       AND attempts<5 AND expires_at>?1`
+    ).bind(at, existing.id),
+    db.prepare(
+      `UPDATE users SET password_hash=?1,must_change_password=0
+       WHERE id=?2 AND EXISTS(SELECT 1 FROM password_resets
+         WHERE id=?3 AND used_at=?4 AND code_hash=?5)`
+    ).bind(pwHash, u.id, existing.id, at, codeHash),
+    db.prepare(`DELETE FROM sessions WHERE user_id=?1`).bind(u.id),
   ]);
+  if (results[0].meta?.changes !== 1 || results[1].meta?.changes !== 1)
+    return err(c, "Código já utilizado ou expirado", 409);
   await audit(db, null, "password.reset", "user", u.id, {}, { companyId: null, scope: "platform" });
   return json(c, { ok: true, message: "Senha redefinida. Faça login com a nova senha." });
 });
