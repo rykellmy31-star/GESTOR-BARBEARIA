@@ -88,3 +88,23 @@ Requisitos: Node.js 22+, uma conta Cloudflare autenticada pelo Wrangler e acesso
 - Testar autenticação real no D1 de testes, permissões e criação de empresa fictícia no Worker publicado.
 - Aplicar controles adicionais contra abuso público (limites persistentes/Turnstile/Cloudflare Access).
 - Validar integrações reais em ambiente específico e controlado **somente com autorização posterior**.
+
+
+## Proteção antirobôs do formulário comercial
+
+O formulário `/contratar?plano=pro` (ou `scale`) agora utiliza **Cloudflare Turnstile**. Como `APP_ENV=production` também na homologação, o Worker exige a validação do desafio antes de gravar qualquer interessado. **Na ausência das chaves, o formulário fica indisponível**; os painéis e a prévia estática continuam acessíveis.
+
+1. Na conta Cloudflare, abra **Turnstile → Add widget**, crie um widget de teste para o domínio exato do Worker de homologação. O hostname público da homologação é distinto do site comercial.
+2. Configure no Worker de homologação as duas chaves, usando o arquivo de configuração local preparado:
+
+   ```bash
+   npx wrangler secret put SALES_TURNSTILE_SITE_KEY --config wrangler.staging.jsonc
+   npx wrangler secret put SALES_TURNSTILE_SECRET --config wrangler.staging.jsonc
+   ```
+
+   A primeira é a *site key* pública; a segunda é a *secret key* e **nunca pode ser enviada ao frontend, publicada no repositório ou compartilhada em conversas**.
+
+3. Confirme que `GET /api/marketing/lead-config` retorna `"required":true` e `"enabled":true` e somente a chave pública `site_key`. A configuração secreta não deve aparecer na resposta. Teste no navegador o envio de um contato **fictício** e verifique se chegou em `/superadmin/leads`.
+4. Faça também o teste negativo: pedido sem Turnstile ou com token inválido deve ser rejeitado com HTTP 422; sem chaves deve ser recusado com HTTP 503. Essas verificações estão incluídas no GitHub Actions.
+
+**Atenção:** as chaves devem ser próprias para o domínio (staging vs. comercial). O simples fato de salvar o contato no Superadmin não configura o Turnstile. Em desenvolvimento local os testes dispensam Turnstile, mas nenhum Worker marcado como produção o dispensa. Configurar chaves reais ou aprovadas para o domínio antes de aceitar dados de usuários.
