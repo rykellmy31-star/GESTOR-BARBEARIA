@@ -22,7 +22,7 @@ import { metaProvider } from "../api/lib/messaging/provider";
 import { encryptSecret } from "../api/lib/crypto";
 import { loadCompanySettings } from "../api/lib/settings";
 import { reconcilePendingTopups } from "../api/lib/topup";
-import { manualAdjustment, creditTopup, reserveForJob, releaseJobReservation, captureJobCharge, refundJobCharge, getWallet } from "../api/lib/wallet";
+import { manualAdjustment, creditTopup, reserveForJob, releaseJobReservation, captureJobCharge, refundJobCharge, getWallet, resolveUncertainNotSent } from "../api/lib/wallet";
 
 const db = env.DB as unknown as D1Database;
 
@@ -617,5 +617,75 @@ describe("Superadmin: conciliação de WhatsApp sem reenvio", () => {
       "SELECT COUNT(*) n FROM wallet_transactions WHERE idempotency_key=?1"
     ).bind(`capture:job-${jobId}`).first<{ n: number }>();
     expect(ledger?.n).toBe(1);
+  });
+});
+
+
+describe("Superadmin: revisão de WhatsApp com resultado incerto", () => {
+  it("não libera crédito de outra empresa; encerramento documentado é único e atômico", async () => {
+    const companyA = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
+      .first<{ id: number }>())!.id;
+    const companyB = (await db.prepare("SELECT id FROM companies WHERE slug='bravo'")
+      .first<{ id: number }>())!.id;
+    const evidence = "Conferência manual no painel Meta: mensagem não encontrada e sem envio registrado.";
+    const when = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    const old = new Date(Date.now() - 12 * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const stamp = Date.now();
+    const before = (await getWallet(db, companyA))!;
+    expect((await manualAdjustment(db, companyA, 200, "Credito adicional para teste de conciliacao", 1, "uncertain-" + stamp)).ok).toBe(true);
+    const ins = await db.prepare(
+      "INSERT INTO message_jobs (company_id,kind,to_phone,template_code,status,scheduled_at,fire_deadline,price_cents,idempotency_key) VALUES (?1,'test','5573999995678','tigu_lembrete','scheduled',?2,?2,25,?3)"
+    ).bind(companyA, when, "uncertain-job-" + stamp).run();
+    const id = ins.meta.last_row_id as number;
+    expect((await reserveForJob(db, companyA, id, 25, false)).ok).toBe(true);
+    await db.prepare("UPDATE message_jobs SET status='sending',attempts=1,last_attempt_at=?1 WHERE id=?2")
+      .bind(old, id).run();
+    const reserved = (await getWallet(db, companyA))!.reserved_cents;
+    expect(reserved).toBe(before.reserved_cents + 25);
+    expect((await resolveUncertainNotSent(db, companyB, id, 1, evidence)).ok).toBe(false);
+    const unauthorized = await api("/api/super/messages/" + id + "/resolve-not-sent", {
+      method: "POST", body: JSON.stringify({ confirmed_not_sent: true, evidence })
+    }, cookieA);
+    expect(unauthorized.status).toBe(403);
+    expect((await getWallet(db, companyA))!.reserved_cents).toBe(reserved);
+
+    const done = await resolveUncertainNotSent(db, companyA, id, 1, evidence);
+    expect(done.ok).toBe(true);
+    expect((await resolveUncertainNotSent(db, companyA, id, 1, evidence)).ok).toBe(false);
+    const after = (await getWallet(db, companyA))!;
+    expect(after.reserved_cents).toBe(before.reserved_cents);
+    expect(after.balance_cents).toBe(before.balance_cents + 200);
+    const row = await db.prepare(
+      "SELECT status, reserved_cents, captured_at, refunded_at, provider_msg_id FROM message_jobs WHERE id=?1"
+    ).bind(id).first<{ status: string; reserved_cents: number; captured_at: string | null; refunded_at: string | null; provider_msg_id: string }>();
+    expect(row).toMatchObject({ status: "failed", reserved_cents: 0, captured_at: null, provider_msg_id: "" });
+    expect(row?.refunded_at).not.toBeNull();
+    const ledger = await db.prepare(
+      "SELECT COUNT(*) n FROM wallet_transactions WHERE idempotency_key=?1"
+    ).bind("release:job-" + id).first<{ n: number }>();
+    expect(ledger?.n).toBe(1);
+    const auditing = await db.prepare(
+      "SELECT COUNT(*) n FROM audit_log WHERE entity='message_job' AND entity_id=?1 AND action='message.not_sent_confirmed'"
+    ).bind(String(id)).first<{ n: number }>();
+    expect(auditing?.n).toBe(1);
+  });
+
+  it("fecha um envio gratuito sem alterar saldo, e não permite revisão precoce", async () => {
+    const companyA = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
+      .first<{ id: number }>())!.id;
+    const when = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    const ins = await db.prepare(
+      "INSERT INTO message_jobs (company_id,kind,to_phone,template_code,status,scheduled_at,fire_deadline,price_cents,reserved_cents,last_attempt_at,idempotency_key) VALUES (?1,'test','5573999995678','tigu_lembrete','sending',?2,?2,0,0,?2,?3)"
+    ).bind(companyA, when, "free-uncertain-" + Date.now()).run();
+    const id = ins.meta.last_row_id as number;
+    const evidence = "Consultei os eventos de envio no painel da Meta e confirmei ausência.";
+    const before = (await getWallet(db, companyA))!;
+    expect((await resolveUncertainNotSent(db, companyA, id, 1, evidence)).ok).toBe(false);
+    const old = new Date(Date.now() - 12 * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    await db.prepare("UPDATE message_jobs SET last_attempt_at=?1 WHERE id=?2").bind(old, id).run();
+    expect((await resolveUncertainNotSent(db, companyA, id, 1, evidence)).ok).toBe(true);
+    const after = (await getWallet(db, companyA))!;
+    expect(after.balance_cents).toBe(before.balance_cents);
+    expect(after.reserved_cents).toBe(before.reserved_cents);
   });
 });
