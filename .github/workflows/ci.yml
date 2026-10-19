@@ -1,15 +1,18 @@
 name: Tigu - verificacao de codigo
 
+# O desenvolvimento é validado localmente. CI remoto apenas para revisão/manual.
 on:
-  push:
-    branches:
-      - audit/tigu-primeira-validacao
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: tigu-validation-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   verificar:
@@ -23,39 +26,5 @@ jobs:
           cache: npm
       - name: Instalar dependencias
         run: npm ci
-      - name: Auditar todas as dependencias
-        run: npm audit --audit-level=moderate
-      - name: Validar sintaxe dos scripts de homologacao
-        run: |
-          node --check scripts/staging.mjs
-          node --check scripts/staging-config.mjs
-          node --check scripts/staging-config.test.mjs
-          node --check scripts/staging-smoke.mjs
-          node --test scripts/staging-config.test.mjs
-          node --check scripts/create-super.mjs
-          node -e "const fs=require('node:fs');const j=JSON.parse(fs.readFileSync('wrangler.staging.template.jsonc','utf8'));if(j.name!=='tigu-staging'||j.vars.TIGU_STAGING!=='1'||j.vars.APP_ENV!=='production'||j.triggers.crons.length!==0)process.exit(1)"
-          node scripts/staging.mjs prepare --database-id 00000000-0000-4000-8000-000000000001
-          node scripts/staging.mjs validate
-          rm wrangler.staging.jsonc
-      - name: Verificar tipos
-        run: npm run check:types
-      - name: Gerar dist antes dos testes Workers
-        run: npm run build
-      - name: Conferir atribuição de autoria no frontend compilado
-        run: |
-          grep -R -q 'Sistema desenvolvido por' dist/assets
-          grep -R -q 'Carlos Rykellmy Santos Correia' dist/assets
-          grep -R -q 'Filtrar agendamentos por barbeiro' dist/assets
-          grep -R -q 'Profissional:' dist/assets
-          grep -R -q 'Prévia sem API conectada' dist/assets
-          grep -R -q 'Planos e valores da página de vendas' dist/assets
-          grep -R -q 'Solicitar atendimento comercial' dist/assets
-          grep -R -q 'Enviar solicitação de atendimento' dist/assets
-          grep -R -q 'Interessados nos planos' dist/assets
-          grep -R -q 'Privacidade dos contatos' dist/assets
-          grep -R -q 'Excluir dados do contato' dist/assets
-          grep -R -q 'Mensalidades Pix' dist/assets
-          grep -R -q 'Esta tela é somente de consulta' dist/assets
-          grep -R -q 'O prazo de armazenamento ainda não está disponível' dist/assets
-      - name: Rodar testes
-        run: npm test
+      - name: Validar auditoria, homologacao, tipos, build e testes
+        run: npm run validate
