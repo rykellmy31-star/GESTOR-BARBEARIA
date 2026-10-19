@@ -57,6 +57,10 @@ Para testes de fumaça contra um ambiente de pé: `npm run smoke` (fluxo públic
 `node scripts/smoke-money.mjs` (Pix→créditos→WhatsApp mock→painel do profissional). Ambos idempotentes e
 usam dias separados para não colidir entre si.
 
+## Validação antes do envio
+
+Execute `npm run validate` localmente antes de enviar código à branch de desenvolvimento. O Actions é somente manual; push e Pull Request não iniciam execuções. Consulte [a política de validação e custos](docs/VALIDACAO_LOCAL_E_CUSTOS.md), incluindo a dependência da branch padrão para habilitar o botão manual.
+
 ## Scripts úteis
 
 | Script | Faz |

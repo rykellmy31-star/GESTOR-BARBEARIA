@@ -73,7 +73,7 @@
 
 ### Critério para integrar à main
 
-- [ ] CI verde no commit selecionado.
+- [ ] Validação completa da versão candidata registrada; check manual `verificar` aprovado quando habilitado e autorizado, sem disparar Actions automaticamente.
 - [ ] Testes end-to-end de homologação aprovados com dados fictícios.
 - [ ] Aprovação explícita do proprietário do Tigu antes do merge.
 - [ ] Checklist de produção concluído antes de ativar clientes ou recursos financeiros reais.
@@ -81,3 +81,11 @@
 ## Rotina de desenvolvimento
 
 Trabalhar exclusivamente em `audit/tigu-primeira-validacao`, reportar ao proprietário cada alteração visível na prévia visual após finalizar, e atualizar este checklist quando um bloqueio realmente for resolvido. Não alterar o repositório CR Jornada.
+
+## Rodada de validação local e custos
+
+- [x] Workflow sem eventos automáticos e com possibilidade de acionamento manual preparada.
+- [x] Comando `npm run validate` preserva auditoria, tipagem, build, autoria, homologação e testes antes do envio.
+- [x] Regressões para feriados entre empresas, remarcações, estoque concorrente, cancelamentos e edição do catálogo.
+- [x] Pedidos de folga sempre aguardam decisão; todos os aliases de aprovação respeitam fuso, conflitos e consumo único.
+- [ ] Habilitar botão manual pela integração autorizada do workflow na branch padrão. Não executado nesta rodada.
