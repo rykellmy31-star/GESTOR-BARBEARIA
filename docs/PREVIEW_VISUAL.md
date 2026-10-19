@@ -34,3 +34,12 @@ Nunca apontar homologação para recursos do CR Jornada. Não adicionar segredos
 ## Controle de mudanças
 
 Todas as alterações em revisão continuam na branch `audit/tigu-primeira-validacao`, sem merge automático para `main`. Não foi criado um deploy automático de Worker comercial.
+
+
+## Atualização da prévia: autoria do desenvolvimento
+
+O rodapé compartilhado exibe **Sistema desenvolvido por Carlos Rykellmy Santos Correia** em todas as rotas React, incluindo a página inicial, `/preview`, o site de cada barbearia, telas de login e painéis internos. O texto é discreto, legível no celular e colocado após o conteúdo; nenhum formulário ou reserva é afetado.
+
+O menu da suíte `/superadmin` também foi alinhado com as rotas reais (`overview`, `companies`, `users`, `wallets`, `topups`, `pricing`, `messages`, `audit`, `settings`). Esta correção não muda o menu da prévia estática, que já é independente e funcional sem backend.
+
+O GitHub Actions confere que o build `dist/assets` contém o crédito de autoria. Isso valida os artefatos gerados pelo GitHub, não confirma por si só que o Pages terminou de publicá-los.
