@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Mail, Phone, Search, Save } from "lucide-react";
+import { Mail, Phone, Search, Save, Trash2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui";
 import { H } from "./shared";
@@ -18,12 +18,18 @@ function LeadCard({ lead, reload }: {lead:Lead;reload:()=>void}) {
   const toast=useToast();
   const [status,setStatus]=useState(lead.status);
   const [note,setNote]=useState(lead.internal_note);
+  const [deleteReason,setDeleteReason]=useState<"privacy_request"|"duplicate"|"no_longer_needed">("privacy_request");
   const save=useMutation({
     mutationFn:()=>api.patch("/super/leads/"+lead.id,{status,internal_note:note}),
     onSuccess:()=>{toast.push("ok","Atendimento atualizado.");reload();},
     onError:(e:Error)=>toast.push("err",e.message)
   });
-  const phone=lead.phone.replace(/\D/g,"");
+  const remove=useMutation({
+    mutationFn:()=>api.del("/super/leads/"+lead.id,{reason:deleteReason}),
+    onSuccess:()=>{toast.push("ok","Dados pessoais do contato excluídos.");reload();},
+    onError:(e:Error)=>toast.push("err",e.message)
+  });
+  const phone=lead.phone.replace(/\\D/g,"");
   return (
     <article className="rounded-2xl border border-[#33303a] bg-[#16161c] p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -51,7 +57,74 @@ function LeadCard({ lead, reload }: {lead:Lead;reload:()=>void}) {
         <button type="button" disabled={save.isPending || (status===lead.status && note===lead.internal_note)}
           onClick={()=>save.mutate()} className="btn-gold inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"><Save size={15}/> Salvar</button>
       </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#303039] pt-4">
+        <label className="text-xs text-zinc-400">Motivo da exclusão
+          <select className="input-dark ml-2" value={deleteReason}
+            onChange={e=>setDeleteReason(e.target.value as typeof deleteReason)}>
+            <option value="privacy_request">Solicitação do titular</option>
+            <option value="duplicate">Contato duplicado</option>
+            <option value="no_longer_needed">Não é mais necessário</option>
+          </select>
+        </label>
+        <button type="button" disabled={remove.isPending} onClick={()=>{
+          if (window.confirm("Excluir definitivamente os dados deste interessado? Esta ação não pode ser desfeita.")) remove.mutate();
+        }} className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-2 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-50">
+          <Trash2 size={14} /> Excluir dados do contato
+        </button>
+      </div>
     </article>
+  );
+}
+
+function LeadPrivacy() {
+  const qc=useQueryClient();
+  const toast=useToast();
+  const settings=useQuery({
+    queryKey:["super-leads-privacy"],
+    queryFn:()=>api.get<{retention_days:number}>("/super/leads/privacy")
+  });
+  const [draft,setDraft]=useState<number|null>(null);
+  const chosen=draft ?? settings.data?.retention_days ?? 180;
+  const save=useMutation({
+    mutationFn:()=>api.put("/super/leads/privacy",{days:chosen}),
+    onSuccess:()=>{setDraft(null);void qc.invalidateQueries({queryKey:["super-leads-privacy"]});toast.push("ok","Prazo de retenção atualizado.");},
+    onError:(e:Error)=>toast.push("err",e.message)
+  });
+  const cleanup=useMutation({
+    mutationFn:()=>api.post<{removed:number}>("/super/leads/privacy/cleanup",{}),
+    onSuccess:(data)=>{toast.push("ok",`Limpeza concluída: ${data.removed} registro(s) vencido(s) excluído(s).`);void qc.invalidateQueries({queryKey:["super-sales-leads"]});},
+    onError:(e:Error)=>toast.push("err",e.message)
+  });
+  return (
+    <section className="mb-5 rounded-2xl border border-[#33303a] bg-[#16161c] p-4 sm:p-5" aria-label="Privacidade e retenção comercial">
+      <div className="mb-3 flex items-center gap-2 text-zinc-100">
+        <ShieldCheck size={18} className="text-[#d4af37]"/>
+        <h2 className="font-display text-lg">Privacidade dos contatos</h2>
+      </div>
+      <p className="mb-4 max-w-3xl text-xs leading-relaxed text-zinc-400">
+        Escolha por quanto tempo guardar solicitações comerciais. O padrão inicial é 180 dias.
+        Após o prazo, o Worker de produção elimina contatos vencidos diariamente;
+        na homologação, a limpeza é manual. Revise a política de retenção antes de receber dados reais.
+      </p>
+      {settings.isError ? <p role="alert" className="text-xs text-amber-300">Não foi possível carregar a política. Verifique o D1.</p> :
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs text-zinc-300">Guardar contatos por
+            <select className="input-dark mt-1.5 block min-w-[140px]" disabled={settings.isLoading} value={chosen}
+              onChange={e=>setDraft(Number(e.target.value))}>
+              {[30,90,180,365].map(n=><option value={n} key={n}>{n} dias</option>)}
+            </select>
+          </label>
+          <button type="button" disabled={save.isPending || settings.isLoading || chosen===settings.data?.retention_days}
+            onClick={()=>save.mutate()} className="btn-gold rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50">
+            Salvar prazo
+          </button>
+          <button type="button" disabled={cleanup.isPending || settings.isLoading} onClick={()=>{
+            if(window.confirm("Excluir os contatos com prazo vencido? Até 200 registros serão removidos nesta execução.")) cleanup.mutate();
+          }} className="rounded-xl border border-[#454047] px-4 py-2.5 text-sm text-zinc-200 hover:border-[#d4af37]/50 disabled:opacity-50">
+            Limpar contatos vencidos
+          </button>
+        </div>}
+    </section>
   );
 }
 
@@ -66,6 +139,7 @@ export function SuperLeads() {
   return (
     <div>
       <H title="Interessados nos planos" sub="Solicitações comerciais recebidas do site. Nenhum registro confirma pagamento ou ativa assinatura."/>
+      <LeadPrivacy />
       <div className="mb-5 flex flex-wrap gap-3">
         <label className="relative min-w-[220px] flex-1 text-xs text-zinc-400">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"/>
