@@ -1,10 +1,11 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Bot, Building2, Coins, FileClock, LayoutDashboard, LogOut, Tag, Receipt, Scissors, Settings, Users } from "lucide-react";
+import { Bot, Building2, Coins, FileClock, LayoutDashboard, LogOut, Tag, Receipt, Scissors, Settings, Users, Handshake } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
 
 const links = [
   { to: "overview", label: "Visão geral", icon: LayoutDashboard },
   { to: "companies", label: "Barbearias", icon: Building2 },
+  { to: "leads", label: "Interessados", icon: Handshake },
   { to: "users", label: "Usuários", icon: Users },
   { to: "wallets", label: "Carteiras", icon: Coins },
   { to: "topups", label: "Recargas & estornos", icon: Receipt },
