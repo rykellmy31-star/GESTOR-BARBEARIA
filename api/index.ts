@@ -21,7 +21,7 @@ import { webhooksRouter } from "./routes/webhooks";
 import { uploadsRouter } from "./routes/uploads";
 import { originGuard } from "./lib/auth";
 import { processDueJobs } from "./lib/messaging/jobs";
-import { expirePendingTopups } from "./lib/topup";
+import { expirePendingTopups, reconcilePendingTopups } from "./lib/topup";
 import { nowIso } from "./lib/utils";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -66,6 +66,11 @@ export default {
         try {
           await processDueJobs(env, { limit: 40 });
           await expirePendingTopups(env);
+          // Reconsulta apenas a cada 10 minutos, evitando custo excessivo
+          // e recuperando pagamentos aprovados que perderam o webhook.
+          if (new Date().getUTCMinutes() % 10 === 0) {
+            await reconcilePendingTopups(env, 20);
+          }
         } catch (e) {
           console.error("[cron]", String(e));
         }
