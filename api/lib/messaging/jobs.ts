@@ -201,7 +201,7 @@ export async function cancelPendingJobs(db: D1Database, companyId: number, booki
     .all<{ id: number; reserved_cents: number }>();
   for (const j of results) {
     await db
-      .prepare(`UPDATE message_jobs SET status='cancelled', last_error=?1, reserved_cents=0, updated_at=?2 WHERE id=?3 AND status IN ('scheduled','blocked_funds')`)
+      .prepare(`UPDATE message_jobs SET status='cancelled', last_error=?1, updated_at=?2 WHERE id=?3 AND status IN ('scheduled','blocked_funds')`)
       .bind(reason, nowIso(), j.id)
       .run();
     if (j.reserved_cents > 0) await releaseJobReservation(db, companyId, j.id, j.reserved_cents);
@@ -286,17 +286,17 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
     ? await db.prepare(`SELECT status, whatsapp_optin FROM bookings WHERE id = ?1 AND company_id = ?2`).bind(job.booking_id, job.company_id).first<{ status: string; whatsapp_optin: number }>()
     : null;
   const dead = now.getTime() > Date.parse(job.fire_deadline);
-  if (dead || !bookingActive || (bookingActive.status !== "pendente" && bookingActive.status !== "confirmado")) {
+  if (dead || (job.booking_id != null && (!bookingActive || (bookingActive.status !== "pendente" && bookingActive.status !== "confirmado")))) {
     await db
-      .prepare(`UPDATE message_jobs SET status='skipped', skip_reason=?1, last_error=?1, reserved_cents=0, updated_at=?2 WHERE id=?3 AND status IN ('scheduled','blocked_funds')`)
+      .prepare(`UPDATE message_jobs SET status='skipped', skip_reason=?1, last_error=?1, updated_at=?2 WHERE id=?3 AND status IN ('scheduled','blocked_funds')`)
       .bind(dead ? "fora do prazo de envio" : "agendamento cancelado/encerrado", nowIso(), job.id)
       .run();
     if (job.reserved_cents > 0) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
     out.skipped++;
     return;
   }
-  if (!bookingActive.whatsapp_optin) {
-    await db.prepare(`UPDATE message_jobs SET status='skipped', skip_reason='cliente sem opt-in', reserved_cents=0, updated_at=?1 WHERE id=?2`).bind(nowIso(), job.id).run();
+  if (bookingActive && !bookingActive.whatsapp_optin) {
+    await db.prepare(`UPDATE message_jobs SET status='skipped', skip_reason='cliente sem opt-in', updated_at=?1 WHERE id=?2`).bind(nowIso(), job.id).run();
     if (job.reserved_cents > 0) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
     out.skipped++;
     return;
@@ -310,7 +310,7 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
   const payload = JSON.parse(job.payload_json || "{}") as { manual?: boolean };
   const isManual = Boolean(payload.manual);
   if (!isManual && plan && plan.whatsapp_enabled !== 1) {
-    await db.prepare(`UPDATE message_jobs SET status='skipped', skip_reason='plano sem WhatsApp', reserved_cents=0, updated_at=?1 WHERE id=?2`).bind(nowIso(), job.id).run();
+    await db.prepare(`UPDATE message_jobs SET status='skipped', skip_reason='plano sem WhatsApp', updated_at=?1 WHERE id=?2`).bind(nowIso(), job.id).run();
     if (job.reserved_cents > 0) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
     out.skipped++;
     return;
@@ -397,7 +397,7 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
   // 6) falha definitiva → não cobra: libera reserva
   await db.batch([
     attemptIns,
-    db.prepare(`UPDATE message_jobs SET status='failed', last_error=?1, reserved_cents=0, updated_at=?2 WHERE id=?3 AND status='sending'`).bind(String(result.error).slice(0, 400), at, job.id),
+    db.prepare(`UPDATE message_jobs SET status='failed', last_error=?1, updated_at=?2 WHERE id=?3 AND status='sending'`).bind(String(result.error).slice(0, 400), at, job.id),
     notifyIfNoRecent(db, job.company_id, "message", "Falha ao enviar mensagem de WhatsApp", `Motivo: ${String(result.error).slice(0, 160)}. O crédito NÃO foi cobrado.`),
   ]);
   if (job.reserved_cents > 0 || job.price_cents > 0) await releaseJobReservation(db, job.company_id, job.id, job.price_cents || job.reserved_cents);
