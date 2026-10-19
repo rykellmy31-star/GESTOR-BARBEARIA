@@ -443,7 +443,7 @@ async function sweepStuckJobs(db: D1Database): Promise<void> {
     .bind(nowIso())
     .run();
   await db
-    .prepare(`UPDATE message_jobs SET status='scheduled', last_error='timeout de envio (sem confirmação do provedor); tenta de novo', updated_at=?1, next_attempt_at=strftime('%Y-%m-%dT%H:%M:%SZ','now','+60 seconds') WHERE status='sending' AND provider_msg_id = '' AND last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes')`)
+    .prepare(`UPDATE message_jobs SET status='sending', last_error='Pendente de conferência: resposta desconhecida do provedor', updated_at=?1, next_attempt_at=strftime('%Y-%m-%dT%H:%M:%SZ','now','+60 seconds') WHERE status='sending' AND provider_msg_id = '' AND last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes')`)
     .bind(nowIso())
     .run();
 }
