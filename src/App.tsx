@@ -40,6 +40,7 @@ import { SuperMessages } from "./pages/super/MessagesPage";
 import { SuperAudit } from "./pages/super/AuditPage";
 import { SuperSettings } from "./pages/super/SettingsPage";
 import { SuperLeads } from "./pages/super/LeadsPage";
+import { SuperSubscriptionInvoices } from "./pages/super/SubscriptionInvoicesPage";
 import { useAuth, useCompanyRole } from "./lib/hooks";
 import { Spinner } from "./components/ui";
 
@@ -137,6 +138,7 @@ export default function App() {
         <Route path="wallets" element={<SuperWallets />} />
         <Route path="pricing" element={<SuperPricing />} />
         <Route path="topups" element={<SuperTopups />} />
+        <Route path="subscription-invoices" element={<SuperSubscriptionInvoices />} />
         <Route path="messages" element={<SuperMessages />} />
         <Route path="audit" element={<SuperAudit />} />
         <Route path="settings" element={<SuperSettings />} />
