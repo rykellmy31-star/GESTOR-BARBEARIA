@@ -1,3 +1,5 @@
+import { resolveApiUrl } from "../../api/lib/url";
+
 // Cliente da API — tipado, com base dinâmica por contexto multiempresa:
 //   /c/<slug>/**     → /api/c/<slug>/**      (site + painel da barbearia)
 //   /superadmin/**   → /api/super/**          (suíte Tigu)
@@ -25,20 +27,6 @@ function apiPrefix(): string {
   return "/api";
 }
 
-
-/**
- * Normaliza URLs explícitas de módulos sem duplicar `/super` ou `/auth`.
- * Permite também o uso do prefixo relativo dentro de cada painel.
- */
-export function resolveApiUrl(path: string, pathname: string): string {
-  if (/^https?:\/\//i.test(path) || path.startsWith("/api/")) return path;
-  if (!path.startsWith("/")) throw new Error("Os caminhos da API precisam começar com /");
-  if (/^\/(?:super|auth)(?:\/|$)/.test(path)) return `/api${path}`;
-  const match = pathname.match(/^\/c\/([a-z0-9-]+)/);
-  if (match) return `/api/c/${match[1]}${path}`;
-  if (pathname.startsWith("/superadmin")) return `/api/super${path}`;
-  return `/api${path}`;
-}
 
 async function request<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   const url = resolveApiUrl(path, location.pathname);
