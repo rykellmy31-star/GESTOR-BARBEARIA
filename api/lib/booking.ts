@@ -214,7 +214,7 @@ export async function rescheduleBooking(
     if (Date.parse(b.starts_at) - Date.now() < settings.reschedule_cutoff_min * 60000) return { ok: false, message: `Faltam menos de ${settings.reschedule_cutoff_min} min — remarque pelo WhatsApp`, status: 409 };
   }
   const barber = await db.prepare(`SELECT id, name, work_days, work_start, work_end, break_start, break_end, active FROM barbers WHERE id = ?1 AND company_id = ?2`).bind(b.barber_id, companyId).first<BarberRow>();
-  const service = await db.prepare(`SELECT id, name, duration_min, price_cents FROM services WHERE id = ?1`).bind(b.service_id).first<ServiceRow>();
+  const service = await db.prepare(`SELECT id, name, duration_min, price_cents FROM services WHERE id = ?1 AND company_id = ?2`).bind(b.service_id,companyId).first<ServiceRow>();
   if (!barber || !service) return { ok: false, message: "Dados do agendamento inconsistentes", status: 500 };
 
   let startsAt = newStartsAt;

@@ -93,7 +93,8 @@ export async function isDayBlocked(db: D1Database, barberId: number, day: string
   const row = await db
     .prepare(
       `SELECT kind, reason FROM blocked_days
-       WHERE (barber_id = ?1 OR barber_id IS NULL) AND date_from <= ?2 AND date_to >= ?2
+       WHERE company_id = (SELECT company_id FROM barbers WHERE id=?1)
+         AND (barber_id = ?1 OR barber_id IS NULL) AND date_from <= ?2 AND date_to >= ?2
        ORDER BY (barber_id IS NULL) DESC LIMIT 1`
     )
     .bind(barberId, day)
@@ -108,12 +109,15 @@ export async function isDayBlocked(db: D1Database, barberId: number, day: string
  */
 export async function computeDaySlots(
   db: D1Database,
-  opts: { barber: BarberRow; service: ServiceRow; day: string; settings: ShopSettings; mode?: "public" | "admin"; now?: Date }
+  opts: { barber: BarberRow; service: ServiceRow; day: string; settings: ShopSettings; mode?: "public" | "admin"; now?: Date; excludeBookingId?: number }
 ): Promise<DayResult> {
   const s = opts.settings;
   const tz = s.timezone;
   const day = opts.day;
   const now = opts.now ?? new Date();
+  const parsedDay = new Date(`${day}T12:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(parsedDay.getTime()) || parsedDay.toISOString().slice(0,10)!==day)
+    return { ok:false, day, weekday:-1, slots:[], closed_reason:"fora_intervalo" };
   const empty: DayResult = { ok: false, day, weekday: utcToLocal(tz, new Date(`${day}T12:00:00Z`)).weekday, slots: [] };
 
   if (!opts.barber.active) return { ...empty, closed_reason: "barbeiro_inativo" };
@@ -137,13 +141,13 @@ export async function computeDaySlots(
 
   if (workEnd - workStart < duration) return { ...empty, closed_reason: "fora_intervalo" };
 
-  const isToday = day === todayLocal(tz);
-  const todayStr = todayLocal(tz);
+  const todayStr = utcToLocal(tz,now).day;
+  const isToday = day === todayStr;
   if (day < todayStr) return { ...empty, closed_reason: "fora_intervalo" };
   const horizonEnd = addDays(todayStr, Math.max(1, s.horizon_days));
   if (day > horizonEnd) return { ...empty, closed_reason: "fora_intervalo" };
 
-  const busy = await loadBusyIntervals(db, opts.barber.id, day, day, tz);
+  const busy = await loadBusyIntervals(db, opts.barber.id, day, day, tz, opts.excludeBookingId);
 
   const slots: DaySlot[] = [];
   for (let m = workStart; m + duration <= workEnd; m += step) {
@@ -220,14 +224,13 @@ export async function assertSlotAllowed(
     settings: s,
     mode: "admin",
     now: new Date(),
+    excludeBookingId: opts.excludeBookingId,
   });
   if (!result.ok || !result.slots.length) {
     return { ok: false, error: reasonClosed(result.closed_reason), status: 409 };
   }
 
   if (opts.origin === "cliente") {
-    const step = Math.max(5, s.slot_step_min);
-    if (local.minutes % step !== 0) return { ok: false, error: "Horário fora da grade de agendamento", status: 400 };
     if (local.minutes + service.duration_min > parseHHMM(barber.work_end)) return { ok: false, error: "O serviço ultrapassaria o fim do expediente", status: 409 };
   }
 
@@ -278,6 +281,7 @@ export async function monthSummary(
 ): Promise<{ day: string; status: "none" | "day_off" | "partial" | "full" }[]> {
   const s = opts.settings;
   const tz = s.timezone;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(opts.month)) return [];
   const [y, m] = opts.month.split("-").map(Number);
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const today = todayLocal(tz);
