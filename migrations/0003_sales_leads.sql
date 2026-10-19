@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS sales_leads (
   plan_code TEXT NOT NULL REFERENCES plans(code) CHECK(plan_code IN ('pro','scale')),
   price_snapshot_cents INTEGER NOT NULL CHECK(price_snapshot_cents >= 0),
   message TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','contacted','won','lost')),
+  status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','contacted','negotiating','closed')),
   internal_note TEXT NOT NULL DEFAULT '',
   consent_at TEXT NOT NULL,
   submission_bucket INTEGER NOT NULL,
