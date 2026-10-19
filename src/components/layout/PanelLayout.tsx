@@ -89,7 +89,7 @@ function TrialStatusBanner({ end, cents }: { end: string; cents: number }) {
       </p>
       <p className="mt-1 text-xs leading-relaxed text-zinc-400">
         {expired
-          ? `Novas operações estão pausadas. O Start custa ${price}/mês. Entre em contato com o suporte Tigu para ativar.`
+          ? `Novas operações estão pausadas. O Start custa ${price}/mês. Acesse Assinatura e Pix para pagar e continuar.`
           : `Após o prazo, o Start custa ${price}/mês, mediante ativação assistida.`}
         {" "}A cobrança só acontece quando você gerar e pagar um Pix.
       </p>
