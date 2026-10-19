@@ -1,3 +1,4 @@
+import { applyBookingMigrations } from "./helpers/booking-migrations";
 /// <reference types="@cloudflare/vitest-plugin/types" />
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
@@ -15,6 +16,7 @@ const ctx={waitUntil:()=>{},passThroughOnException:()=>{}} as unknown as Executi
 const day=new Date(Date.now()+3*86400000).toISOString().slice(0,10);
 beforeAll(async()=>{
   for(const schema of [schema1,schema6]) for(const sql of schema.replace(/--[^\n]*/g,"").split(";").map(s=>s.trim()).filter(Boolean)) await db.prepare(sql).run();
+  await applyBookingMigrations(db);
 });
 async function fixture(){
   const slug=`block-${crypto.randomUUID()}`;

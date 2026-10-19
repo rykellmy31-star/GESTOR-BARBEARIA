@@ -14,7 +14,7 @@ import { bookingCode, err, json, nowIso, normalizePhone } from "./utils";
 import { assertSlotAllowed, slotKeysFor, type BarberRow, type ServiceRow } from "./availability";
 import { insertBookingNotifications } from "./notify";
 import { scheduleBookingMessage, cancelPendingJobs, type ScheduleOutcome } from "./messaging/jobs";
-import { formatDateTimePtBr } from "./time";
+import { formatDateTimePtBr,utcToLocal } from "./time";
 import type { CompanySettings } from "./settings";
 import type { SessionUser } from "../types";
 import { audit } from "./audit";
@@ -111,13 +111,13 @@ export async function createBooking(ctx: BookingMutationCtx, input: z.infer<type
       db
         .prepare(
           `INSERT INTO bookings (company_id, code, customer_id, barber_id, service_id, starts_at, ends_at, price_cents, status, origin,
-                                 customer_name, customer_phone, customer_email, notes, whatsapp_optin, cancel_token, allowed_cancel_until, idempotency_key, demo, created_at, updated_at)
-           VALUES (?1,?2,(SELECT id FROM customers WHERE company_id=?1 AND phone=?3),?4,?5,?6,?7,?8,'pendente',?9,?10,?3,?11,?12,?13,?14,?15,?16,?17,?18,?18)`
+                                 customer_name, customer_phone, customer_email, notes, whatsapp_optin, cancel_token, allowed_cancel_until, idempotency_key, demo, created_at, updated_at,local_day)
+           VALUES (?1,?2,(SELECT id FROM customers WHERE company_id=?1 AND phone=?3),?4,?5,?6,?7,?8,'pendente',?9,?10,?3,?11,?12,?13,?14,?15,?16,?17,?18,?18,?19)`
         )
         .bind(
           companyId, code, phone, barber.id, service.id, startsAt, check.endsAt, service.price_cents, ctx.origin,
           input.name.trim(), input.email || null, input.notes ?? "", input.whatsappOptin ? 1 : 0, cancelToken, allowedCancelUntil,
-          input.idempotencyKey, demo, nowIso()
+          input.idempotencyKey, demo, nowIso(),utcToLocal(settings.timezone,startsAt).day
         ),
       ...slotKeys.map((k) => db.prepare(`INSERT INTO booking_slots (company_id, booking_id, barber_id, slot) SELECT ?1, id, ?2, ?3 FROM bookings WHERE code = ?4`).bind(companyId, barber.id, k, code)),
       ...insertBookingNotifications(
@@ -233,9 +233,9 @@ export async function rescheduleBooking(
   const token=crypto.randomUUID();
   try {
     const results=await db.batch([
-      db.prepare(`UPDATE bookings SET starts_at=?2, ends_at=?3, allowed_cancel_until=?4, schedule_version=schedule_version+1,mutation_token=?7,updated_at=?5
+      db.prepare(`UPDATE bookings SET starts_at=?2, ends_at=?3, allowed_cancel_until=?4, schedule_version=schedule_version+1,mutation_token=?7,updated_at=?5,local_day=?11
         WHERE id=?1 AND company_id=?6 AND status=?8 AND schedule_version=?9 AND mutation_token=?10`)
-        .bind(b.id,startsAt,check.endsAt,allowedCancelUntil,nowIso(),companyId,token,b.status,b.schedule_version,b.mutation_token),
+        .bind(b.id,startsAt,check.endsAt,allowedCancelUntil,nowIso(),companyId,token,b.status,b.schedule_version,b.mutation_token,utcToLocal(settings.timezone,startsAt).day),
       db.prepare(`DELETE FROM booking_slots WHERE booking_id=?1 AND company_id=?2
         AND EXISTS(SELECT 1 FROM bookings WHERE id=?1 AND company_id=?2 AND mutation_token=?3)`).bind(b.id,companyId,token),
       db.prepare(`INSERT INTO booking_slots(company_id,booking_id,barber_id,slot)

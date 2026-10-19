@@ -26,12 +26,12 @@ export async function createAdminIntervalBlock(db:D1Database, companyId:number, 
   const code=`BLK-${crypto.randomUUID()}`, at=nowIso();
   try {
     const results=await db.batch([
-      db.prepare(`INSERT INTO bookings(company_id,code,barber_id,service_id,starts_at,ends_at,price_cents,status,origin,customer_name,customer_phone,notes,cancel_token,created_at,updated_at)
-        SELECT ?1,?2,b.id,NULL,?4,?5,0,'bloqueio','admin',?6,'',?6,?7,?8,?8 FROM barbers b
+      db.prepare(`INSERT INTO bookings(company_id,code,barber_id,service_id,starts_at,ends_at,price_cents,status,origin,customer_name,customer_phone,notes,cancel_token,created_at,updated_at,local_day)
+        SELECT ?1,?2,b.id,NULL,?4,?5,0,'bloqueio','admin',?6,'',?6,?7,?8,?8,?9 FROM barbers b
         WHERE b.id=?3 AND b.company_id=?1 AND b.active=1 AND NOT EXISTS(
           SELECT 1 FROM bookings WHERE company_id=?1 AND barber_id=b.id
           AND status IN('pendente','confirmado','no_show','bloqueio') AND starts_at<?5 AND ends_at>?4)`)
-        .bind(companyId,code,input.barberId,start,end,input.reason,crypto.randomUUID(),at),
+        .bind(companyId,code,input.barberId,start,end,input.reason,crypto.randomUUID(),at,input.date),
       db.prepare(`INSERT INTO booking_slots(company_id,booking_id,barber_id,slot)
         SELECT ?1,b.id,b.barber_id,j.value FROM bookings b,json_each(?2) j WHERE b.company_id=?1 AND b.code=?3`)
         .bind(companyId,JSON.stringify(slotKeysFor(start,end,5)),code),

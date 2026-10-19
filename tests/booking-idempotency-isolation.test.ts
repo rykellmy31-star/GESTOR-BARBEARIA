@@ -1,3 +1,4 @@
+import { applyBookingMigrations } from "./helpers/booking-migrations";
 /// <reference types="@cloudflare/vitest-plugin/types" />
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
@@ -11,6 +12,7 @@ const db = env.DB as D1Database;
 beforeAll(async () => {
   for (const sql of schema.replace(/--[^\n]*/g, "").split(";").map(s => s.trim()).filter(Boolean))
     await db.prepare(sql).run();
+  await applyBookingMigrations(db);
 });
 
 async function company() {

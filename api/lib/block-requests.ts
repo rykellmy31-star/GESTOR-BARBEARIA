@@ -27,9 +27,9 @@ export async function resolveBlockRequest(db:D1Database,companyId:number,request
           SELECT 1 FROM bookings WHERE company_id=?3 AND barber_id=?4
           AND status IN('pendente','confirmado','no_show','bloqueio') AND starts_at<?6 AND ends_at>?5)`)
         .bind(at,requestId,companyId,request.barber_id,start,end),
-      db.prepare(`INSERT INTO bookings(company_id,code,barber_id,starts_at,ends_at,price_cents,status,origin,customer_name,customer_phone,notes,cancel_token,created_at,updated_at)
-        SELECT ?1,?2,?3,?4,?5,0,'bloqueio','barbeiro','Bloqueio aprovado','',?6,?7,?8,?8 WHERE changes()=1`)
-        .bind(companyId,code,request.barber_id,start,end,`pedido #${requestId}`,crypto.randomUUID(),at),
+      db.prepare(`INSERT INTO bookings(company_id,code,barber_id,starts_at,ends_at,price_cents,status,origin,customer_name,customer_phone,notes,cancel_token,created_at,updated_at,local_day)
+        SELECT ?1,?2,?3,?4,?5,0,'bloqueio','barbeiro','Bloqueio aprovado','',?6,?7,?8,?8,?9 WHERE changes()=1`)
+        .bind(companyId,code,request.barber_id,start,end,`pedido #${requestId}`,crypto.randomUUID(),at,request.date),
       db.prepare(`INSERT INTO booking_slots(company_id,booking_id,barber_id,slot)
         SELECT ?1,b.id,?2,j.value FROM bookings b,json_each(?3) j
         WHERE b.company_id=?1 AND b.code=?4`)

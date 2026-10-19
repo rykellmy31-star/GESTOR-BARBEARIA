@@ -1,4 +1,4 @@
-import mutationSchema from "../migrations/0009_booking_mutation_token.sql";
+import { applyBookingMigrations } from "./helpers/booking-migrations";
 /// <reference types="@cloudflare/vitest-plugin/types" />
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
@@ -11,7 +11,7 @@ import type { Env } from "../api/types";
 const db=env.DB as D1Database;
 beforeAll(async()=>{
   for(const sql of schema.replace(/--[^\n]*/g,"").split(";").map(s=>s.trim()).filter(Boolean)) await db.prepare(sql).run();
-  await db.prepare(mutationSchema.replace(/--[^\n]*/g,"").trim()).run();
+  await applyBookingMigrations(db);
 });
 const settings={...DEFAULT_SETTINGS,slot_step_min:15,opening_hours:Object.fromEntries([0,1,2,3,4,5,6].map(d=>[String(d),{open:"09:00",close:"18:00"}]))};
 const day=new Date(Date.now()+3*86400000).toISOString().slice(0,10);

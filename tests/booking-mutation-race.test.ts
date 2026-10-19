@@ -1,8 +1,8 @@
+import { applyBookingMigrations } from "./helpers/booking-migrations";
 /// <reference types="@cloudflare/vitest-plugin/types" />
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
 import schema from "../migrations/0001_init.sql";
-import mutationSchema from "../migrations/0009_booking_mutation_token.sql";
 import { createBooking,cancelBooking,rescheduleBooking,setBookingStatus,type BookingMutationCtx } from "../api/lib/booking";
 import { DEFAULT_SETTINGS } from "../api/lib/settings";
 import { localToUtc } from "../api/lib/time";
@@ -11,7 +11,7 @@ const db=env.DB as D1Database;
 const day=new Date(Date.now()+3*86400000).toISOString().slice(0,10);
 beforeAll(async()=>{
   for(const sql of schema.replace(/--[^\n]*/g,"").split(";").map(s=>s.trim()).filter(Boolean)) await db.prepare(sql).run();
-  await db.prepare(mutationSchema.replace(/--[^\n]*/g,"").trim()).run();
+  await applyBookingMigrations(db);
 });
 // As duas operações leem o mesmo snapshot antes de poderem continuar.
 function barrierDatabase():D1Database {
