@@ -13,10 +13,12 @@ declare module "cloudflare:test" {
   interface ProvidedEnv extends Env {}
 }
 import schema0001 from "../migrations/0001_init.sql";
+import schema0002 from "../migrations/0002_whatsapp_identity.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
-import { ingestWhatsappWebhook } from "../api/lib/messaging/jobs";
+import { ingestWhatsappWebhook, scheduleBookingMessage, cancelPendingJobs } from "../api/lib/messaging/jobs";
+import { loadCompanySettings } from "../api/lib/settings";
 import { manualAdjustment, creditTopup, reserveForJob, releaseJobReservation, captureJobCharge, refundJobCharge, getWallet } from "../api/lib/wallet";
 
 const db = env.DB as unknown as D1Database;
@@ -52,6 +54,7 @@ function nextWorkday(offsetDays = 1): string {
 
 beforeAll(async () => {
   await runSqlScript(schema0001);
+  await runSqlScript(schema0002);
   const hash = await hashPassword(PW);
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   await db.batch([
@@ -311,5 +314,90 @@ describe("webhooks Meta isolados por barbearia e opt-in explícito", () => {
     const a = await db.prepare("SELECT id FROM customers WHERE company_id=?1 AND phone=?2").bind(companyA, phone).first();
     expect(a).toBeNull();
     expect((await ingestWhatsappWebhook(env as Env, incoming)).updated).toBe(0);
+  });
+});
+
+describe("lembrete de 1 hora, remarcação e proteção da identidade Meta", () => {
+  it("rejeita o mesmo phone_number_id em duas barbearias", async () => {
+    const companyB = (await db.prepare("SELECT id FROM companies WHERE slug='bravo'").first<{ id: number }>())!.id;
+    await expect(
+      db.prepare("UPDATE whatsapp_connections SET phone_number_id='META-A-TESTE' WHERE company_id=?1")
+        .bind(companyB).run()
+    ).rejects.toThrow();
+    expect((await db.prepare("SELECT phone_number_id FROM whatsapp_connections WHERE company_id=?1")
+      .bind(companyB).first<{ phone_number_id: string }>())!.phone_number_id).toBe("META-B-TESTE");
+  });
+
+  it("agenda exatamente 60 minutos antes, não duplica, e remarca liberando créditos", async () => {
+    const companyId = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{ id: number }>())!.id;
+    const barberId = (await db.prepare("SELECT id FROM barbers WHERE company_id=?1 LIMIT 1")
+      .bind(companyId).first<{ id: number }>())!.id;
+    const serviceId = (await db.prepare("SELECT id FROM services WHERE company_id=?1 LIMIT 1")
+      .bind(companyId).first<{ id: number }>())!.id;
+    const now = new Date();
+    const starts = new Date(now.getTime() + 3 * 60 * 60_000);
+    const ends = new Date(starts.getTime() + 30 * 60_000);
+    const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+    const booked = await db.prepare(
+      `INSERT INTO bookings
+        (company_id,code,barber_id,service_id,starts_at,ends_at,price_cents,
+         status,origin,customer_name,customer_phone,whatsapp_optin,cancel_token)
+       VALUES (?1,?2,?3,?4,?5,?6,4500,'confirmado','cliente','Teste Lembrete',
+         '5573999991234',1,?7)`
+    ).bind(companyId, `TIGUREM-${Date.now()}`, barberId, serviceId, iso(starts), iso(ends), `ct-${Date.now()}`).run();
+    const bookingId = booked.meta.last_row_id as number;
+    await db.prepare(
+      `INSERT OR IGNORE INTO whatsapp_templates
+       (company_id,code,language,category,status,body_text,active)
+       VALUES (?1,'tigu_lembrete','pt_BR','utility','approved','Seu horário está chegando',1)`
+    ).bind(companyId).run();
+    await db.prepare("UPDATE whatsapp_connections SET status='connected' WHERE company_id=?1")
+      .bind(companyId).run();
+    await manualAdjustment(db, companyId, 1000, "Credito para testar lembretes de atendimento", 1, `reminder-${bookingId}`);
+    const settings = await loadCompanySettings(db, companyId);
+    const booking = {
+      id: bookingId, company_id: companyId, code: `TIGUREM-${bookingId}`,
+      customer_name: "Teste Lembrete", customer_phone: "5573999991234",
+      whatsapp_optin: 1, barber_name: "Zeca", service_name: "Corte",
+      starts_at: iso(starts), status: "confirmado"
+    };
+    const baseline = (await getWallet(db, companyId))!.reserved_cents;
+    const first = await scheduleBookingMessage({ db, companyId, booking, settings, kind: "reminder", now });
+    expect(first.ok).toBe(true);
+    expect(first.status).toBe("scheduled");
+
+    const row = await db.prepare(
+      `SELECT id,scheduled_at,price_cents,reserved_cents,status FROM message_jobs
+       WHERE booking_id=?1 AND kind='reminder' AND status='scheduled'`
+    ).bind(bookingId).first<{ id: number; scheduled_at: string; price_cents: number; reserved_cents: number; status: string }>();
+    expect(row).not.toBeNull();
+    expect(Date.parse(row!.scheduled_at)).toBe(Date.parse(iso(starts)) - 60 * 60_000);
+    expect(row!.price_cents).toBe(10);
+    expect(row!.reserved_cents).toBe(10);
+    expect((await getWallet(db, companyId))!.reserved_cents).toBe(baseline + 10);
+
+    const repeat = await scheduleBookingMessage({ db, companyId, booking, settings, kind: "reminder", now });
+    expect(repeat.ok).toBe(true);
+    expect((await getWallet(db, companyId))!.reserved_cents).toBe(baseline + 10);
+    expect((await db.prepare("SELECT COUNT(*) n FROM message_jobs WHERE booking_id=?1")
+      .bind(bookingId).first<{ n: number }>())!.n).toBe(1);
+
+    const movedStart = new Date(starts.getTime() + 60 * 60_000);
+    await db.prepare("UPDATE bookings SET starts_at=?1,ends_at=?2,schedule_version=2 WHERE id=?3")
+      .bind(iso(movedStart), iso(new Date(movedStart.getTime() + 30 * 60_000)), bookingId).run();
+    booking.starts_at = iso(movedStart);
+    const moved = await scheduleBookingMessage({ db, companyId, booking, settings, kind: "reminder", now });
+    expect(moved.ok).toBe(true);
+    const jobs = await db.prepare("SELECT id,status,reserved_cents FROM message_jobs WHERE booking_id=?1 ORDER BY id")
+      .bind(bookingId).all<{ id: number; status: string; reserved_cents: number }>();
+    expect(jobs.results.map(j => j.status)).toEqual(["cancelled", "scheduled"]);
+    expect(jobs.results[0].reserved_cents).toBe(0);
+    expect(jobs.results[1].reserved_cents).toBe(10);
+    expect((await getWallet(db, companyId))!.reserved_cents).toBe(baseline + 10);
+
+    await cancelPendingJobs(db, companyId, bookingId, "reminder", "agendamento cancelado");
+    expect((await getWallet(db, companyId))!.reserved_cents).toBe(baseline);
+    expect((await db.prepare("SELECT status FROM message_jobs WHERE id=?1")
+      .bind(jobs.results[1].id).first<{ status: string }>())!.status).toBe("cancelled");
   });
 });
