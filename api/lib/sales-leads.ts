@@ -97,3 +97,54 @@ export async function updateSalesLead(db: D1Database, id: number, values: z.infe
   ).bind(values.status,values.internal_note,nowIso(),id).run();
   return result.meta?.changes === 1;
 }
+
+/**
+ * Ciclo de vida de dados comerciais. Default conservador de 180 dias,
+ * alterável pelo Superadmin antes de abrir a contratação ao público.
+ * A limpeza remove conteúdo pessoal do D1 e não copia contatos para auditoria.
+ */
+export const SALES_RETENTION_DAYS = [30, 90, 180, 365] as const;
+export const salesRetentionSchema = z.object({
+  days: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(365)]),
+}).strict();
+
+const retentionKey = "sales_leads_retention_days";
+
+export async function getSalesRetentionDays(db: D1Database): Promise<number> {
+  const saved = await db.prepare(
+    "SELECT value FROM platform_settings WHERE key=?1"
+  ).bind(retentionKey).first<{ value: string }>();
+  const days = Number(saved?.value);
+  return SALES_RETENTION_DAYS.some(x => x === days) ? days : 180;
+}
+
+export async function setSalesRetentionDays(db: D1Database, days: number): Promise<void> {
+  if (!SALES_RETENTION_DAYS.some(x => x === days)) throw new Error("Prazo de retenção inválido");
+  await db.prepare(
+    "INSERT INTO platform_settings(key,value,updated_at) VALUES (?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at"
+  ).bind(retentionKey, String(days), nowIso()).run();
+}
+
+/** Exclui no máximo 200 por rodada para não monopolizar o banco D1. */
+export async function purgeExpiredSalesLeads(db: D1Database, now = Date.now()): Promise<number> {
+  const days = await getSalesRetentionDays(db);
+  const cutoff = nowIso(new Date(now - days * 86_400_000));
+  const result = await db.prepare(
+    "DELETE FROM sales_leads WHERE id IN (SELECT id FROM sales_leads WHERE created_at<?1 ORDER BY created_at ASC,id ASC LIMIT 200)"
+  ).bind(cutoff).run();
+  return Number(result.meta?.changes ?? 0);
+}
+
+/** Remove dados identificáveis de um contato, preservando somente o id na auditoria. */
+export async function deleteSalesLead(db: D1Database, id: number): Promise<boolean> {
+  const result = await db.prepare("DELETE FROM sales_leads WHERE id=?1").bind(id).run();
+  return result.meta?.changes === 1;
+}
+
+/** Limpa fingerprints antigos; não são necessários após 48h. */
+export async function purgeOldSalesRateLimits(db: D1Database, now = Date.now()): Promise<number> {
+  const cutoff = Math.floor(now / 3_600_000) - 48;
+  const result = await db.prepare("DELETE FROM sales_lead_rate_limits WHERE hour_bucket<?1")
+    .bind(cutoff).run();
+  return Number(result.meta?.changes ?? 0);
+}
