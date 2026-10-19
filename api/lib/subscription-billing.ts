@@ -52,12 +52,30 @@ export async function createSubscriptionPix(
       rank[selectedPlan]<rank[sub.plan_code])
     return {ok:false,status:422,message:"A redução do plano poderá ser solicitada depois do vencimento atual."};
   if (summary.invoice) {
-    if (summary.invoice.status==="pending" && summary.invoice.expires_at &&
-        summary.invoice.expires_at <= nowIso())
-      return {ok:false,status:409,message:"Existe um Pix vencido. Verifique seu pagamento antes de solicitar outro."};
-    if(summary.invoice.plan_code!==selectedPlan)
-      return {ok:false,status:409,message:"Já existe um Pix para outro plano. Aguarde a confirmação ou vencimento da fatura."};
-    return {ok:true,invoice:summary.invoice};
+    // A hora de validade exibida não comprova que o pagamento não foi realizado.
+    // Consultar o gateway ANTES de liberar a criação de outro QR Code.
+    let pending=summary.invoice;
+    if (pending.status==="pending" && pending.expires_at &&
+        pending.expires_at<=nowIso() && pending.provider_payment_id) {
+      const checked=await confirmSubscriptionPix(env,pending.provider_payment_id);
+      if (!checked.ok) return {ok:false,status:409,
+        message:"Não foi possível confirmar o Pix anterior no Mercado Pago. Verifique a fatura antes de solicitar outro."};
+      if (checked.status==="paid") return {ok:false,status:409,
+        message:"Pagamento anterior aprovado. Atualize a página para visualizar seu plano."};
+      const revised=await db.prepare("SELECT * FROM subscription_invoices WHERE id=?1")
+        .bind(pending.id).first<SubscriptionInvoice>();
+      if (revised && ["expired","failed"].includes(revised.status)) pending=revised;
+    }
+    if (pending.status==="creating") return {ok:false,status:409,
+      message:"O Mercado Pago ainda está preparando seu Pix. Não gere outra cobrança; aguarde ou contate o suporte."};
+    if (pending.status==="pending") {
+      if (pending.plan_code!==selectedPlan) return {ok:false,status:409,
+        message:"Há um Pix aberto para outro plano. Verifique o pagamento antes de escolher outro."};
+      return {ok:true,invoice:pending};
+    }
+    // Apenas status terminal confirmado pelo gateway libera nova fatura.
+    if (!["expired","failed"].includes(pending.status))
+      return {ok:false,status:409,message:"A cobrança anterior precisa ser conciliada."};
   }
   const code = "TIGU-SUB-" + crypto.randomUUID();
   const date=nowIso();
@@ -74,10 +92,17 @@ export async function createSubscriptionPix(
     .bind(code).first<SubscriptionInvoice>();
   if (!inv) return {ok:false,status:503,message:"Não foi possível gerar uma fatura."};
   // A chave idempotente é o próprio código da fatura, nunca um valor do cliente.
-  const payment=await mpProvider(env).createPixPayment({
-    amountCents:plan.price_cents_month,externalReference:code,
-    description:`Assinatura mensal Tigu ${plan.name}`,payerEmail
-  });
+  let payment: Awaited<ReturnType<ReturnType<typeof mpProvider>["createPixPayment"]>>;
+  try {
+    payment=await mpProvider(env).createPixPayment({
+      amountCents:plan.price_cents_month,externalReference:code,
+      description:`Assinatura mensal Tigu ${plan.name}`,payerEmail
+    });
+  } catch {
+    // Não criar segunda fatura: a resposta do Mercado Pago pode ter se perdido
+    // depois de o pagamento ter sido criado. Exige conciliação assistida.
+    return {ok:false,status:503,message:"Não foi possível confirmar a criação do Pix. Contate o suporte antes de tentar novamente."};
+  }
   if (!payment.ok || !payment.qrCodeText || !payment.providerPaymentId) {
     await db.prepare("UPDATE subscription_invoices SET status='failed',updated_at=?2 WHERE id=?1 AND status='creating'")
       .bind(inv.id,nowIso()).run();
@@ -132,11 +157,13 @@ export async function confirmSubscriptionPix(env: Env, providerId: string): Prom
     db.prepare(`UPDATE subscription_invoices SET status='paid',paid_at=?1,updated_at=?1
       WHERE id=?2 AND status IN ('pending','expired')`)
       .bind(at,inv.id),
+    db.prepare(`UPDATE companies SET plan_code=?1,updated_at=?2 WHERE id=?3
+      AND EXISTS (SELECT 1 FROM subscription_invoices
+        WHERE id=?4 AND status='paid' AND paid_at=?2)`)
+      .bind(inv.plan_code,at,inv.company_id,inv.id),
   ]);
-  const activated=changes[0].meta.changes===1 && changes[1].meta.changes===1;
+  const activated=changes.every(change=>change.meta.changes===1);
   if (!activated) return {ok:false,status:"conflict",activated:false};
-  await db.prepare("UPDATE companies SET plan_code=?1,updated_at=?2 WHERE id=?3")
-    .bind(inv.plan_code,at,inv.company_id).run();
   await audit(db,null,"subscription.pix_confirmed","subscription_invoice",inv.id,
     {plan_code:inv.plan_code,amount_cents:inv.amount_cents},{companyId:inv.company_id,scope:"platform"});
   return {ok:true,status:"paid",activated:true};
