@@ -1,3 +1,4 @@
+import mutationSchema from "../migrations/0009_booking_mutation_token.sql";
 /// <reference types="@cloudflare/vitest-plugin/types" />
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
@@ -24,6 +25,7 @@ beforeAll(async()=>{
   const service=Number((await db.prepare("INSERT INTO services(company_id,slug,name,price_cents,duration_min) VALUES (?1,'legado','Corte',1000,15)").bind(legacyCompanyId).run()).meta.last_row_id);
   for(let i=0;i<2;i++) legacyBookingId=Number((await db.prepare("INSERT INTO bookings(company_id,barber_id,service_id,code,starts_at,ends_at,price_cents,status,customer_name,customer_phone,cancel_token) VALUES (?1,?2,?3,?4,'2026-12-01T12:00:00Z','2026-12-01T12:15:00Z',1000,'pendente','Cliente','5573999990000','private')").bind(legacyCompanyId,barber,service,`legacy-${i}`).run()).meta.last_row_id);
   for(const sql of guard.match(/CREATE TRIGGER[\s\S]+?END;/g)!) await db.prepare(sql).run();
+  await db.prepare(mutationSchema.replace(/--[^\n]*/g,"").trim()).run();
 });
 async function fixture(){
   const slug=`booking-overlap-${crypto.randomUUID()}`;

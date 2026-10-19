@@ -1,3 +1,4 @@
+import mutationSchema from "../migrations/0009_booking_mutation_token.sql";
 // ============================================================================
 // Regras críticas da Tigu (runtime real do Workers via vitest-pool-workers):
 // fuso/grade, catálogo por empresa, disponibilidade, trava de conflito,
@@ -72,6 +73,7 @@ beforeAll(async () => {
   await runSqlScript(schema0004);
   await runSqlScript(schema0005);
   await runSqlScript(schema0006);
+  await db.prepare(mutationSchema.replace(/--[^\n]*/g,"").trim()).run();
   // Migrações com triggers precisam preservar BEGIN/END como um único comando.
   for(const script of [schema0007,schema0008])
     for(const trigger of script.match(/CREATE TRIGGER[\s\S]+?END;/g)!) await db.prepare(trigger).run();

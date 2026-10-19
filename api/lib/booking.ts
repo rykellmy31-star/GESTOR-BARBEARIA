@@ -13,7 +13,7 @@ import type { Env } from "../types";
 import { bookingCode, err, json, nowIso, normalizePhone } from "./utils";
 import { assertSlotAllowed, slotKeysFor, type BarberRow, type ServiceRow } from "./availability";
 import { insertBookingNotifications } from "./notify";
-import { scheduleBookingMessage, cancelPendingJobs, bumpBookingVersion, type ScheduleOutcome } from "./messaging/jobs";
+import { scheduleBookingMessage, cancelPendingJobs, type ScheduleOutcome } from "./messaging/jobs";
 import { formatDateTimePtBr } from "./time";
 import type { CompanySettings } from "./settings";
 import type { SessionUser } from "../types";
@@ -181,21 +181,26 @@ export async function cancelBooking(ctx: BookingMutationCtx, bookingId: number, 
        WHERE b.id = ?1 AND b.company_id = ?2`
     )
     .bind(bookingId, companyId)
-    .first<Record<string, unknown> & { id: number; status: string; code: string; starts_at: string; allowed_cancel_until: string | null; customer_name: string; customer_phone: string; price_cents: number; service_name: string; barber_name: string; bid: number; barber_id: number; schedule_version: number }>();
+    .first<Record<string, unknown> & { id: number; status: string; code: string; starts_at: string; allowed_cancel_until: string | null; customer_name: string; customer_phone: string; price_cents: number; service_name: string; barber_name: string; bid: number; barber_id: number; schedule_version: number; mutation_token:string }>();
   if (!b) return { ok: false, message: "Agendamento não encontrado", status: 404 };
   if (["cancelado", "concluido", "no_show"].includes(b.status)) return { ok: false, message: `Este agendamento está "${b.status}" e não pode ser cancelado`, status: 409 };
   if (opts.actorRole === "cliente" && !settings.allow_online_cancel) return { ok: false, message: "Cancelamentos on-line estão desativados pela barbearia. Fale conosco pelo WhatsApp.", status: 403 };
   if (opts.actorRole === "cliente" && b.allowed_cancel_until && Date.parse(b.allowed_cancel_until) < Date.now())
     return { ok: false, message: "O prazo para cancelamento on-line expirou. Fale conosco pelo WhatsApp.", status: 409 };
 
-  await db.batch([
-    db.prepare(`UPDATE bookings SET status='cancelado', notes = CASE WHEN ?2 = '' THEN notes ELSE notes || ' — ' || ?2 END, updated_at=?3 WHERE id=?1 AND company_id=?4`).bind(b.id, opts.reason ?? "", nowIso(), companyId),
-    db.prepare(`DELETE FROM booking_slots WHERE booking_id = ?1 AND company_id = ?2`).bind(b.id, companyId),
-    ...insertBookingNotifications(db, companyId, { code: String(b.code), customer_name: b.customer_name, customer_phone: b.customer_phone, barber_id: b.barber_id, barber_name: b.barber_name, service_name: b.service_name ?? "", starts_at: b.starts_at, price_cents: b.price_cents, status: "cancelado" }, settings.timezone, `Agendamento ${b.code} cancelado (${opts.actorRole})`, "cancel"),
+  const token=crypto.randomUUID();
+  const results=await db.batch([
+    db.prepare(`UPDATE bookings SET status='cancelado', notes = CASE WHEN ?2 = '' THEN notes ELSE notes || ' — ' || ?2 END,
+      schedule_version=schedule_version+1,mutation_token=?5,updated_at=?3
+      WHERE id=?1 AND company_id=?4 AND status=?6 AND schedule_version=?7 AND mutation_token=?8`)
+      .bind(b.id,opts.reason??"",nowIso(),companyId,token,b.status,b.schedule_version,b.mutation_token),
+    db.prepare(`DELETE FROM booking_slots WHERE booking_id=?1 AND company_id=?2
+      AND EXISTS(SELECT 1 FROM bookings WHERE id=?1 AND company_id=?2 AND mutation_token=?3)`).bind(b.id,companyId,token),
+    ...insertBookingNotifications(db, companyId, { code: String(b.code), customer_name: b.customer_name, customer_phone: b.customer_phone, barber_id: b.barber_id, barber_name: b.barber_name, service_name: b.service_name ?? "", starts_at: b.starts_at, price_cents: b.price_cents, status: "cancelado" }, settings.timezone, `Agendamento ${b.code} cancelado (${opts.actorRole})`, "cancel",token),
   ]);
+  if(results[0].meta.changes!==1) return {ok:false,message:"Este agendamento foi alterado em outra operação. Atualize a agenda antes de cancelar.",status:409};
   // cancela lembretes/confirmações pendentes + libera reservas
   await cancelPendingJobs(db, companyId, b.id, null, "agendamento cancelado");
-  await bumpBookingVersion(db, b.id);
   await audit(db, ctx.user ?? null, "cancel", "booking", b.id, { code: b.code, via: opts.actorRole, reason: opts.reason ?? "" }, { companyId });
   return { ok: true };
 }
@@ -207,7 +212,7 @@ export async function rescheduleBooking(
   actorRole: "cliente" | "admin" | "barbeiro"
 ): Promise<{ ok: true; startsAt: string; endsAt: string } | { ok: false; message: string; status: number }> {
   const { db, companyId, settings } = ctx;
-  const b = await db.prepare(`SELECT * FROM bookings WHERE id = ?1 AND company_id = ?2`).bind(bookingId, companyId).first<{ id: number; status: string; barber_id: number; service_id: number; starts_at: string; code: string }>();
+  const b = await db.prepare(`SELECT * FROM bookings WHERE id = ?1 AND company_id = ?2`).bind(bookingId, companyId).first<{ id: number; status: string; barber_id: number; service_id: number; starts_at: string; code: string; schedule_version:number; mutation_token:string }>();
   if (!b) return { ok: false, message: "Agendamento não encontrado", status: 404 };
   if (["cancelado", "concluido", "no_show"].includes(b.status)) return { ok: false, message: "Status atual não permite remarcação", status: 409 };
   if (actorRole === "cliente") {
@@ -225,13 +230,20 @@ export async function rescheduleBooking(
 
   const allowedCancelUntil = new Date(Date.parse(startsAt) - settings.cancel_cutoff_min * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
   const slotKeys = slotKeysFor(startsAt, check.endsAt, 5);
+  const token=crypto.randomUUID();
   try {
-    await db.batch([
-      db.prepare(`UPDATE bookings SET starts_at=?2, ends_at=?3, allowed_cancel_until=?4, schedule_version=schedule_version+1, updated_at=?5 WHERE id=?1 AND company_id=?6`).bind(b.id, startsAt, check.endsAt, allowedCancelUntil, nowIso(), companyId),
-      db.prepare(`DELETE FROM booking_slots WHERE booking_id = ?1 AND company_id = ?2`).bind(b.id, companyId),
-      ...slotKeys.map((k) => db.prepare(`INSERT INTO booking_slots (company_id, booking_id, barber_id, slot) VALUES (?1,?2,?3,?4)`).bind(companyId, b.id, b.barber_id, k)),
-      ...insertBookingNotifications(db, companyId, { code: b.code, customer_name: "", customer_phone: "", barber_id: b.barber_id, barber_name: barber.name, service_name: service.name, starts_at: startsAt, price_cents: service.price_cents, status: "pendente" }, settings.timezone, `Agendamento ${b.code} remarcado para ${formatDateTimePtBr(settings.timezone, startsAt)}`, "reschedule"),
+    const results=await db.batch([
+      db.prepare(`UPDATE bookings SET starts_at=?2, ends_at=?3, allowed_cancel_until=?4, schedule_version=schedule_version+1,mutation_token=?7,updated_at=?5
+        WHERE id=?1 AND company_id=?6 AND status=?8 AND schedule_version=?9 AND mutation_token=?10`)
+        .bind(b.id,startsAt,check.endsAt,allowedCancelUntil,nowIso(),companyId,token,b.status,b.schedule_version,b.mutation_token),
+      db.prepare(`DELETE FROM booking_slots WHERE booking_id=?1 AND company_id=?2
+        AND EXISTS(SELECT 1 FROM bookings WHERE id=?1 AND company_id=?2 AND mutation_token=?3)`).bind(b.id,companyId,token),
+      db.prepare(`INSERT INTO booking_slots(company_id,booking_id,barber_id,slot)
+        SELECT b.company_id,b.id,b.barber_id,j.value FROM bookings b,json_each(?4) j
+        WHERE b.id=?1 AND b.company_id=?2 AND b.mutation_token=?3`).bind(b.id,companyId,token,JSON.stringify(slotKeys)),
+      ...insertBookingNotifications(db, companyId, { code: b.code, customer_name: "", customer_phone: "", barber_id: b.barber_id, barber_name: barber.name, service_name: service.name, starts_at: startsAt, price_cents: service.price_cents, status: b.status }, settings.timezone, `Agendamento ${b.code} remarcado para ${formatDateTimePtBr(settings.timezone, startsAt)}`, "reschedule",token),
     ]);
+    if(results[0].meta.changes!==1) return {ok:false,message:"Este agendamento foi alterado em outra operação. Atualize a agenda antes de remarcar.",status:409};
   } catch (e) {
     if (isBookingConflictError(e)) return { ok: false, message: "O novo horário acabou de ser tomado. Escolha outro.", status: 409 };
     throw e;
@@ -255,15 +267,19 @@ export async function setBookingStatus(ctx: BookingMutationCtx, bookingId: numbe
   const b = await db
     .prepare(`SELECT b.*, s.name AS service_name, br.name AS barber_name FROM bookings b LEFT JOIN services s ON s.id=b.service_id JOIN barbers br ON br.id=b.barber_id WHERE b.id=?1 AND b.company_id=?2`)
     .bind(bookingId, companyId)
-    .first<Record<string, unknown> & { id: number; code: string; status: string; starts_at: string; customer_name: string; customer_phone: string; price_cents: number; barber_id: number; service_name: string; barber_name: string }>();
+    .first<Record<string, unknown> & { id: number; code: string; status: string; starts_at: string; customer_name: string; customer_phone: string; price_cents: number; barber_id: number; service_name: string; barber_name: string; schedule_version:number; mutation_token:string }>();
   if (!b) return { ok: false, message: "Agendamento não encontrado", status: 404 };
   const allowed: Record<string, string[]> = { pendente: ["confirmado", "concluido", "no_show"], confirmado: ["concluido", "no_show", "pendente"] };
   if (!(allowed[b.status] ?? []).includes(status)) return { ok: false, message: `Transição ${b.status} → ${status} não permitida`, status: 409 };
+  const token=crypto.randomUUID();
   try {
-    await db.batch([
-      db.prepare(`UPDATE bookings SET status=?2, updated_at=?3 WHERE id=?1 AND company_id=?4`).bind(b.id, status, nowIso(), companyId),
-      ...insertBookingNotifications(db, companyId, { code: b.code, customer_name: b.customer_name, customer_phone: b.customer_phone, barber_id: b.barber_id, barber_name: b.barber_name, service_name: b.service_name ?? "", starts_at: b.starts_at, price_cents: b.price_cents, status }, settings.timezone, status === "confirmado" ? `Agendamento ${b.code} confirmado` : status === "concluido" ? `Atendimento ${b.code} concluído` : `Cliente não compareceu (${b.code})`, "booking"),
+    const results=await db.batch([
+      db.prepare(`UPDATE bookings SET status=?2,mutation_token=?5,updated_at=?3
+        WHERE id=?1 AND company_id=?4 AND status=?6 AND schedule_version=?7 AND mutation_token=?8`)
+        .bind(b.id,status,nowIso(),companyId,token,b.status,b.schedule_version,b.mutation_token),
+      ...insertBookingNotifications(db, companyId, { code: b.code, customer_name: b.customer_name, customer_phone: b.customer_phone, barber_id: b.barber_id, barber_name: b.barber_name, service_name: b.service_name ?? "", starts_at: b.starts_at, price_cents: b.price_cents, status }, settings.timezone, status === "confirmado" ? `Agendamento ${b.code} confirmado` : status === "concluido" ? `Atendimento ${b.code} concluído` : `Cliente não compareceu (${b.code})`, "booking",token),
     ]);
+    if(results[0].meta.changes!==1) return {ok:false,message:"Este agendamento foi alterado em outra operação. Atualize a agenda antes de mudar o status.",status:409};
   } catch (error) {
     if (isBookingConflictError(error)) return {ok:false,message:"Este atendimento conflita com outro horário. Atualize a agenda antes de confirmar.",status:409};
     throw error;

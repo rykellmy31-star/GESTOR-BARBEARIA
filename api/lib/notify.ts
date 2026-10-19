@@ -38,7 +38,8 @@ export function insertBookingNotifications(
   p: BookingNotifyPayload,
   tz: string,
   title: string,
-  kind = "booking"
+  kind = "booking",
+  mutationToken?: string
 ): D1PreparedStatement[] {
   // booking_id resolvido por subselect (código é único global) — funciona dentro
   // do mesmo batch da criação do agendamento, sem 2ª round-trip.
@@ -46,14 +47,14 @@ export function insertBookingNotifications(
   return [
     db.prepare(
       `INSERT INTO notifications (company_id, audience, booking_id, title, body, kind, created_at)
-       SELECT ?1,'admin', b.id, ?2, ?3, ?4, ?5 FROM bookings b WHERE b.code = ?6 AND b.company_id = ?1`
-    ).bind(companyId, title, body, kind, nowIso(), p.code),
+       SELECT ?1,'admin', b.id, ?2, ?3, ?4, ?5 FROM bookings b WHERE b.code = ?6 AND b.company_id = ?1${mutationToken ? " AND b.mutation_token=?7" : ""}`
+    ).bind(companyId, title, body, kind, nowIso(), p.code,...(mutationToken?[mutationToken]:[])),
     db.prepare(
       `INSERT INTO notifications (company_id, audience, user_id, booking_id, title, body, kind, created_at)
        SELECT ?1,'barber', cm.user_id, b.id, ?2, ?3, ?4, ?5
        FROM company_memberships cm JOIN users u ON u.id = cm.user_id JOIN bookings b ON b.code = ?6 AND b.company_id = ?1
-       WHERE cm.company_id = ?1 AND cm.barber_id = ?7 AND cm.role = 'barber' AND cm.active = 1 AND u.active = 1`
-    ).bind(companyId, title, body, kind, nowIso(), p.code, p.barber_id),
+       WHERE cm.company_id = ?1 AND cm.barber_id = ?7 AND cm.role = 'barber' AND cm.active = 1 AND u.active = 1${mutationToken ? " AND b.mutation_token=?8" : ""}`
+    ).bind(companyId, title, body, kind, nowIso(), p.code, p.barber_id,...(mutationToken?[mutationToken]:[])),
   ];
 }
 
