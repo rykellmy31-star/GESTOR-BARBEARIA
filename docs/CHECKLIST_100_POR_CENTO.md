@@ -43,7 +43,10 @@
 - [ ] Configurar Turnstile por domínio no Cloudflare e testar o formulário publicado; incluir regras WAF quando necessário.
 - [ ] Revisar juridicamente e aprovar a política inicial de retenção dos interessados (padrão proposto: 180 dias), a comunicação ao titular e procedimentos LGPD antes de receber dados reais.
 - [ ] Publicar Termos/Política de Privacidade finais e mecanismo operacional de atendimento a solicitações de titulares de dados.
-- [ ] Implementar contratação e cobrança recorrente efetiva dos planos. **Alterar o preço no cadastro não gera boleto, Pix recorrente nem cobrança automática.**
+- [x] Cobrança Pix **mensal com pagamento iniciado pelo cliente** e liberação automática após confirmação verificada pelo Mercado Pago no Worker; faturas separadas de recargas, com migração 0005.
+- [ ] Configurar credenciais e webhooks reais do Mercado Pago no Worker de produção e homologar end-to-end. **Ainda não foi realizado Pix real.**
+- [ ] Avaliar habilitação de Pix Automático/recorrente na conta Mercado Pago, com autorização do pagador. A cobrança desta etapa não debita sem nova ação do cliente.
+- [ ] Revisar suporte a estornos/chargebacks, timeouts de criação Pix e restituições antes do lançamento comercial.
 - [ ] Reconciliar valores cobrados ao cliente, custos Meta e margem da plataforma com relatórios financeiros auditáveis.
 
 ### WhatsApp e conformidade
