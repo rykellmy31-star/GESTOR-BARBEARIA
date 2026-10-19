@@ -89,3 +89,12 @@ Trabalhar exclusivamente em `audit/tigu-primeira-validacao`, reportar ao proprie
 - [x] Regressões para feriados entre empresas, remarcações, estoque concorrente, cancelamentos e edição do catálogo.
 - [x] Pedidos de folga sempre aguardam decisão; todos os aliases de aprovação respeitam fuso, conflitos e consumo único.
 - [ ] Habilitar botão manual pela integração autorizada do workflow na branch padrão. Não executado nesta rodada.
+
+## Rodada de acessos e limites
+
+- [x] Troca de senha invalida recuperação antiga e recusa operações concorrentes obsoletas.
+- [x] Login não cria sessão com credencial substituída enquanto a verificação estava em andamento.
+- [x] Criação e reativação de profissionais respeitam capacidade atomicamente no D1.
+- [x] Cadastro assistido completo em uma transação, com teste de 15 dias e senha provisória apresentada ao Superadmin.
+- [x] Reset e desativação pelo Superadmin revogam sessões e códigos antigos.
+- [ ] Conferência visual da janela de acesso provisório na homologação autorizada.
