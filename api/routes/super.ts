@@ -16,6 +16,7 @@ import { loadPlatformSettings, setPlatformSetting, platformSettingKeys, type Pla
 import { DEFAULT_SETTINGS } from "../lib/settings";
 import { loadSalesContact, saveSalesContact, salesContactSchema } from "../lib/marketing";
 import { changePlan, listPublicPlans, planCodeSchema, planEditSchema } from "../lib/plans";
+import { leadUpdateSchema, listSalesLeads, updateSalesLead } from "../lib/sales-leads";
 import { processDueJobs } from "../lib/messaging/jobs";
 import { randomHex } from "../lib/utils";
 
@@ -319,6 +320,32 @@ superRouter.put("/plans/:code", async (c) => {
     { before: previous, after: parsed.data, automatic_billing: false },
     { companyId: null, scope: "platform" });
   return json(c, { ok: true, plan: (await listPublicPlans(c.env.DB)).find(p => p.code === code.data) });
+});
+
+// ── interessados na contratação dos planos pagos — apenas Superadmin ─────
+superRouter.get("/leads", async (c) => {
+  const status = c.req.query("status") || "";
+  const query = (c.req.query("q") || "").trim().slice(0, 80);
+  if (status && !["new","contacted","negotiating","closed"].includes(status))
+    return err(c, "Status inválido", 422);
+  return json(c, { leads: await listSalesLeads(c.env.DB, status, query) });
+});
+
+superRouter.patch("/leads/:id", async (c) => {
+  const id = idParam(c);
+  if (!Number.isSafeInteger(id) || id<=0) return err(c, "Solicitação inválida", 422);
+  const parsed = leadUpdateSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return err(c, "Status ou observação inválidos.", 422);
+  const previous = await c.env.DB.prepare(
+    "SELECT status,internal_note FROM sales_leads WHERE id=?1"
+  ).bind(id).first<{status:string;internal_note:string}>();
+  if (!previous) return err(c, "Solicitação não encontrada.", 404);
+  const updated = await updateSalesLead(c.env.DB, id, parsed.data);
+  if (!updated) return err(c, "Solicitação alterada durante o atendimento.", 409);
+  await audit(c.env.DB, c.get("user"), "sales_lead.update", "sales_lead", id,
+    { previous_status:previous.status, status:parsed.data.status, note_changed:previous.internal_note!==parsed.data.internal_note },
+    {companyId:null,scope:"platform"});
+  return json(c, {ok:true});
 });
 
 // ── precificação (global e por empresa) ─────────────────────────────────────
