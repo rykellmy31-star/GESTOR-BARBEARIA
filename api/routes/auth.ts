@@ -8,7 +8,7 @@ import { err, json, nowIso, slugify, uniqueSlug } from "../lib/utils";
 import { authRateLimit, createSession, destroySession, currentUser, requireAuth, hashPassword, verifyPassword, publicUser } from "../lib/auth";
 import { audit } from "../lib/audit";
 import { DEFAULT_SETTINGS } from "../lib/settings";
-import { ensureWallet } from "../lib/wallet";
+
 import { sha256hex } from "../lib/crypto";
 
 export const authRouter = new Hono<{ Bindings: Env }>();
@@ -85,30 +85,61 @@ authRouter.post("/register", async (c) => {
   if (dup) return err(c, "Este e-mail já possui conta — faça login.", 409);
 
   const passwordHash = await hashPassword(parsed.data.password);
-  const insUser = await db
-    .prepare(`INSERT INTO users (platform_role, name, email, password_hash, active, created_at) VALUES ('user', ?1, ?2, ?3, 1, ?4)`)
-    .bind(name.trim(), email, passwordHash, nowIso())
-    .run();
-  const userId = insUser.meta.last_row_id as number;
-
   const base = slugify(company_name) || "barbearia";
   const slug = await uniqueSlug(db, "companies", base);
-  const insCo = await db
-    .prepare(`INSERT INTO companies (slug, name, status, plan_code, created_at, updated_at) VALUES (?1, ?2, 'active', 'free', ?3, ?3)`)
-    .bind(slug, company_name.trim(), nowIso())
-    .run();
-  const companyId = insCo.meta.last_row_id as number;
-
+  const at = nowIso();
   const settings = { ...DEFAULT_SETTINGS, shop_name: company_name.trim(), phone: parsed.data.phone ?? "" };
-  await db.batch([
-    db.prepare(`INSERT INTO company_settings (company_id, data, updated_at) VALUES (?1, ?2, ?3)`).bind(companyId, JSON.stringify(settings), nowIso()),
-    db.prepare(`INSERT INTO company_memberships (company_id, user_id, role, active, created_at) VALUES (?1, ?2, 'owner', 1, ?3)`).bind(companyId, userId, nowIso()),
-    db.prepare(`INSERT INTO subscriptions (company_id, plan_code, status, started_at, updated_at) VALUES (?1, 'free', 'trial', ?2, ?2)`).bind(companyId, nowIso()),
-    db.prepare(`INSERT OR IGNORE INTO wallets (company_id, updated_at) VALUES (?1, ?2)`).bind(companyId, nowIso()),
-    db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin','Bem-vindo à Tigu!','Complete seu perfil, cadastre serviços e barbeiros. Dica: o plano gratuito testa a agenda; o WhatsApp liga no plano Pro.','system')`).bind(companyId),
-  ]);
-  await ensureWallet(db, companyId);
-  await audit(db, { id: userId, name, email, platform_role: "user" }, "signup", "company", companyId, { slug }, { companyId });
+
+  let userId: number;
+  let companyId: number;
+  try {
+    // Todas as inserções ficam em uma ÚNICA transação D1. Se alguma falhar,
+    // o usuário e a empresa também são revertidos, liberando o e-mail.
+    const results = await db.batch([
+      db.prepare(`INSERT INTO users (platform_role,name,email,password_hash,active,created_at)
+                  VALUES ('user',?1,?2,?3,1,?4)`)
+        .bind(name.trim(), email, passwordHash, at),
+      db.prepare(`INSERT INTO companies (slug,name,status,plan_code,created_at,updated_at)
+                  VALUES (?1,?2,'active','free',?3,?3)`)
+        .bind(slug, company_name.trim(), at),
+      db.prepare(`INSERT INTO company_settings (company_id,data,updated_at)
+                  SELECT id,?2,?3 FROM companies WHERE slug=?1`)
+        .bind(slug, JSON.stringify(settings), at),
+      db.prepare(`INSERT INTO company_memberships (company_id,user_id,role,active,created_at)
+                  SELECT c.id,u.id,'owner',1,?3 FROM companies c JOIN users u ON u.email=?2 WHERE c.slug=?1`)
+        .bind(slug, email, at),
+      db.prepare(`INSERT INTO subscriptions (company_id,plan_code,status,started_at,updated_at)
+                  SELECT id,'free','trial',?2,?2 FROM companies WHERE slug=?1`)
+        .bind(slug, at),
+      db.prepare(`INSERT INTO wallets (company_id,updated_at)
+                  SELECT id,?2 FROM companies WHERE slug=?1`)
+        .bind(slug, at),
+      db.prepare(`INSERT INTO notifications (company_id,audience,title,body,kind)
+                  SELECT id,'admin','Bem-vindo à Tigu!',
+                   'Complete seu perfil, cadastre serviços e barbeiros. O WhatsApp é ativado no plano Pro.','system'
+                   FROM companies WHERE slug=?1`)
+        .bind(slug),
+    ]);
+    userId = Number(results[0].meta.last_row_id);
+    companyId = Number(results[1].meta.last_row_id);
+  } catch (e) {
+    // Uma disputa entre requisições concorrentes também pode gerar UNIQUE;
+    // não vazar detalhes internos de D1 ao visitante.
+    console.error("[signup] Transação D1 recusada", String(e).slice(0, 150));
+    const alreadyRegistered = await db.prepare("SELECT id FROM users WHERE email=?1")
+      .bind(email).first().catch(() => null);
+    return alreadyRegistered
+      ? err(c, "Este e-mail já possui conta — faça login.", 409)
+      : err(c, "Não foi possível concluir o cadastro. Tente novamente.", 503);
+  }
+
+  // Auditoria não pode invalidar uma conta que já foi criada com sucesso.
+  try {
+    await audit(db, { id: userId, name, email, platform_role: "user" },
+      "signup", "company", companyId, { slug }, { companyId });
+  } catch (e) {
+    console.error("[signup] Falha ao registrar auditoria", String(e).slice(0, 150));
+  }
   await createSession(c, userId);
   return json(c, { ok: true, company: { slug, name: company_name }, next: `/c/${slug}/admin` }, 201);
 });
