@@ -1,0 +1,32 @@
+{
+  "name": "tigu-staging",
+  "main": "api/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "APP_ENV": "production",
+    "TIGU_STAGING": "1",
+    "GRAPH_API_VERSION": "v23.0",
+    "WHATSAPP_MOCK": "1",
+    "PAYMENTS_MOCK": "0"
+  },
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/uploads/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tigu-staging-db",
+      "database_id": "REPLACE_WITH_TIGU_STAGING_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "tigu-staging-media" }
+  ],
+  "triggers": { "crons": [] }
+}
