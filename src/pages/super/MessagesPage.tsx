@@ -33,7 +33,7 @@ export function SuperMessages() {
               <Td>{j.attempts}</Td>
               <Td className="text-xs">{j.scheduled_at?.slice(5, 16) ?? "—"}</Td>
               <Td><Money cents={j.price_cents} /></Td><Td><Money cents={j.cost_cents} /></Td>
-              <Td className="max-w-[220px] truncate text-[11px] text-red-300/80" title={j.last_error || ""}>{j.requires_review ? "CONFERIR • " : ""}{j.last_error || ""}</Td>
+              <Td className="max-w-[220px] truncate text-[11px] text-red-300/80"><span title={j.last_error || ""}>{j.requires_review ? "CONFERIR • " : ""}{j.last_error || ""}</span></Td>
             </Tr>
           ))}
           {(q.data ?? []).length === 0 && <Tr><Td className="py-6 text-zinc-500">Fila vazia neste filtro.</Td><Td /><Td /><Td /><Td /><Td /><Td /><Td /><Td /></Tr>}
