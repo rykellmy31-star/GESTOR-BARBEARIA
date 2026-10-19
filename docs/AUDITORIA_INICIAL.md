@@ -72,3 +72,22 @@
 - Webhooks: o código atual responde HTTP 200 para algumas falhas de processamento, inclusive quando o evento não foi completamente persistido. Deve diferenciar evento concluído de erro transitório.
 - Pix: a conciliação é limitada aos últimos dois dias, 20 registros por execução e depende da disponibilidade da API real; pagamentos mais antigos exigem investigação administrativa.
 - O fluxo financeiro real e os estados da API ainda devem passar por testes ponta a ponta antes de receber clientes e dinheiro reais.
+
+
+## Etapa 5 — recuperação conservadora do WhatsApp e webhooks (19/10/2026)
+
+- Meta Cloud API: respostas HTTP 5xx, respostas 2xx sem ID e erros de rede são classificados como **resultado indeterminado**, e não rejeição confirmada.
+- Jobs cujo resultado é desconhecido ficam em `sending` para conferência. O cron não os coloca de volta na fila automaticamente e mantém o crédito reservado.
+- Interrupções do Worker após o início do disparo também não provocam novo envio automático; o job é marcado para conferência após dez minutos.
+- As filas do proprietário e do superadministrador exibem alerta de envio incerto, sem oferecer reenvio automático.
+- Erros de processamento no webhook Meta retornam HTTP 503 para permitir nova tentativa do provedor.
+- Eventos de pagamento Mercado Pago só são marcados como processados quando a confirmação chega ao estado `paid`; pagamentos pendentes continuam conciliáveis pelo cron.
+- **25 testes aprovados**, incluindo timeout, HTTP 5xx, resposta incompleta e webhook Meta com falha, além de TypeScript e build.
+
+### Pendências antes de produção
+
+- Criar procedimento auditável para o operador resolver manualmente jobs com resultado desconhecido, verificando a entrega no provedor antes de liberar/capturar créditos. Até lá, essas reservas não são liberadas automaticamente.
+- Melhorar a retomada de processamento de webhooks já gravados parcialmente: a confirmação HTTP 503 não corrige sozinha uma operação parcialmente registrada.
+- Validar com contas reais a aceitação, entrega, falha e cobrança das mensagens na Meta, além das regras de consentimento.
+- Revisar o Embedded Signup e validar os requisitos do parceiro que centralizará faturamento para as barbearias.
+- Testar concorrência e indisponibilidades reais de D1/Meta/Mercado Pago; CI local não cobre toda a infraestrutura de produção.
