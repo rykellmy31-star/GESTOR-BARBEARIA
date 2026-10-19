@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2, MailCheck, Scissors } from "lucide-react";
+import { Loader2, MailCheck, MessageCircle, Scissors } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks";
 import { Button, Field, Input } from "@/components/ui";
 
@@ -12,11 +14,13 @@ export function RecoverPage() {
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState("");
   const [demoCode, setDemoCode] = useState("");
+  const [supportRequired, setSupportRequired] = useState(false);
+  const support = useQuery({ queryKey: ["public-marketing-contact"], queryFn: () => api.get<{ contact: { enabled: boolean; whatsapp: string; email: string; message: string } }>("/marketing/contact"), retry: false });
   const [err, setErr] = useState("");
 
   const doRequest = async (e: React.FormEvent) => {
     e.preventDefault(); setErr("");
-    try { const r = await recover.mutateAsync(email); setMsg(r.message); if (r.demo_code) setDemoCode(r.demo_code); setMode("verify"); }
+    try { const r = await recover.mutateAsync(email); setMsg(r.message); if (r.demo_code) setDemoCode(r.demo_code); setSupportRequired(Boolean(r.support_required)); if (!r.support_required) setMode("verify"); }
     catch (e2: any) { setErr(e2.message); }
   };
   const doVerify = async (e: React.FormEvent) => {
@@ -39,12 +43,23 @@ export function RecoverPage() {
           </>
         )}
         </div>
+        {supportRequired && support.data?.contact?.enabled && (
+          <div className="mt-4 flex flex-wrap justify-center gap-3 text-xs">
+            {support.data.contact.whatsapp && (
+              <a className="inline-flex items-center gap-2 rounded-xl border border-[var(--c-gold)]/50 px-4 py-2.5 text-[var(--c-gold)]" target="_blank" rel="noopener noreferrer"
+                href={`https://wa.me/${support.data.contact.whatsapp}?text=${encodeURIComponent("Olá, preciso de ajuda para recuperar o acesso ao Tigu.")}`}>
+                <MessageCircle size={15} /> Falar com o suporte no WhatsApp
+              </a>
+            )}
+            {support.data.contact.email && <a className="rounded-xl border border-line px-4 py-2.5 text-zinc-200" href={`mailto:${support.data.contact.email}?subject=${encodeURIComponent("Recuperação de acesso - Tigu")}`}>Enviar e-mail</a>}
+          </div>
+        )}
         {demoCode && <p className="mt-3 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-200">Modo demonstração — seu código: <b className="font-mono">{demoCode}</b> (em produção ele seria entregue por um canal seguro).</p>}
         {msg && <p className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200"><MailCheck size={13} className="mr-1 inline" />{msg}</p>}
         {err && <p className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{err}</p>}
-        <Button className="btn-gold mt-5 w-full justify-center py-3" disabled={recover.isPending || recoverVerify.isPending}>
+        {!supportRequired && <Button className="btn-gold mt-5 w-full justify-center py-3" disabled={recover.isPending || recoverVerify.isPending}>
           {mode === "request" ? <>Gerar código {recover.isPending && <Loader2 size={15} className="ml-1 animate-spin" />}</> : <>Redefinir senha</>}
-        </Button>
+        </Button>}
         <p className="mt-4 text-center text-xs text-zinc-500">Perdeu o acesso à empresa? O suporte Tigu pode verificar sua identidade e gerar um código.</p>
       </form>
     </div>
