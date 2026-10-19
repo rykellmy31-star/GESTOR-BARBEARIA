@@ -653,6 +653,8 @@ describe("Superadmin: revisão de WhatsApp com resultado incerto", () => {
     const done = await resolveUncertainNotSent(db, companyA, id, 1, evidence);
     expect(done.ok).toBe(true);
     expect((await resolveUncertainNotSent(db, companyA, id, 1, evidence)).ok).toBe(false);
+    const retry = await api("/api/c/alfa/admin/whatsapp/jobs/" + id + "/retry", { method: "POST", body: "{}" }, cookieA);
+    expect(retry.status).toBe(409); // não reabrir a cobrança após encerramento
     const after = (await getWallet(db, companyA))!;
     expect(after.reserved_cents).toBe(before.reserved_cents);
     expect(after.balance_cents).toBe(before.balance_cents + 200);
