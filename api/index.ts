@@ -26,6 +26,7 @@ import { nowIso } from "./lib/utils";
 import { loadSalesContact, publicSalesContact } from "./lib/marketing";
 import { listPublicPlans } from "./lib/plans";
 import { allowSalesLeadAttempt, createSalesLead, leadRequestSchema } from "./lib/sales-leads";
+import { salesChallengeConfig, verifySalesTurnstile } from "./lib/sales-challenge";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -59,6 +60,11 @@ app.get("/api/marketing/plans", async (c) =>
   c.json({ plans: await listPublicPlans(c.env.DB), automatic_billing: false })
 );
 
+/** Configuração pública da proteção; nunca retorna a chave secreta. */
+app.get("/api/marketing/lead-config", (c) =>
+  c.json(salesChallengeConfig(c.env))
+);
+
 app.use("/api/*", originGuard);
 
 /** Solicitação de atendimento para planos pagos: nunca cria cobrança nem ativa assinatura. */
@@ -68,7 +74,11 @@ app.post("/api/marketing/leads", async (c) => {
   if (parsed.data.website) return c.json({ ok: true, message: "Solicitação recebida." }, 201);
   const key = c.env.SESSION_SECRET || (c.env.APP_ENV === "production" ? "" : "dev-only-lead-key");
   if (!key) return c.json({ error: "Atendimento indisponível temporariamente." }, 503);
-  const allowed = await allowSalesLeadAttempt(c.env.DB,key,c.req.header("cf-connecting-ip") || null,parsed.data.email);
+  const visitorIp = c.req.header("cf-connecting-ip") || null;
+  const challenge = await verifySalesTurnstile(c.env, parsed.data.turnstile_token, visitorIp);
+  if (challenge === "missing_config") return c.json({ error: "Formulário temporariamente indisponível: proteção antirobôs não configurada." }, 503);
+  if (challenge !== "ok") return c.json({ error: "Confirme a verificação de segurança e tente novamente." }, 422);
+  const allowed = await allowSalesLeadAttempt(c.env.DB,key,visitorIp,parsed.data.email);
   if (!allowed) return c.json({ error: "Limite de solicitações atingido. Tente novamente mais tarde." }, 429);
   const result = await createSalesLead(c.env.DB, parsed.data);
   if (result.status === "missing_plan") return c.json({ error: "O plano selecionado está indisponível." }, 422);
