@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Activity, ArrowLeft, ArrowUpRight, CalendarDays, CheckCircle2, ChevronRight,
   Clock3, CreditCard, LayoutDashboard, MessageCircle, Scissors, ShieldCheck,
@@ -65,25 +65,65 @@ function Metric({ label, value, caption, icon: Icon }: { label: string; value: s
   );
 }
 
-function ScheduleTable() {
+function ScheduleTable({ barber = "Todos" }: { barber?: string }) {
+  const rows = barber === "Todos" ? appointments : appointments.filter((item) => item.barber === barber);
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-left text-sm">
-        <thead className="border-b border-[#303039] text-xs text-zinc-500">
-          <tr><th className="pb-3 font-medium">Horário</th><th className="pb-3 font-medium">Cliente</th><th className="pb-3 font-medium">Serviço</th><th className="pb-3 font-medium">Profissional</th><th className="pb-3 text-right font-medium">Situação</th></tr>
-        </thead>
-        <tbody className="divide-y divide-[#292931]">
-          {appointments.map(a => (
-            <tr key={a.time}>
-              <td className="py-3 font-semibold text-[#e8ca66]">{a.time}</td>
-              <td className="py-3 text-zinc-200">{a.name}</td>
-              <td className="py-3 text-zinc-400">{a.service}</td>
-              <td className="py-3 text-zinc-400">{a.barber}</td>
-              <td className="py-3 text-right"><Tag tone={a.status === "Confirmado" ? "green" : "gold"}>{a.status}</Tag></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <>
+      {/* A lista em cartões evita arrastar tabelas horizontalmente no celular. */}
+      <div className="space-y-2 md:hidden">
+        {rows.map((item) => (
+          <div key={item.time} className="rounded-xl border border-[#303039] bg-[#111115] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="font-display text-lg text-[#e8ca66]">{item.time}</span>
+              <Tag tone={item.status === "Confirmado" ? "green" : "gold"}>{item.status}</Tag>
+            </div>
+            <p className="text-sm font-semibold text-zinc-100">{item.name}</p>
+            <p className="mt-1 text-xs text-zinc-400">{item.service}</p>
+            <p className="mt-1 text-xs text-zinc-500">Profissional: {item.barber}</p>
+          </div>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-[#303039] text-xs text-zinc-500">
+            <tr><th className="pb-3 font-medium">Horário</th><th className="pb-3 font-medium">Cliente</th><th className="pb-3 font-medium">Serviço</th><th className="pb-3 font-medium">Profissional</th><th className="pb-3 text-right font-medium">Situação</th></tr>
+          </thead>
+          <tbody className="divide-y divide-[#292931]">
+            {rows.map(item => (
+              <tr key={item.time}>
+                <td className="py-3 font-semibold text-[#e8ca66]">{item.time}</td>
+                <td className="py-3 text-zinc-200">{item.name}</td>
+                <td className="py-3 text-zinc-400">{item.service}</td>
+                <td className="py-3 text-zinc-400">{item.barber}</td>
+                <td className="py-3 text-right"><Tag tone={item.status === "Confirmado" ? "green" : "gold"}>{item.status}</Tag></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length === 0 && <p className="py-6 text-center text-xs text-zinc-500">Nenhum atendimento neste filtro.</p>}
+    </>
+  );
+}
+
+function ScheduleFilters() {
+  const [barber, setBarber] = useState("Todos");
+  const barbers = ["Todos", ...Array.from(new Set(appointments.map((a) => a.barber)))];
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar agendamentos por barbeiro">
+        {barbers.map((name) => (
+          <button key={name} type="button" onClick={() => setBarber(name)}
+            aria-pressed={barber === name}
+            className={"rounded-lg border px-3 py-2 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#d4af37] " +
+              (barber === name
+                ? "border-[#d4af37]/60 bg-[#d4af37]/10 text-[#e8ca66]"
+                : "border-[#303039] text-zinc-400 hover:border-[#d4af37]/50 hover:text-zinc-100")}>
+            {name}
+          </button>
+        ))}
+      </div>
+      <ScheduleTable barber={barber} />
     </div>
   );
 }
@@ -173,7 +213,7 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
         <Metric label="Confirmações" value="15" caption="83% da agenda de hoje" icon={CheckCircle2} />
         <Metric label="Equipe de plantão" value="4" caption="João, Rafael, Marcos e Caio" icon={Scissors} />
       </div>
-      <Panel title="Atendimentos de hoje" aside={<Tag tone="gold">Horários fictícios</Tag>}><ScheduleTable /></Panel>
+      <Panel title="Atendimentos de hoje" aside={<Tag tone="gold">Horários fictícios</Tag>}><ScheduleFilters /></Panel>
     </div>
   );
 
@@ -252,8 +292,20 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
 }
 
 export function PreviewPage() {
-  const [view, setView] = useState<View>("platform");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedView = searchParams.get("tela");
+  const view: View = navigation.some((item) => item.key === requestedView)
+    ? requestedView as View
+    : "platform";
   const current = navigation.find(item => item.key === view)!;
+  const setView = (next: View) => {
+    setSearchParams((previous) => {
+      const updated = new URLSearchParams(previous);
+      if (next === "platform") updated.delete("tela");
+      else updated.set("tela", next);
+      return updated;
+    });
+  };
   return (
     <div className="texture min-h-screen bg-[#0a0a0c] text-zinc-100">
       <header className="border-b border-[#303039] bg-[#101014]/95">
