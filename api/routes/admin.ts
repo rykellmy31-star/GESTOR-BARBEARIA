@@ -14,6 +14,7 @@ import { companySettingsSchema, saveCompanySettings } from "../lib/settings";
 import { audit } from "../lib/audit";
 import { hashPassword } from "../lib/crypto";
 import { changeOrderStatus } from "../lib/orders";
+import { IMAGE_EXTENSIONS, MAX_IMAGE_BYTES, hasImageSignature, readUploadBody } from "../lib/image-upload";
 import { resolveBlockRequest } from "../lib/block-requests";
 import { barberCapacitySql } from "../lib/barber-capacity";
 import { calendarDaySchema, intervalBlockSchema, createAdminIntervalBlock, dayBlockSchema, createAdminDayBlock } from "../lib/admin-blocks";
@@ -946,16 +947,19 @@ adminRouter.post("/wallet/topup/:code/cancel", async (c) => {
 // ── uploads (R2) ─────────────────────────────────────────────────────────────
 adminRouter.post("/upload", async (c) => {
   if (!c.env.MEDIA) return err(c, "R2 não configurado neste ambiente. Use URLs de fotos já hospedadas ou configure o binding (docs/DEPLOY.md).", 501);
-  const form = await c.req.formData().catch(() => null);
+  const body = await readUploadBody(c.req.raw);
+  if (!body) return err(c, "Envio muito grande (imagem de até 5 MB)", 413);
+  const form = await new Response(body, { headers: { "content-type": c.req.header("content-type") || "" } }).formData().catch(() => null);
   const raw = form?.get("file");
   const file = raw && typeof raw !== "string" ? (raw as File) : null;
   if (!file) return err(c, "Envie o campo 'file' em multipart/form-data", 400);
-  if (file.size > 5 * 1024_024) return err(c, "Imagem muito grande (máx. 5 MB)", 413);
-  const ALLOWED: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/avif": "avif" };
-  const ext = ALLOWED[file.type];
+  if (file.size > MAX_IMAGE_BYTES) return err(c, "Imagem muito grande (máx. 5 MB)", 413);
+  const ext = IMAGE_EXTENSIONS[file.type];
   if (!ext) return err(c, `Tipo não permitido (${file.type || "?"})`, 415);
-  const key = `img/c${cid(c)}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type, cacheControl: "public, max-age=31536000, immutable" } });
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!hasImageSignature(bytes, file.type)) return err(c, "O conteúdo não corresponde a uma imagem do formato informado", 415);
+  const key = `img/c${cid(c)}/${crypto.randomUUID()}.${ext}`;
+  await c.env.MEDIA.put(key, bytes, { httpMetadata: { contentType: file.type, cacheControl: "public, max-age=31536000, immutable" } });
   return json(c, { url: `/uploads/${key}` }, 201);
 });
 

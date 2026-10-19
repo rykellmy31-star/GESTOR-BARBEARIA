@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { err } from "../lib/utils";
+import { IMAGE_EXTENSIONS } from "../lib/image-upload";
 
 export const uploadsRouter = new Hono<{ Bindings: Env }>();
 uploadsRouter.all("/*", async (c) => {
@@ -12,9 +13,12 @@ uploadsRouter.all("/*", async (c) => {
   if (!/^img\/[a-z0-9\/.\-]+$/.test(key)) return err(c, "Chave inválida", 400);
   const obj = await c.env.MEDIA.get(key);
   if (!obj) return err(c, "Não encontrado", 404);
+  const type = obj.httpMetadata?.contentType || "";
   return new Response(obj.body, {
     headers: {
-      "content-type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+      "content-type": Object.hasOwn(IMAGE_EXTENSIONS, type) ? type : "application/octet-stream",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'; sandbox",
       "cache-control": "public, max-age=31536000, immutable",
       etag: `"${obj.etag}"`,
     },
