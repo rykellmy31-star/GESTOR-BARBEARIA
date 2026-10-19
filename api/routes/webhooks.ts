@@ -11,6 +11,7 @@ import { ingestWhatsappWebhook } from "../lib/messaging/jobs";
 import { verifyWebhookSignature } from "../lib/messaging/provider";
 import { verifyMpWebhookSignature, paymentWebhookUid } from "../lib/payments";
 import { confirmTopupFromProvider } from "../lib/topup";
+import { confirmSubscriptionPix } from "../lib/subscription-billing";
 import { nowIso } from "../lib/utils";
 
 export const webhooksRouter = new Hono<{ Bindings: Env }>();
@@ -68,11 +69,16 @@ webhooksRouter.post("/mercadopago", async (c) => {
 
   // responde 200 já; o processamento re-consulta o gateway (fonte da verdade)
   c.executionCtx.waitUntil(
-    confirmTopupFromProvider(c.env, dataId, "webhook")
-      .then((res) => res.ok && res.status === "paid"
-        ? db.prepare(`UPDATE payment_webhook_events SET processed=1 WHERE event_uid=?1`).bind(uid).run()
-        : undefined)
-      .catch((e) => console.error("[mp-webhook]", String(e)))
+    (async () => {
+      // Recarga de créditos e assinatura usam o mesmo endpoint, mas
+      // registros e efeitos são inteiramente separados por payment_id.
+      const topup = await confirmTopupFromProvider(c.env,dataId,"webhook");
+      const result = topup.ok ? topup : await confirmSubscriptionPix(c.env,dataId);
+      if(result.ok && result.status==="paid") {
+        await db.prepare("UPDATE payment_webhook_events SET processed=1 WHERE event_uid=?1")
+          .bind(uid).run();
+      }
+    })().catch(e=>console.error("[mp-webhook]",String(e).slice(0,180)))
   );
   void ins;
   return c.json({ ok: true });
