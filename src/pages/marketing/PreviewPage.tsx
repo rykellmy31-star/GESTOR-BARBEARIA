@@ -6,13 +6,14 @@ import {
   ShoppingBag, Store, Users, Wallet, AlertTriangle, type LucideIcon
 } from "lucide-react";
 
-type View = "platform" | "vendas" | "pagamento" | "interessados" | "barbearia" | "agenda" | "mensagens" | "carteira" | "loja";
+type View = "platform" | "vendas" | "pagamento" | "mensalidades" | "interessados" | "barbearia" | "agenda" | "mensagens" | "carteira" | "loja";
 type NavItem = { key: View; title: string; subtitle: string; icon: LucideIcon };
 
 const navigation: NavItem[] = [
   { key: "platform", title: "Superadmin Tigu", subtitle: "Visão da plataforma", icon: ShieldCheck },
   { key: "vendas", title: "Página de vendas", subtitle: "Contratação e contato", icon: MessageCircle },
   { key: "pagamento", title: "Pagamento Pix", subtitle: "Pós-teste de 15 dias", icon: CreditCard },
+  { key: "mensalidades", title: "Mensalidades Pix", subtitle: "Gestão do Superadmin", icon: CreditCard },
   { key: "interessados", title: "Interessados", subtitle: "Pedidos de contratação", icon: Users },
   { key: "barbearia", title: "Painel da barbearia", subtitle: "Indicadores e equipe", icon: LayoutDashboard },
   { key: "agenda", title: "Agenda", subtitle: "Próximos horários", icon: CalendarDays },
@@ -166,6 +167,7 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
               ["Ver automações", "mensagens"],
               ["Ver contato de vendas", "vendas"],
               ["Ver pedidos de contratação", "interessados"],
+              ["Conferir mensalidades Pix", "mensalidades"],
             ] as const).map(([name, key]) => (
               <button key={key} type="button" onClick={() => onNavigate(key)}
                 className="flex w-full items-center justify-between rounded-xl border border-[#303039] px-3 py-3 text-left text-sm text-zinc-300 transition hover:border-[#d4af37]/60 hover:text-[#d4af37]">
@@ -282,6 +284,39 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
         Os botões acima são apenas ilustrativos e não enviam mensagens.
         Você cadastrará seu número e e-mail em Superadmin → Config. plataforma → Contato da página de vendas.
         Quando o backend estiver conectado, as informações salvas aparecerão automaticamente na página inicial de contratação.
+      </div>
+    </div>
+  );
+
+  if (view === "mensalidades") return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <Metric label="Mensalidades pagas" value="R$ 179,79" caption="Valor fictício" icon={CreditCard} />
+        <Metric label="Pix confirmados" value="3" caption="Exemplos simulados" icon={CheckCircle2} />
+        <Metric label="Aguardando Pix" value="2" caption="Exemplos de cobrança" icon={Clock3} />
+        <Metric label="Em conferência" value="1" caption="Exige consulta ao gateway" icon={AlertTriangle} />
+      </div>
+      <Panel title="Mensalidades Pix das barbearias" aside={<Tag tone="gold">Dados fictícios</Tag>}>
+        <div className="space-y-3">
+          {[
+            ["Barbearia Modelo", "Start", "R$ 19,99", "Pago / confirmado"],
+            ["Studio Fictício", "Pro", "R$ 49,90", "Aguardando Pix"],
+            ["Barbearia Teste", "Scale", "R$ 129,90", "Em criação"],
+          ].map(([company,plan,price,status]) => (
+            <div key={company} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#303039] bg-[#111115] p-4">
+              <div>
+                <p className="text-sm font-medium text-zinc-100">{company}</p>
+                <p className="mt-1 text-xs text-zinc-500">Plano {plan} · Mensalidade {price}</p>
+              </div>
+              <Tag tone={status === "Pago / confirmado" ? "green" : "gold"}>{status}</Tag>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <div className="flex items-start gap-2 rounded-xl border border-[#39323a] bg-[#111115] p-4 text-xs leading-relaxed text-zinc-400">
+        <ShieldCheck size={16} className="shrink-0 text-[#d4af37]"/>
+        Na área funcional do Superadmin, as faturas reais poderão ser filtradas por situação e barbearia. A consulta não permite aprovar pagamentos manualmente.
+        Somente a confirmação pelo Mercado Pago libera a assinatura. Esta tela é uma simulação visual, sem dados financeiros reais.
       </div>
     </div>
   );
