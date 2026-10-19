@@ -1363,21 +1363,32 @@ describe("Tigu Start R$ 19,99 e teste grátis por 15 dias", () => {
 describe("Assinaturas Pix mensais via Mercado Pago", () => {
   async function newOwner(which: "a"|"b"="a") {
     const slug="pix-"+crypto.randomUUID().slice(0,8);
-    const email=which==="a"?"dono@a.test":"dono@b.test";
-    const at=new Date().toISOString().replace(/\.\d{3}Z$/,"Z");
-    const inserted=await db.prepare(
+    const email="owner-"+crypto.randomUUID()+"@teste.com";
+    const ip="198.51.100."+Math.floor(Math.random()*200+1);
+    const at=new Date().toISOString();
+    const user=await db.prepare("INSERT INTO users(name,email,password_hash,platform_role,active,created_at) VALUES ('Proprietário Pix',?1,?2,'user',1,?3)")
+      .bind(email,await hashPassword(PW),at).run();
+    const uid=Number(user.meta.last_row_id);
+    const company=await db.prepare(
       "INSERT INTO companies(slug,name,status,plan_code,created_at,updated_at) VALUES (?1,'Barbearia Pix','active','free',?2,?2)"
     ).bind(slug,at).run();
-    const id=Number(inserted.meta.last_row_id);
+    const id=Number(company.meta.last_row_id);
     await db.batch([
-      db.prepare("INSERT INTO company_memberships(company_id,user_id,role,active,created_at) SELECT ?1,id,'owner',1,?3 FROM users WHERE email=?2")
-        .bind(id,email,at),
+      db.prepare("INSERT INTO company_memberships(company_id,user_id,role,active,created_at) VALUES (?1,?2,'owner',1,?3)")
+        .bind(id,uid,at),
       db.prepare("INSERT INTO company_settings(company_id,data,updated_at) VALUES (?1,'{}',?2)").bind(id,at),
       db.prepare("INSERT INTO subscriptions(company_id,plan_code,status,period_end,updated_at) VALUES (?1,'free','trial',strftime('%Y-%m-%dT%H:%M:%SZ',?2,'+15 days'),?2)")
         .bind(id,at),
       db.prepare("INSERT INTO wallets(company_id,updated_at) VALUES (?1,?2)").bind(id,at),
     ]);
-    return {cookie:which==="a"?cookieA:cookieB,slug,email};
+    const login=await app.request("/api/auth/login",{
+      method:"POST",headers:{"content-type":"application/json","cf-connecting-ip":ip},
+      body:JSON.stringify({email,password:PW})
+    },billingEnv());
+    expect(login.status).toBe(200);
+    const cookie=(login.headers.get("set-cookie")||"").split(";")[0];
+    expect(cookie).toContain("aurum_session=");
+    return {cookie,slug,email};
   }
   const billingEnv=():Env=>({...env,DB:db,APP_ENV:"development",TIGU_STAGING:"0",
     PAYMENTS_MOCK:"0",MP_ACCESS_TOKEN:"TOKEN_FICTICIO",MP_WEBHOOK_SECRET:"WH_FAKE",
