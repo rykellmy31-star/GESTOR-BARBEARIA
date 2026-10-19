@@ -224,7 +224,12 @@ superRouter.put("/users/:id", async (c) => {
     db.prepare("DELETE FROM sessions WHERE user_id=?1").bind(id),
     db.prepare("UPDATE password_resets SET used_at=?1 WHERE user_id=?2 AND used_at IS NULL").bind(nowIso(),id),
   );
-  if (updates.length) await db.batch(updates);
+  try {
+    if (updates.length) await db.batch(updates);
+  } catch (error) {
+    if (String(error).includes("TIGU_LAST_SUPERADMIN")) return err(c, "Mantenha ao menos um Superadmin ativo. Cadastre ou reative outro antes de remover este acesso.", 409);
+    throw error;
+  }
   await audit(db, c.get("user"), "user.update", "user", id, { active: d.active, role: d.platform_role, reset: Boolean(d.reset_password) }, { companyId: null, scope: "platform" });
   return json(c, { ok: true });
 });
@@ -639,11 +644,17 @@ superRouter.post("/users/:id/erase", async (c) => {
   const db = c.env.DB; const uid = idParam(c);
   const u = await db.prepare(`SELECT id, email FROM users WHERE id=?1`).bind(uid).first<{ id: number; email: string }>();
   if (!u) return err(c, "Usuário não encontrado", 404);
-  await db.batch([
-    db.prepare(`UPDATE company_memberships SET active=0 WHERE user_id=?1`).bind(uid),
-    db.prepare(`DELETE FROM sessions WHERE user_id=?1`).bind(uid),
-    db.prepare(`UPDATE users SET name='Conta removida (LGPD)', email=?2, password_hash='erased', active=0, last_login_at=NULL WHERE id=?1`).bind(uid, `deleted+${uid}@lgpd.invalid`),
-  ]);
+  try {
+    await db.batch([
+      db.prepare(`UPDATE company_memberships SET active=0 WHERE user_id=?1`).bind(uid),
+      db.prepare(`DELETE FROM sessions WHERE user_id=?1`).bind(uid),
+      db.prepare(`DELETE FROM password_resets WHERE user_id=?1`).bind(uid),
+      db.prepare(`UPDATE users SET name='Conta removida (LGPD)', email=?2, password_hash='erased', active=0, last_login_at=NULL WHERE id=?1`).bind(uid, `deleted+${uid}@lgpd.invalid`),
+    ]);
+  } catch (error) {
+    if (String(error).includes("TIGU_LAST_SUPERADMIN")) return err(c, "Mantenha ao menos um Superadmin ativo. Cadastre ou reative outro antes de apagar esta conta.", 409);
+    throw error;
+  }
   await audit(db, c.get("user"), "user.erase_lgpd", "user", uid, { justification: parsed.data.justification }, { companyId: null, scope: "platform" });
   return json(c, { ok: true, message: "Conta descaracterizada. Histórico operacional permanece por obrigação fiscal, sem PII." });
 });
