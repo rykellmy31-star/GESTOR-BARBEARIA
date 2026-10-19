@@ -21,6 +21,7 @@ import { BarberPanelPage } from "./pages/barber/BarberPanelPage";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { RegisterPage } from "./pages/auth/RegisterPage";
 import { RecoverPage } from "./pages/auth/RecoverPage";
+import { ChangePasswordPage } from "./pages/auth/ChangePasswordPage";
 import { CompanyPickerPage } from "./pages/auth/CompanyPickerPage";
 import { LandingPage } from "./pages/marketing/LandingPage";
 import { PreviewPage } from "./pages/marketing/PreviewPage";
@@ -45,6 +46,7 @@ function Gate({ need, children }: { need: "login" | "admin" | "barber" | "super"
   const role = useCompanyRole(me.data ?? undefined);
   if (me.isLoading) return <div className="grid min-h-screen place-items-center"><Spinner label="Verificando acesso…" /></div>;
   const user = me.data ?? null;
+  if (user?.must_change_password && need !== "login") return <Navigate to="/alterar-senha" replace />;
   if (need === "super") {
     if (!user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
     if (user.platform_role !== "superadmin") return <NoAccess what="Acesso restrito à equipe Tigu." />;
@@ -89,6 +91,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/comecar" element={<RegisterPage />} />
       <Route path="/recuperar" element={<RecoverPage />} />
+      <Route path="/alterar-senha" element={<Gate need="login"><ChangePasswordPage /></Gate>} />
       <Route path="/selecionar" element={<Gate need="login"><CompanyPickerPage /></Gate>} />
 
       {/* barbearia (tenant) — público */}
