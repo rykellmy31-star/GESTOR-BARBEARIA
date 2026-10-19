@@ -1449,7 +1449,7 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
     try {
       const created=await request(e,url+"/pix",owner.cookie,"POST");
       expect(created.status).toBe(200);
-      const invoice:any=(await created.json()).invoice;
+      const invoice:any=(await created.json() as any).invoice;
       const response=await request(e,url+"/pix/verify",owner.cookie,"POST",{invoice_id:invoice.id});
       expect(response.status).toBe(409);
       const sub=await db.prepare("SELECT status FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
