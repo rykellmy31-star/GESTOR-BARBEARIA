@@ -154,23 +154,44 @@ export async function manualAdjustment(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!justification || justification.trim().length < 10) return { ok: false, error: "Justificativa obrigatória (mín. 10 caracteres)." };
   if (!Number.isInteger(deltaCents) || deltaCents === 0 || Math.abs(deltaCents) > 100_000_000) return { ok: false, error: "Valor inválido." };
-  const now = nowIso();
-  const guard = deltaCents > 0 ? `1 = 1` : `balance_cents + ?1 >= 0`;
-  const upd = await db
-    .prepare(`UPDATE wallets SET balance_cents = balance_cents + ?1, lifetime_recharged_cents = lifetime_recharged_cents + CASE WHEN ?1 > 0 THEN ?1 ELSE 0 END, updated_at = ?2 WHERE company_id = ?3 AND (${guard})`)
-    .bind(deltaCents, now, companyId)
-    .run();
-  if (!upd.meta?.changes) return { ok: false, error: "Ajuste deixaria o saldo negativo (não permitido para esta empresa)." };
-  try {
-    await db
-      .prepare(
-        `INSERT INTO wallet_transactions (company_id, type, amount_cents, balance_after, reserved_after, ref_type, ref_id, idempotency_key, note, created_by, created_at)
-         SELECT ?1,'adjust',?2,w.balance_cents,w.reserved_cents,'manual','adjust',?3,?4,?5,?6 FROM wallets w WHERE w.company_id=?1`
-      )
-      .bind(companyId, deltaCents, `adjust:${key}`, justification.trim(), byUserId, now)
-      .run();
-  } catch {
-    return { ok: false, error: "Ajuste duplicado (já aplicado)." };
+  if (!key || key.length > 120) return { ok: false, error: "Chave de idempotência inválida." };
+
+  const wallet = await getWallet(db, companyId);
+  if (!wallet) return { ok: false, error: "Carteira não encontrada." };
+  // Protege o saldo já reservado por envios pendentes.
+  if (wallet.allow_negative !== 1 && wallet.balance_cents + deltaCents < wallet.reserved_cents) {
+    return { ok: false, error: "Saldo livre insuficiente para este ajuste." };
   }
-  return { ok: true };
+
+  const now = nowIso();
+  const idem = `adjust:${key}`;
+  try {
+    // Uma única transação D1: um lançamento repetido falha no UNIQUE e
+    // NENHUM saldo é alterado. CHECKs do banco fazem rollback de saldos inválidos.
+    await db.batch([
+      db.prepare(
+        `INSERT INTO wallet_transactions
+          (company_id, type, amount_cents, balance_after, reserved_after, ref_type, ref_id,
+           idempotency_key, note, created_by, created_at)
+         SELECT ?1,'adjust',?2,w.balance_cents,w.reserved_cents,'manual','adjust',?3,?4,?5,?6
+         FROM wallets w WHERE w.company_id=?1`
+      ).bind(companyId, deltaCents, idem, justification.trim(), byUserId, now),
+      db.prepare(
+        `UPDATE wallets SET balance_cents = balance_cents + ?1,
+         lifetime_recharged_cents = lifetime_recharged_cents + CASE WHEN ?1 > 0 THEN ?1 ELSE 0 END,
+         updated_at = ?2 WHERE company_id = ?3`
+      ).bind(deltaCents, now, companyId),
+      db.prepare(
+        `UPDATE wallet_transactions SET
+         balance_after=(SELECT balance_cents FROM wallets WHERE company_id=?1),
+         reserved_after=(SELECT reserved_cents FROM wallets WHERE company_id=?1)
+         WHERE company_id=?1 AND idempotency_key=?2`
+      ).bind(companyId, idem),
+    ]);
+    return { ok: true };
+  } catch (e) {
+    const existing = await db.prepare(`SELECT id FROM wallet_transactions WHERE idempotency_key=?1`).bind(idem).first();
+    if (existing) return { ok: false, error: "Ajuste duplicado (nenhuma alteração aplicada)." };
+    return { ok: false, error: "Não foi possível aplicar o ajuste. Saldo ou transação inválida." };
+  }
 }
