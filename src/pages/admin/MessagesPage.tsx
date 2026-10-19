@@ -7,7 +7,7 @@ import { money } from "@/lib/format";
 
 const STATUS_TONE: Record<string, "gold" | "green" | "red" | "gray" | "amber" | "blue"> = {
   connected: "green", pending_setup: "amber", error: "red", disconnected: "gray",
-  scheduled: "amber", sent: "green", delivered: "green", read: "blue", failed: "red", cancelled: "gray", refunded: "gray",
+  scheduled: "amber", sending: "amber", blocked_funds: "amber", sent: "green", delivered: "green", read: "blue", failed: "red", cancelled: "gray", refunded: "gray",
   approved: "green", pending: "amber", rejected: "red", disabled: "gray", unknown: "gray",
 };
 
@@ -190,9 +190,10 @@ export function MessagesPage() {
           <ul className="mt-3 max-h-[420px] space-y-1.5 overflow-y-auto pr-1">
             {(d.jobs ?? []).map((j: any) => (
               <li key={j.id} className="flex items-center gap-2 rounded-lg border border-line/70 bg-ink-soft px-2.5 py-1.5 text-xs">
-                <Badge tone={STATUS_TONE[j.status] ?? "gray"}>{j.status}</Badge>
+                <Badge tone={j.requires_review ? "red" : (STATUS_TONE[j.status] ?? "gray")}>{j.requires_review ? "verificar envio" : j.status}</Badge>
                 <span className="text-zinc-400">{j.kind} → {j.to_phone}</span>
                 {j.booking_code && <span className="font-mono text-[10px] text-zinc-600">{j.booking_code}</span>}
+                {j.requires_review === 1 && <span className="text-[10px] text-red-300" title={j.last_error || "Resultado desconhecido"}>Sem confirmação da API; não reenviar sem conferir</span>}
                 <span className="ml-auto text-[10px] text-zinc-600">{j.scheduled_at ? new Date(j.scheduled_at).toLocaleString("pt-BR", { hour12: false }) : ""}</span>
                 {j.price_cents > 0 && <span className="font-mono text-[10px] text-zinc-500">{money(j.price_cents)}</span>}
                 {j.status === "failed" && <button className="text-[10px] text-amber-300 hover:underline" onClick={() => retry.mutate(j.id)}>reprocessar</button>}
