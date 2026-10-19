@@ -23,6 +23,7 @@ import { RegisterPage } from "./pages/auth/RegisterPage";
 import { RecoverPage } from "./pages/auth/RecoverPage";
 import { CompanyPickerPage } from "./pages/auth/CompanyPickerPage";
 import { LandingPage } from "./pages/marketing/LandingPage";
+import { PreviewPage } from "./pages/marketing/PreviewPage";
 import { SuperLayout } from "./pages/super/SuperLayout";
 import { SuperOverview } from "./pages/super/OverviewPage";
 import { SuperCompanies } from "./pages/super/CompaniesPage";
@@ -82,6 +83,7 @@ export default function App() {
     <Routes>
       {/* plataforma */}
       <Route path="/" element={<LandingPage />} />
+      <Route path="/preview" element={<PreviewPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/comecar" element={<RegisterPage />} />
       <Route path="/recuperar" element={<RecoverPage />} />
