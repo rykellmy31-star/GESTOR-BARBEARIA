@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  Activity, ArrowLeft, ArrowUpRight, CalendarDays, CheckCircle2, ChevronRight,
+  Activity, ArrowLeft, ArrowUpRight, CalendarDays, CheckCircle2, ChevronRight, Mail,
   Clock3, CreditCard, LayoutDashboard, MessageCircle, Scissors, ShieldCheck,
   ShoppingBag, Store, Users, Wallet, AlertTriangle, type LucideIcon
 } from "lucide-react";
 
-type View = "platform" | "barbearia" | "agenda" | "mensagens" | "carteira" | "loja";
+type View = "platform" | "vendas" | "barbearia" | "agenda" | "mensagens" | "carteira" | "loja";
 type NavItem = { key: View; title: string; subtitle: string; icon: LucideIcon };
 
 const navigation: NavItem[] = [
   { key: "platform", title: "Superadmin Tigu", subtitle: "Visão da plataforma", icon: ShieldCheck },
+  { key: "vendas", title: "Página de vendas", subtitle: "Contratação e contato", icon: MessageCircle },
   { key: "barbearia", title: "Painel da barbearia", subtitle: "Indicadores e equipe", icon: LayoutDashboard },
   { key: "agenda", title: "Agenda", subtitle: "Próximos horários", icon: CalendarDays },
   { key: "mensagens", title: "WhatsApp", subtitle: "Lembretes e envios", icon: MessageCircle },
@@ -161,6 +162,7 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
               ["Conferir agendamentos", "agenda"],
               ["Inspecionar créditos", "carteira"],
               ["Ver automações", "mensagens"],
+              ["Ver contato de vendas", "vendas"],
             ] as const).map(([name, key]) => (
               <button key={key} type="button" onClick={() => onNavigate(key)}
                 className="flex w-full items-center justify-between rounded-xl border border-[#303039] px-3 py-3 text-left text-sm text-zinc-300 transition hover:border-[#d4af37]/60 hover:text-[#d4af37]">
@@ -169,6 +171,35 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
             ))}
           </div>
         </Panel>
+      </div>
+    </div>
+  );
+
+  if (view === "vendas") return (
+    <div className="space-y-5">
+      <Panel title="Como o visitante encontrará seu contato" aside={<Tag tone="gold">Demonstração visual</Tag>}>
+        <div className="rounded-2xl border border-[#d4af37]/40 bg-[#111115] p-6 text-center sm:p-10">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#d4af37]">Atendimento comercial</p>
+          <h3 className="mx-auto mt-3 max-w-xl font-display text-2xl text-zinc-50 sm:text-3xl">
+            Ficou alguma dúvida antes de contratar?
+          </h3>
+          <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-zinc-400">
+            O interessado poderá conversar com você sobre planos, recursos e contratação antes de criar a barbearia.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <button type="button" disabled className="inline-flex cursor-not-allowed items-center gap-2 rounded-xl bg-[#d4af37]/70 px-5 py-3 text-sm font-semibold text-[#16120b] opacity-80">
+              <MessageCircle size={17} /> Tirar dúvidas no WhatsApp
+            </button>
+            <button type="button" disabled className="inline-flex cursor-not-allowed items-center gap-2 rounded-xl border border-[#303039] px-5 py-3 text-sm text-zinc-300 opacity-70">
+              <Mail size={17} /> Falar por e-mail
+            </button>
+          </div>
+        </div>
+      </Panel>
+      <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-xs leading-relaxed text-amber-100">
+        Os botões acima são apenas ilustrativos e não enviam mensagens.
+        Você cadastrará seu número e e-mail em Superadmin → Config. plataforma → Contato da página de vendas.
+        Quando o backend estiver conectado, as informações salvas aparecerão automaticamente na página inicial de contratação.
       </div>
     </div>
   );
