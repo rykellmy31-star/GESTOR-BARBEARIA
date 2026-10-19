@@ -24,6 +24,7 @@ import { RecoverPage } from "./pages/auth/RecoverPage";
 import { ChangePasswordPage } from "./pages/auth/ChangePasswordPage";
 import { CompanyPickerPage } from "./pages/auth/CompanyPickerPage";
 import { LandingPage } from "./pages/marketing/LandingPage";
+import { SalesLeadPage } from "./pages/marketing/SalesLeadPage";
 import { PreviewPage } from "./pages/marketing/PreviewPage";
 import { DeveloperCredit } from "./components/layout/DeveloperCredit";
 import { SuperLayout } from "./pages/super/SuperLayout";
@@ -37,6 +38,7 @@ import { SuperTopups } from "./pages/super/TopupsPage";
 import { SuperMessages } from "./pages/super/MessagesPage";
 import { SuperAudit } from "./pages/super/AuditPage";
 import { SuperSettings } from "./pages/super/SettingsPage";
+import { SuperLeads } from "./pages/super/LeadsPage";
 import { useAuth, useCompanyRole } from "./lib/hooks";
 import { Spinner } from "./components/ui";
 
@@ -90,6 +92,7 @@ export default function App() {
       <Route path="/preview" element={<PreviewPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/comecar" element={<RegisterPage />} />
+      <Route path="/contratar" element={<SalesLeadPage />} />
       <Route path="/recuperar" element={<RecoverPage />} />
       <Route path="/alterar-senha" element={<Gate need="login"><ChangePasswordPage /></Gate>} />
       <Route path="/selecionar" element={<Gate need="login"><CompanyPickerPage /></Gate>} />
@@ -135,6 +138,7 @@ export default function App() {
         <Route path="messages" element={<SuperMessages />} />
         <Route path="audit" element={<SuperAudit />} />
         <Route path="settings" element={<SuperSettings />} />
+        <Route path="leads" element={<SuperLeads />} />
       </Route>
 
       <Route path="/admin" element={<Navigate to="/login" replace />} />
