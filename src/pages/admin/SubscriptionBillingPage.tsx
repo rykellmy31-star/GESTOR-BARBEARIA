@@ -6,15 +6,17 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/ui";
 import { useAuth } from "@/lib/hooks";
 
+type PlanCode = "free" | "pro" | "scale";
+type Plan = {code:PlanCode;name:string;price_cents_month:number;max_barbers:number;max_messages_month:number;whatsapp_enabled:number;store_enabled:number};
 type Invoice = {
-  id:number;code:string;amount_cents:number;status:"creating"|"pending"|"paid"|"expired"|"failed";
+  id:number;code:string;plan_code:PlanCode;amount_cents:number;status:"creating"|"pending"|"paid"|"expired"|"failed";
   qr_code_text:string;qr_code_base64:string;expires_at:string|null;paid_at:string|null;
 };
 type Subscription = {
   plan_code:string;status:string;period_end:string|null;
   name:string;price_cents_month:number;
 };
-type Summary = {subscription:Subscription|null;invoice:Invoice|null};
+type Summary = {subscription:Subscription|null;invoice:Invoice|null;plans:Plan[]};
 const brl=(cents:number)=>(cents/100).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 
 export function SubscriptionBillingPage() {
@@ -22,13 +24,14 @@ export function SubscriptionBillingPage() {
   const qc=useQueryClient();
   const {refetchMe}=useAuth();
   const [copied,setCopied]=useState(false);
+  const [selectedPlan,setSelectedPlan]=useState<PlanCode|null>(null);
   const q=useQuery({
     queryKey:["subscription-billing",location.pathname.split("/")[2]],
     queryFn:()=>api.get<Summary>("/billing/status"),
     refetchInterval:15_000,
   });
   const generate=useMutation({
-    mutationFn:()=>api.post<{invoice:Invoice}>("/billing/pix",{}),
+    mutationFn:(planCode:PlanCode)=>api.post<{invoice:Invoice}>("/billing/pix",{plan_code:planCode}),
     onSuccess:()=>{void q.refetch();toast.push("ok","Pix gerado. Pague usando o código ou QR Code.");},
     onError:(e:Error)=>toast.push("err",e.message)
   });
@@ -50,6 +53,12 @@ export function SubscriptionBillingPage() {
   const valid=Number.isFinite(end)&&end>Date.now()&&(sub?.status==="trial"||sub?.status==="active");
   const trial=sub?.status==="trial";
   const amount=sub?.price_cents_month??1999;
+  const plans=q.data?.plans??[];
+  const chosenCode=selectedPlan??(sub?.plan_code as PlanCode|undefined)??"free";
+  const chosen=plans.find(p=>p.code===chosenCode);
+  const rank:Record<PlanCode,number>={free:0,pro:1,scale:2};
+  const downgradeBlocked=Boolean(valid&&sub?.status==="active"&&rank[chosenCode] < rank[sub?.plan_code as PlanCode]);
+  const changing=Boolean(sub&&chosenCode!==sub.plan_code);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -70,18 +79,45 @@ export function SubscriptionBillingPage() {
           </p>
           <p className="mt-2 text-xs leading-relaxed text-zinc-500">
             O valor informado será pago por uma cobrança Pix única. Não haverá débito automático;
-            uma nova mensalidade poderá ser paga quando chegar o próximo vencimento.
+            uma nova mensalidade poderá ser paga quando chegar o próximo vencimento. O plano escolhido terá o valor informado antes de gerar o Pix.
           </p>
          </>
         }
       </div>
       {sub && (
         <section className="rounded-2xl border border-[#303039] bg-[#16161c] p-5 sm:p-8">
-          <h2 className="font-display text-xl text-zinc-100">Pagar minha mensalidade</h2>
+          <h2 className="font-display text-xl text-zinc-100">
+            {valid ? "Escolha ou altere seu plano" : "Seu teste terminou: escolha um plano"}
+          </h2>
+          <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+            Start, Pro e Scale podem ser contratados pelo Pix. O upgrade entra em vigor
+            quando o Mercado Pago confirmar o pagamento. O tempo que ainda resta do período
+            atual é preservado e o vencimento é prorrogado por um mês, sem abatimento proporcional.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3" role="group" aria-label="Selecione seu plano">
+            {plans.map(plan=>{
+              const selected=chosenCode===plan.code;
+              const blocked=Boolean(invoice)||Boolean(valid&&sub?.status==="active"&&rank[plan.code]<rank[sub.plan_code as PlanCode]);
+              const name=plan.code==="free"?"Start":plan.code==="pro"?"Pro":"Scale";
+              return (
+                <button key={plan.code} type="button" disabled={blocked}
+                  aria-pressed={selected}
+                  onClick={()=>setSelectedPlan(plan.code)}
+                  className={`rounded-xl border p-4 text-left transition ${selected?"border-[var(--c-gold)] bg-[var(--c-gold)]/10":"border-[#35313b] hover:border-[var(--c-gold)]/60"} disabled:cursor-not-allowed disabled:opacity-50`}>
+                  <span className="block text-sm font-semibold text-zinc-100">{name}</span>
+                  <span className="mt-1 block text-lg font-semibold text-[var(--c-gold)]">{brl(plan.price_cents_month)}<span className="text-xs text-zinc-400">/mês</span></span>
+                  <span className="mt-2 block text-[11px] text-zinc-400">{plan.max_barbers===-1?"Profissionais ilimitados":`${plan.max_barbers} profissionais`}</span>
+                  {sub?.plan_code===plan.code&&<span className="mt-2 block text-[11px] text-emerald-300">Plano atual</span>}
+                </button>
+              );
+            })}
+          </div>
+          {downgradeBlocked&&<p className="mt-3 text-xs text-amber-300">Para reduzir o plano, aguarde o fim do período contratado.</p>}
+          {changing&&<p className="mt-3 text-xs text-[#d4af37]">Plano escolhido: {chosen?.name}. Seus recursos mudam somente depois de confirmar o Pix.</p>}
           {invoice?.status==="creating"?<p className="mt-4 text-sm text-zinc-400">Preparando Pix. Atualize esta página em alguns instantes. Não gere vários pagamentos.</p>:
            invoice?.status==="pending"?(
             <div className="mt-4 space-y-4">
-              <p className="text-sm text-zinc-300">Pix de {brl(invoice.amount_cents)} disponível. Faça o pagamento no aplicativo do seu banco e depois confira a confirmação.</p>
+              <p className="text-sm text-zinc-300">Pix do plano {invoice.plan_code==="free"?"Start":invoice.plan_code==="pro"?"Pro":"Scale"} de {brl(invoice.amount_cents)} disponível. Faça o pagamento no aplicativo do seu banco e depois confira a confirmação.</p>
               {invoice.qr_code_base64 && (
                 <img alt="QR Code Pix da mensalidade Tigu"
                   className="mx-auto h-52 w-52 rounded-xl bg-white p-2"
@@ -106,9 +142,9 @@ export function SubscriptionBillingPage() {
            ):(
             <div className="mt-4">
               <p className="mb-4 text-xs text-zinc-400">O pagamento é gerado somente quando você solicitar. Seus dados continuam preservados enquanto não houver pagamento.</p>
-              <button type="button" disabled={generate.isPending||q.isLoading} onClick={()=>generate.mutate()}
+              <button type="button" disabled={generate.isPending||q.isLoading||!chosen||downgradeBlocked} onClick={()=>generate.mutate(chosenCode)}
                 className="btn-gold inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold disabled:opacity-50">
-                <CreditCard size={17}/>{generate.isPending?"Gerando Pix…":`Gerar Pix de ${brl(amount)}`}
+                <CreditCard size={17}/>{generate.isPending?"Gerando Pix…":`Gerar Pix de ${brl(chosen?.price_cents_month??amount)}`}
               </button>
             </div>
            )}
