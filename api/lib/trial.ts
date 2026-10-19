@@ -36,3 +36,9 @@ export function requiresSubscriptionToWrite(method: string, route: string, authe
   if (authenticatedArea) return true;
   return /^\/api\/c\/[a-z0-9-]+\/(?:bookings|orders)$/.test(route) && method === "POST";
 }
+
+/** Cobrança e verificação de Pix continuam acessíveis após o teste expirar. */
+export function isSubscriptionBillingAction(method: string, path: string): boolean {
+  return method === "POST" &&
+    /^\/api\/c\/[a-z0-9-]+\/billing\/pix(?:\/verify)?$/.test(path);
+}
