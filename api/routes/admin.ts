@@ -16,7 +16,7 @@ import { hashPassword } from "../lib/crypto";
 import { changeOrderStatus } from "../lib/orders";
 import { resolveBlockRequest } from "../lib/block-requests";
 import { barberCapacitySql } from "../lib/barber-capacity";
-import { calendarDaySchema, intervalBlockSchema, createAdminIntervalBlock } from "../lib/admin-blocks";
+import { calendarDaySchema, intervalBlockSchema, createAdminIntervalBlock, dayBlockSchema, createAdminDayBlock } from "../lib/admin-blocks";
 import { barberScheduleFields, barberScheduleSchema } from "../lib/schedule-validation";
 import { getWallet, manualAdjustment } from "../lib/wallet";
 import { createTopup, confirmTopupFromProvider } from "../lib/topup";
@@ -300,8 +300,11 @@ adminRouter.post("/bookings/block", async (c) => {
     if (!result.ok) return err(c,result.message,result.status);
     return json(c,result,201);
   }
-  await db.prepare(`INSERT INTO blocked_days (company_id, barber_id, date_from, date_to, kind, reason, created_at) VALUES (?1,?2,?3,?4,'other',?5,?6)`).bind(id, parsed.data.barberId ?? null, day, endDay, parsed.data.reason, nowIso()).run();
-  return json(c, { ok: true }, 201);
+  const days=dayBlockSchema.safeParse({barberId:parsed.data.barberId??null,dateFrom:day,dateTo:endDay,kind:"other",reason:parsed.data.reason});
+  if (!days.success) return err(c,"Período inválido",422,days.error.flatten().fieldErrors);
+  const result=await createAdminDayBlock(db,id,days.data);
+  if (!result.ok) return err(c,result.message,result.status);
+  return json(c,result,201);
 });
 
 adminRouter.delete("/blocked-days/:id", async (c) => {
@@ -976,17 +979,11 @@ adminRouter.get("/customers/:id", async (c) => {
 });
 
 adminRouter.post("/blocked-days", async (c) => {
-  const parsed = z.object({ barberId: z.number().int().positive().nullable().default(null), dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), kind: z.enum(["day_off", "vacation", "holiday", "other"]).default("day_off"), reason: z.string().max(200).default("") }).safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "Dados inválidos", 400);
-  const d = { ...parsed.data, dateFrom: parsed.data.dateFrom ?? parsed.data.date_from ?? parsed.data.date ?? "", dateTo: parsed.data.dateTo ?? parsed.data.date_to ?? parsed.data.dateFrom ?? parsed.data.date_from ?? "" };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.dateFrom)) return err(c, "dateFrom/date_from/date obrigatório (YYYY-MM-DD)", 422);
-  if (d.barberId) {
-    const ok = await P(c).prepare(`SELECT id FROM barbers WHERE id=?1 AND company_id=?2`).bind(d.barberId, cid(c)).first();
-    if (!ok) return err(c, "Barbeiro inválido", 400);
-  }
-  await P(c).prepare(`INSERT INTO blocked_days (company_id, barber_id, date_from, date_to, kind, reason, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)`)
-    .bind(cid(c), d.barberId, d.dateFrom, d.dateTo || d.dateFrom, d.kind, d.reason.trim(), nowIso()).run();
-  return json(c, { ok: true }, 201);
+  const parsed=dayBlockSchema.safeParse(await c.req.json().catch(()=>null));
+  if (!parsed.success) return err(c,"Período inválido",422,parsed.error.flatten().fieldErrors);
+  const result=await createAdminDayBlock(P(c),cid(c),parsed.data);
+  if (!result.ok) return err(c,result.message,result.status);
+  return json(c,result,201);
 });
 
 adminRouter.post("/blocks", async (c) => {
