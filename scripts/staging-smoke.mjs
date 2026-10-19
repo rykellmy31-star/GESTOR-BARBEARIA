@@ -55,13 +55,15 @@ try {
   const isolated = health.status === 200 && health.body?.ok === true &&
     health.body?.service === "tigu-api" && health.body?.staging === true &&
     health.body?.d1 === true && health.body?.r2 === true &&
+    health.body?.security?.session_secret_ready === true &&
+    health.body?.security?.encryption_key_ready === true &&
     health.body?.payments?.mock === false &&
     health.body?.payments?.mercadopago === false &&
     health.body?.whatsapp?.mock === true &&
     health.body?.whatsapp?.embedded === false;
 
   if (!isolated) {
-    fail("VERIFICAÇÃO DE IDENTIDADE: Worker isolado, D1, R2 e integração de teste",
+    fail("VERIFICAÇÃO DE IDENTIDADE: Worker isolado, D1, R2, secrets fortes e integrações",
       "o ambiente não passou pelo contrato de segurança. Nada mais foi consultado.");
     process.exit(1);
   }
