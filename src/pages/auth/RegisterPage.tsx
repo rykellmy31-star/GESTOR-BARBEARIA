@@ -70,7 +70,7 @@ export function RegisterPage() {
               <li className="flex gap-2"><Check size={16} className="mt-0.5 shrink-0 text-[var(--c-gold)]" /> Lembretes de WhatsApp 1h antes — só com o seu número autorizado</li>
             </ul>
             <p className="mt-6 rounded-xl border border-line bg-ink-soft p-4 text-xs leading-relaxed text-zinc-400">
-              Seu teste do Tigu Start é gratuito durante 15 dias, sem cadastrar cartão. Depois, o Start custa R$ 19,99/mês e depende de ativação comercial — nenhuma cobrança automática é realizada. O WhatsApp é ativado no plano Pro, com créditos por mensagem.
+              Seu teste do Tigu Start é gratuito durante 15 dias, sem cadastrar cartão. Depois, o Start custa R$ 19,99/mês e pode ser pago por Pix no painel da barbearia — não há débito automático. O WhatsApp é ativado no plano Pro, com créditos por mensagem.
               Precisa conectar o número oficial? A equipe Tigu acompanha a verificação na Meta (docs/WHATSAPP.md).
             </p>
             <p className="mt-4 text-xs text-zinc-500">Já tem conta? <Link className="font-semibold text-[var(--c-gold)] hover:underline" to="/login">Entrar</Link></p>
