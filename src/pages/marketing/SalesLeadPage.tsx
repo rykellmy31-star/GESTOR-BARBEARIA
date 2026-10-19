@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, Loader2, Scissors, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
+import { SalesTurnstile } from "./SalesTurnstile";
 
 type Code = "pro" | "scale";
 type Payload = {
@@ -27,21 +28,34 @@ export function SalesLeadPage() {
   const [pending,setPending] = useState(false);
   const [success,setSuccess] = useState<number|null>(null);
   const [error,setError] = useState("");
+  const [turnstileToken,setTurnstileToken] = useState("");
+  const [challengeEpoch,setChallengeEpoch] = useState(0);
   const health = useQuery({
     queryKey:["sales-lead-health"],
     queryFn:()=>api.get<{ok:boolean;d1:boolean}>("/health"),
     retry:false,staleTime:60_000
   });
+  const challenge = useQuery({
+    queryKey:["sales-lead-challenge"],
+    queryFn:()=>api.get<{enabled:boolean;required:boolean;site_key:string|null}>("/marketing/lead-config"),
+    retry:false,staleTime:60_000,
+  });
+  const canSubmit = health.isSuccess && Boolean(health.data?.d1) &&
+    challenge.isSuccess && challenge.data.enabled &&
+    (!challenge.data.required || Boolean(turnstileToken));
   const update = <K extends keyof Payload>(key:K,value:Payload[K]) =>
     setValues(p=>({...p,[key]:value}));
 
   async function submit(e:React.FormEvent) {
     e.preventDefault();setError("");setPending(true);
     try {
-      const result = await api.post<{ok:boolean;reference:number}>("/marketing/leads",values);
+      if (!canSubmit) throw new Error("Conclua a verificação de segurança antes de enviar.");
+      const result = await api.post<{ok:boolean;reference:number}>("/marketing/leads",{...values,turnstile_token:turnstileToken});
       setSuccess(result.reference);
     } catch(e:unknown) {
       setError(e instanceof Error?e.message:"Não foi possível enviar a solicitação.");
+      setTurnstileToken("");
+      setChallengeEpoch(n=>n+1);
     } finally {setPending(false);}
   }
 
@@ -69,6 +83,11 @@ export function SalesLeadPage() {
                   Esta prévia está sem backend conectado. O formulário ainda não pode receber solicitações. Não envie dados pessoais nesta demonstração.
                 </p>
               ) : null}
+              {challenge.isSuccess && !challenge.data.enabled && (
+                <p role="alert" className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-200">
+                  O formulário está desativado até que a proteção antirobôs Turnstile seja configurada pelo responsável do Tigu.
+                </p>
+              )}
               <form onSubmit={submit} className="mt-6 space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="text-xs text-zinc-300">Seu nome
@@ -97,8 +116,10 @@ export function SalesLeadPage() {
                   <input required type="checkbox" className="mt-0.5 accent-[#d4af37]" checked={values.consent} onChange={e=>update("consent",e.target.checked)}/>
                   <span>Autorizo a equipe Tigu a usar meu nome, e-mail e telefone para responder a este pedido comercial. Sei que não estou contratando nem pagando um plano.</span>
                 </label>
+                {challenge.isSuccess && challenge.data.required && challenge.data.enabled && challenge.data.site_key &&
+                  <SalesTurnstile key={challengeEpoch} siteKey={challenge.data.site_key} onToken={setTurnstileToken} />}
                 {error && <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
-                <button type="submit" disabled={pending || !health.isSuccess || !health.data?.d1}
+                <button type="submit" disabled={pending || !canSubmit}
                   className="btn-gold inline-flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50">
                   {pending?<Loader2 size={16} className="animate-spin"/>:<ShieldCheck size={16}/>}
                   {pending?"Enviando…":"Enviar solicitação de atendimento"}
