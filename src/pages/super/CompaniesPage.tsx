@@ -12,11 +12,19 @@ export function SuperCompanies() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const [access,setAccess]=useState<{email:string;slug:string;password?:string;trialEnd:string;createdUser:boolean}|null>(null);
   const [f, setF] = useState({ name: "", slug: "", plan_code: "pro", owner_name: "", owner_email: "", owner_password: "" });
   const list = useQuery({ queryKey: ["super-companies", q], queryFn: () => api.get<any>(`/super/companies?q=${encodeURIComponent(q)}`).then((d) => d.companies as any[]) });
   const create = useMutation({
     mutationFn: () => api.post<any>("/super/companies", { ...f, owner_password: f.owner_password || undefined, slug: f.slug || undefined }),
-    onSuccess: (r) => { toast.push("ok", `Barbearia criada em /c/${r.slug}${r.created_user ? " (dono criado)" : ""}.`); qc.invalidateQueries({ queryKey: ["super-companies"] }); setOpen(false); },
+    gcTime: 0,
+    onSuccess: (r) => {
+      setAccess({email:f.owner_email,slug:r.slug,password:r.generated_password,trialEnd:r.trial_end,createdUser:r.created_user});
+      toast.push("ok", "Barbearia criada com teste gratuito de 15 dias.");
+      qc.invalidateQueries({queryKey:["super-companies"]});
+      setOpen(false);
+      setF({name:"",slug:"",plan_code:"pro",owner_name:"",owner_email:"",owner_password:""});
+    },
     onError: (e: any) => toast.push("err", e.message),
   });
   const seed = useMutation({
@@ -46,8 +54,25 @@ export function SuperCompanies() {
           ))}
         </Table>
       )}
+      <Modal open={Boolean(access)} onClose={()=>{setAccess(null);create.reset();}} title="Barbearia criada">
+        {access&&<div className="space-y-4 text-sm text-zinc-300">
+          <p>Endereço: <span className="font-mono">/c/{access.slug}</span></p>
+          <p>Teste gratuito até {new Date(access.trialEnd).toLocaleDateString("pt-BR")}. Nenhuma cobrança foi criada.</p>
+          <p>E-mail do dono: {access.email}</p>
+          {access.password?<>
+            <p>Guarde a senha provisória agora. Ela não será exibida novamente após fechar esta janela.</p>
+            <Input aria-label="Senha provisória do dono" readOnly value={access.password} className="font-mono" />
+            <Button variant="dark" onClick={async()=>{
+              try {await navigator.clipboard.writeText(access.password!);toast.push("ok","Senha copiada.");}
+              catch {toast.push("err","Selecione e copie a senha exibida.");}
+            }}>Copiar senha provisória</Button>
+          </>:<p>{access.createdUser?"Use a senha inicial informada. O dono precisará alterá-la no primeiro acesso.":"O dono continua usando a senha da conta existente."}</p>}
+          <Button className="w-full justify-center" onClick={()=>{setAccess(null);create.reset();}}>Concluir</Button>
+        </div>}
+      </Modal>
       <Modal open={open} onClose={() => setOpen(false)} title="Cadastrar barbearia (onboarding assistido)">
         <div className="space-y-3">
+          <p className="text-xs text-zinc-500">O cadastro inicia um teste gratuito de 15 dias. Não gera cobrança nem confirma pagamento.</p>
           <Field label="Nome"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Slug do link (opcional)"><Input value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-") })} placeholder="navalha-de-ouro" /></Field>

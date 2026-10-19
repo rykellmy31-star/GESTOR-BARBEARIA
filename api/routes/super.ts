@@ -115,36 +115,44 @@ const createCompanySchema = z.object({
 superRouter.post("/companies", async (c) => {
   const parsed = createCompanySchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
-  const db = c.env.DB;
-  const d = parsed.data;
-  const ownerEmail = d.owner_email.trim().toLowerCase();
-  let userId = (await db.prepare(`SELECT id FROM users WHERE email=?1`).bind(ownerEmail).first<{ id: number }>())?.id ?? 0;
-  let createdUser = false;
-  if (!userId) {
-    const pw = d.owner_password || `Tigu!${randomHex(6)}`;
-    const ins = await db.prepare(`INSERT INTO users (platform_role, name, email, password_hash, active, must_change_password, created_at) VALUES ('user',?1,?2,?3,1,?4,?5)`)
-      .bind(d.owner_name, ownerEmail, await hashPassword(pw), d.owner_password ? 0 : 1, nowIso()).run();
-    userId = ins.meta.last_row_id as number;
-    createdUser = true;
-    void pw;
-  }
-  const slug = await uniqueSlug(db, "companies", d.slug || slugify(d.name));
-  const ins = await db.prepare(`INSERT INTO companies (slug, name, status, plan_code, created_at, updated_at) VALUES (?1,?2,'active',?3,?4,?4)`).bind(slug, d.name.trim(), d.plan_code, nowIso()).run();
-  const companyId = ins.meta.last_row_id as number;
+  const db=c.env.DB,d=parsed.data,ownerEmail=d.owner_email.trim().toLowerCase();
+  const owner=await db.prepare("SELECT id,active FROM users WHERE email=?1").bind(ownerEmail).first<{id:number;active:number}>();
+  if (owner && !owner.active) return err(c,"A conta do dono está desativada. Revise o acesso antes de cadastrar a empresa.",409);
+  const plan=await db.prepare("SELECT code FROM plans WHERE code=?1 AND demo=0").bind(d.plan_code).first();
+  if (!plan) return err(c,"Plano indisponível",422);
+  const createdUser=!owner,generatedPassword=createdUser&&!d.owner_password?`Tigu!${randomHex(16)}`:undefined;
+  const passwordHash=createdUser?await hashPassword(d.owner_password||generatedPassword!):null;
+  const slug=await uniqueSlug(db,"companies",d.slug||slugify(d.name));
+  const at=nowIso(),trialEnd=new Date(Date.parse(at)+15*86400000).toISOString().replace(/\.\d{3}Z$/,"Z");
+  const statements:D1PreparedStatement[]=[];
+  if (createdUser) statements.push(db.prepare("INSERT INTO users(platform_role,name,email,password_hash,active,must_change_password,created_at) VALUES ('user',?1,?2,?3,1,1,?4)").bind(d.owner_name.trim(),ownerEmail,passwordHash,at));
+  const companyIndex=statements.length;
+  statements.push(
+    db.prepare("INSERT INTO companies(slug,name,status,plan_code,created_at,updated_at) VALUES (?1,?2,'active',?3,?4,?4)").bind(slug,d.name.trim(),d.plan_code,at),
+    db.prepare("INSERT INTO company_settings(company_id,data,updated_at) SELECT id,?2,?3 FROM companies WHERE slug=?1").bind(slug,JSON.stringify({...DEFAULT_SETTINGS,shop_name:d.name.trim()}),at),
+    db.prepare(`INSERT INTO company_memberships(company_id,user_id,role,active,created_at)
+      SELECT c.id,u.id,'owner',1,?3 FROM companies c JOIN users u ON u.email=?2 WHERE c.slug=?1`)
+      .bind(slug,ownerEmail,at),
+    db.prepare(`INSERT INTO subscriptions(company_id,plan_code,status,started_at,period_end,updated_at)
+      SELECT id,?2,'trial',?3,?4,?3 FROM companies WHERE slug=?1`).bind(slug,d.plan_code,at,trialEnd),
+    db.prepare("INSERT INTO wallets(company_id,updated_at) SELECT id,?2 FROM companies WHERE slug=?1").bind(slug,at),
+    db.prepare(`INSERT INTO notifications(company_id,audience,title,body,kind)
+      SELECT id,'admin','Bem-vindo à Tigu!','Seu teste gratuito dura 15 dias. Complete o catálogo e a equipe.','system' FROM companies WHERE slug=?1`).bind(slug),
+  );
+  let companyId:number,userId:number;
   try {
-  await db.batch([
-    db.prepare(`INSERT INTO company_settings (company_id, data, updated_at) VALUES (?1,?2,?3)`).bind(companyId, JSON.stringify({ ...DEFAULT_SETTINGS, shop_name: d.name.trim() }), nowIso()),
-    db.prepare(`INSERT INTO company_memberships (company_id, user_id, role, active, created_at) VALUES (?1,?2,'owner',1,?3)`).bind(companyId, userId, nowIso()),
-    db.prepare(`INSERT INTO subscriptions (company_id, plan_code, status, started_at, updated_at) VALUES (?1,?2,'active',?3,?3)`).bind(companyId, d.plan_code, nowIso()),
-    db.prepare(`INSERT OR IGNORE INTO wallets (company_id, updated_at) VALUES (?1,?2)`).bind(companyId, nowIso()),
-  ]);
-  await ensureWallet(db, companyId);
-  } catch (e) { // não deixa empresa órfã se o setup inicial falhar
-    await db.prepare(`DELETE FROM companies WHERE id=?1`).bind(companyId).run();
-    throw e;
+    const results=await db.batch(statements);
+    companyId=Number(results[companyIndex].meta.last_row_id);
+    userId=owner?.id??Number(results[0].meta.last_row_id);
+  } catch {
+    return err(c,"Não foi possível concluir o cadastro. Nenhuma empresa parcial foi criada. Atualize e tente novamente.",503);
   }
-  await audit(db, c.get("user"), "company.create", "company", companyId, { slug, plan: d.plan_code, owner_email: ownerEmail }, { companyId, scope: "platform" });
-  return json(c, { ok: true, id: companyId, slug, owner_user_id: userId, created_user: createdUser }, 201);
+  try {
+    await audit(db,c.get("user"),"company.create","company",companyId,{slug,plan:d.plan_code,owner_email:ownerEmail,trial_end:trialEnd},{companyId,scope:"platform"});
+  } catch { console.error("[company.create] Falha de auditoria após cadastro concluído"); }
+  c.header("Cache-Control","no-store");
+  return json(c,{ok:true,id:companyId,slug,owner_user_id:userId,created_user:createdUser,
+    generated_password:generatedPassword,trial_end:trialEnd},201);
 });
 
 superRouter.post("/companies/:id/suspend", async (c) => {
@@ -208,12 +216,15 @@ superRouter.put("/users/:id", async (c) => {
   const u = await db.prepare(`SELECT id, platform_role FROM users WHERE id=?1`).bind(id).first<{ id: number; platform_role: string }>();
   if (!u) return err(c, "Usuário não encontrado", 404);
   const d = parsed.data;
-  if (typeof d.active === "boolean") await db.prepare(`UPDATE users SET active=?1 WHERE id=?2`).bind(d.active ? 1 : 0, id).run();
-  if (d.platform_role) await db.prepare(`UPDATE users SET platform_role=?1 WHERE id=?2`).bind(d.platform_role, id).run();
-  if (d.reset_password) {
-    await db.prepare(`UPDATE users SET password_hash=?1, must_change_password=1 WHERE id=?2`).bind(await hashPassword(d.reset_password), id).run();
-    await db.prepare(`DELETE FROM sessions WHERE user_id=?1`).bind(id).run();
-  }
+  const updates:D1PreparedStatement[]=[];
+  if (typeof d.active === "boolean") updates.push(db.prepare("UPDATE users SET active=?1 WHERE id=?2").bind(d.active?1:0,id));
+  if (d.platform_role) updates.push(db.prepare("UPDATE users SET platform_role=?1 WHERE id=?2").bind(d.platform_role,id));
+  if (d.reset_password) updates.push(db.prepare("UPDATE users SET password_hash=?1,must_change_password=1 WHERE id=?2").bind(await hashPassword(d.reset_password),id));
+  if (d.reset_password||d.active===false||d.platform_role) updates.push(
+    db.prepare("DELETE FROM sessions WHERE user_id=?1").bind(id),
+    db.prepare("UPDATE password_resets SET used_at=?1 WHERE user_id=?2 AND used_at IS NULL").bind(nowIso(),id),
+  );
+  if (updates.length) await db.batch(updates);
   await audit(db, c.get("user"), "user.update", "user", id, { active: d.active, role: d.platform_role, reset: Boolean(d.reset_password) }, { companyId: null, scope: "platform" });
   return json(c, { ok: true });
 });
