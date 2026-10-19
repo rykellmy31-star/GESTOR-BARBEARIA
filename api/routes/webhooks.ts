@@ -41,7 +41,7 @@ webhooksRouter.post("/whatsapp", async (c) => {
     return c.json({ ok: true, ...res });
   } catch (e) {
     console.error("[whatsapp-webhook]", String(e));
-    return c.json({ ok: true, note: "processado com warning" }); // nunca provocar retry storm
+    return c.json({ error: "Falha temporária no processamento; reenvie o evento." }, 503);
   }
 });
 
