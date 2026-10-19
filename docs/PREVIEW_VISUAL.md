@@ -123,3 +123,18 @@ A rota pública `GET /api/marketing/privacy` retorna somente o prazo de retenç�
 Quando o Worker **de produção** for publicado com o cron habilitado, o trabalho agendado fará a exclusão dos contatos vencidos às **03:05 UTC**, em lotes limitados. A homologação continua sem cron; nela, a limpeza é somente manual pelo Superadmin. Hashes antigos dos limites de solicitação também são descartados depois de 48 horas.
 
 **Conformidade:** a política inicial de 180 dias é uma escolha técnica, não uma conclusão jurídica. A aprovação da política de privacidade, bases legais, comunicação aos titulares e rotinas LGPD continua pendente antes de coletar dados reais.
+
+
+## Tigu Start pago após teste de 15 dias
+
+Conforme pedido do proprietário, a página de vendas passou a apresentar o **Tigu Start por R$ 19,99/mês** e uma aba clicável **Teste grátis por 15 dias**. A prévia `/preview?tela=vendas` também usa R$ 19,99 como valor **ilustrativo**, não R$ 0,00.
+
+O CTA do Start leva ao cadastro `/comecar`, agora com a oferta de teste explícita. O novo cliente **não informa cartão, não recebe cobrança automática e inicia uma assinatura `trial`** com `period_end` definido no D1 exatamente 15 dias após `started_at`.
+
+Após o fim do teste, o backend bloqueia **novas reservas, novos pedidos públicos e alterações nos painéis da empresa**, retornando HTTP 402; a consulta de dados e os cancelamentos públicos existentes permanecem disponíveis. A ativação de uma assinatura paga ainda é manual pelo Superadmin, pois a integração de cobrança recorrente permanece pendente. Isso não implica débito automático de R$ 19,99.
+
+A migração `0004_start_trial.sql` altera o Start de R$ 0,00 para R$ 19,99 somente quando ele ainda está com preço zero, preservando preço já editado pelo Superadmin. Assinaturas `trial` legadas sem prazo recebem 15 dias de tolerância **a partir da aplicação da migração**, evitando bloqueio retroativo imediato. Contas `active` não são automaticamente alteradas nem cobradas.
+
+O Superadmin, em Config. plataforma, pode agora **editar o preço do Start**, que deve permanecer maior que zero. O painel da barbearia funcional mostra o prazo restante e a mensalidade. O Pages estático, sem Worker/D1, demonstra apenas o visual e não registra testes reais.
+
+**Deploy pendente:** aplicar `npm run staging:migrate` no D1 isolado e publicar o Worker de homologação. Não há confirmação de publicação na Cloudflare apenas porque o GitHub Actions aprovou o build.
