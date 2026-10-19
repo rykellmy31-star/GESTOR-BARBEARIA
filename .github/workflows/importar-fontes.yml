@@ -1,0 +1,48 @@
+name: Importar fontes do ZIP do Tigu
+
+on:
+  push:
+    branches:
+      - audit/tigu-primeira-validacao
+    paths:
+      - .github/workflows/importar-fontes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Verificar e extrair ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -tq tigu.zip
+          test -z "$(unzip -Z -1 tigu.zip | grep -E '(^|/)(\.env|\.dev\.vars|node_modules)(/|$)' || true)"
+          unzip -q tigu.zip -d .temp-import
+          test -f .temp-import/tigu/package.json
+          test -f .temp-import/tigu/package-lock.json
+          cp -a .temp-import/tigu/. ./
+          rm -rf .temp-import
+          # O CI embutido no ZIP continha deploy na main; não ativar deploy sem revisão.
+          rm -f .github/workflows/ci.yml
+          test -f package.json
+          test -f wrangler.jsonc
+
+      - name: Salvar arquivos na branch de auditoria
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Fontes já importadas"
+          else
+            git commit -m "chore: extrair código-fonte do Tigu do ZIP original"
+            git push origin HEAD:audit/tigu-primeira-validacao
+          fi
