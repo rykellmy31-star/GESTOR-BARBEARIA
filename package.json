@@ -1,0 +1,55 @@
+{
+  "name": "tigu",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tigu — plataforma SaaS multiempresa de agendamento, loja e WhatsApp para barbearias (Cloudflare Workers + D1 + R2).",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c yellow,cyan \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "wrangler dev --port 8787 --ip 0.0.0.0",
+    "dev:web": "vite --port 5173 --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "check:types": "tsc -b --pretty false",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate:local": "wrangler d1 migrations apply tigu-db --local",
+    "db:seed:local": "node scripts/setup-demo.mjs",
+    "db:reset:local": "node scripts/reset-local-db.mjs",
+    "db:migrate:remote": "wrangler d1 migrations apply tigu-db --remote",
+    "setup:admin": "tsx scripts/create-super.mjs",
+    "deploy": "npm run build && wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "setup:super": "node scripts/create-super.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.62.0",
+    "clsx": "^2.1.1",
+    "hono": "^4.6.14",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.12.0",
+    "@cloudflare/workers-types": "^4.20250121.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "~4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "~3.2.7",
+    "wrangler": "4.57.0"
+  }
+}
