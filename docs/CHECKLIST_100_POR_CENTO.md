@@ -36,7 +36,9 @@
 
 - [ ] Configurar credenciais e webhook reais do Mercado Pago, testar Pix aprovado, estornado, atrasado e conciliado em banco real.
 - [ ] Testar upgrade, mensalidade vencida, QR Code expirado, disputa de pagamentos e repetição de webhook em homologação controlada antes de aceitar Pix real.
-- [ ] Definir regra comercial e tratamento de downgrade, reemissão de Pix vencido e eventuais pagamentos em duplicidade.
+- [x] Reemissão segura de Pix vencido: primeiro consulta o Mercado Pago, libera outro apenas com status terminal e preserva fatura incerta quando há timeout.
+- [x] Atualização atômica da assinatura, da fatura e do plano da empresa na confirmação do pagamento.
+- [ ] Definir regra comercial para downgrade, tratamento manual de faturas criadas com resposta incerta e eventuais pagamentos duplicados; homologar estornos.
 - [x] Permitir que o Superadmin altere preços e limites de Start/Pro/Scale no D1; a página pública lê os valores atuais do backend.
 - [x] Start por R$ 19,99/mês depois de 15 dias grátis; novos cadastros têm término registrado no D1, com bloqueio de novas operações ao expirar e aviso no painel. Sem cobrança automática.
 - [x] Página de assinatura permite escolher Start, Pro ou Scale e solicitar upgrade por Pix; o plano só é alterado após verificação real do pagamento (sem pró-rata ou débito automático).
