@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Bell, CalendarCheck, CreditCard, Lock, ScanFace, Scissors, ShieldCheck, Store, MessageCircle } from "lucide-react";
 import { useReveal } from "@/lib/hooks";
 import { SalesContactSection } from "./SalesContactSection";
+import { SalesPlansSection } from "./SalesPlansSection";
 
 const feats = [
   { icon: CalendarCheck, t: "Agenda à prova de conflito", d: "Trava real de horários: dois clientes nunca marcam o mesmo barbeiro no mesmo minuto — em todas as barbearias ao mesmo tempo." },
@@ -57,24 +58,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section id="planos" className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <div className="grid gap-4 md:grid-cols-3">
-          {[
-            { n: "Start", p: "R$ 0", d: "Para organizar a agenda on-line", items: ["Site público + agenda", "2 profissionais", "100 mensagens/mês (sem WhatsApp ativado)", "Suporte por e-mail"] },
-            { n: "Pro", p: "R$ 49,90", d: "A escolha das barbearias", items: ["Tudo do Start", "6 profissionais", "Lembretes WhatsApp automáticos", "3.000 mensagens/mês", "Loja completa"], gold: true },
-            { n: "Scale", p: "R$ 129,90", d: "Rede de unidades", items: ["Profissionais ilimitados", "Mensagens ilimitadas (tarifa por envio)", "Multi-unidade com o mesmo login", "Prioridade de suporte"] },
-          ].map((pl) => (
-            <div key={pl.n} className={`reveal rounded-2xl border p-6 ${pl.gold ? "border-[var(--c-gold)]/60 bg-[color-mix(in_srgb,var(--c-gold)_6%,#16161c)]" : "border-[#26262f] bg-[#16161c]"}`}>
-              <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-zinc-500">{pl.n}</p>
-              <p className="mt-2 font-display text-3xl text-zinc-50">{pl.p}<span className="text-sm text-zinc-500">/mês</span></p>
-              <p className="mt-1 text-xs text-zinc-500">{pl.d}</p>
-              <ul className="mt-4 space-y-2 text-sm text-zinc-300">{pl.items.map((i) => <li key={i} className="flex gap-2"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-[var(--c-gold)]" />{i}</li>)}</ul>
-              <Link to="/comecar" className={`${pl.gold ? "btn-gold" : "mt-6 block w-full rounded-xl border border-[#26262f] py-2.5 text-sm text-zinc-200 hover:border-[var(--c-gold)]"} mt-6 flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold`}>Selecionar</Link>
-            </div>
-          ))}
-        </div>
-        <p className="mt-4 text-center text-[11px] text-zinc-600">Mensagens de WhatsApp: R$ 0,10 por mensagem aceita no provedor (custo do WhatsApp por conta da barbearia via créditos; política de estorno automático em falha). Valores iniciais ajustáveis pela plataforma.</p>
-      </section>
+      <SalesPlansSection />
 
       <SalesContactSection />
 
