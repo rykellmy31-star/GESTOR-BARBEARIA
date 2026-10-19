@@ -16,7 +16,7 @@ import { loadPlatformSettings, setPlatformSetting, platformSettingKeys, type Pla
 import { DEFAULT_SETTINGS } from "../lib/settings";
 import { loadSalesContact, saveSalesContact, salesContactSchema } from "../lib/marketing";
 import { changePlan, listPublicPlans, planCodeSchema, planEditSchema } from "../lib/plans";
-import { leadUpdateSchema, listSalesLeads, updateSalesLead } from "../lib/sales-leads";
+import { leadUpdateSchema, listSalesLeads, updateSalesLead, salesRetentionSchema, getSalesRetentionDays, setSalesRetentionDays, deleteSalesLead, purgeExpiredSalesLeads, purgeOldSalesRateLimits } from "../lib/sales-leads";
 import { processDueJobs } from "../lib/messaging/jobs";
 import { randomHex } from "../lib/utils";
 
@@ -329,6 +329,42 @@ superRouter.get("/leads", async (c) => {
   if (status && !["new","contacted","negotiating","closed"].includes(status))
     return err(c, "Status inválido", 422);
   return json(c, { leads: await listSalesLeads(c.env.DB, status, query) });
+});
+
+superRouter.get("/leads/privacy", async (c) =>
+  json(c, { retention_days: await getSalesRetentionDays(c.env.DB) })
+);
+
+superRouter.put("/leads/privacy", async (c) => {
+  const parsed = salesRetentionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return err(c, "Escolha um prazo de retenção permitido.", 422);
+  const previous = await getSalesRetentionDays(c.env.DB);
+  await setSalesRetentionDays(c.env.DB, parsed.data.days);
+  await audit(c.env.DB, c.get("user"), "sales_leads.retention", "platform_settings", "sales_leads_retention_days",
+    { from_days: previous, to_days: parsed.data.days }, { companyId: null, scope: "platform" });
+  return json(c, { ok: true, retention_days: parsed.data.days });
+});
+
+/** Exclusão expressa de dados comerciais solicitada pelo titular ou operador. */
+superRouter.delete("/leads/:id", async (c) => {
+  const id = idParam(c);
+  if (!Number.isSafeInteger(id) || id <= 0) return err(c, "Solicitação inválida.", 422);
+  const payload = z.object({ reason: z.enum(["privacy_request","duplicate","no_longer_needed"]) })
+    .strict().safeParse(await c.req.json().catch(() => null));
+  if (!payload.success) return err(c, "Justificativa de exclusão inválida.", 422);
+  if (!await deleteSalesLead(c.env.DB, id)) return err(c, "Solicitação não encontrada.", 404);
+  await audit(c.env.DB, c.get("user"), "sales_lead.delete", "sales_lead", id,
+    { reason: payload.data.reason }, { companyId: null, scope: "platform" });
+  return json(c, { ok: true });
+});
+
+/** Ação manual, limitada a 200 contatos por execução; cron faz limpeza diária. */
+superRouter.post("/leads/privacy/cleanup", async (c) => {
+  const removed = await purgeExpiredSalesLeads(c.env.DB);
+  const fingerprints = await purgeOldSalesRateLimits(c.env.DB);
+  await audit(c.env.DB, c.get("user"), "sales_leads.cleanup", "sales_leads", "",
+    { removed, old_fingerprints: fingerprints }, { companyId: null, scope: "platform" });
+  return json(c, { ok: true, removed, old_fingerprints: fingerprints });
 });
 
 superRouter.patch("/leads/:id", async (c) => {
