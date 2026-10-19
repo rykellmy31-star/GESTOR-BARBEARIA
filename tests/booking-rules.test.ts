@@ -5,7 +5,7 @@
 // barbearia e ISOLAMENTO multi-tenant (RBAC no servidor).
 // ============================================================================
 /// <reference types="@cloudflare/vitest-pool-workers" />
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import type { Env } from "../api/types";
 
@@ -19,6 +19,7 @@ import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
 import { ingestWhatsappWebhook, scheduleBookingMessage, cancelPendingJobs } from "../api/lib/messaging/jobs";
 import { loadCompanySettings } from "../api/lib/settings";
+import { reconcilePendingTopups } from "../api/lib/topup";
 import { manualAdjustment, creditTopup, reserveForJob, releaseJobReservation, captureJobCharge, refundJobCharge, getWallet } from "../api/lib/wallet";
 
 const db = env.DB as unknown as D1Database;
@@ -399,5 +400,54 @@ describe("lembrete de 1 hora, remarcação e proteção da identidade Meta", () 
     expect((await getWallet(db, companyId))!.reserved_cents).toBe(baseline);
     expect((await db.prepare("SELECT status FROM message_jobs WHERE id=?1")
       .bind(jobs.results[1].id).first<{ status: string }>())!.status).toBe("cancelled");
+  });
+});
+
+describe("Pix: recuperar confirmação sem webhook", () => {
+  it("reconsulta Mercado Pago e credita uma única vez, inclusive pedido expirado; rejeita valor divergente", async () => {
+    const companyId = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
+      .first<{ id: number }>())!.id;
+    const before = (await getWallet(db, companyId))!.balance_cents;
+    const stamp = String(Date.now());
+    const when = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    const pending = { id: `MP-P-${stamp}`, code: `P-${stamp}`, cents: 2500, status: "pending" };
+    const expired = { id: `MP-E-${stamp}`, code: `E-${stamp}`, cents: 1000, status: "expired" };
+    const bad = { id: `MP-X-${stamp}`, code: `X-${stamp}`, cents: 6000, status: "pending" };
+    for (const row of [pending, expired, bad]) {
+      await db.prepare(
+        `INSERT INTO topup_orders
+         (company_id,code,amount_cents,status,provider,provider_payment_id,created_at,updated_at)
+         VALUES (?1,?2,?3,?4,'mercadopago',?5,?6,?6)`
+      ).bind(companyId, row.code, row.cents, row.status, row.id, when).run();
+    }
+    const paymentRows = [pending, expired, bad];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      const payment = paymentRows.find(r => url.endsWith(`/v1/payments/${r.id}`));
+      if (!payment) throw Error("Não deveria consultar outro endpoint");
+      const payload = {
+        id: payment.id, status: "approved", currency_id: "BRL",
+        payment_method_id: "pix", external_reference: payment.code,
+        transaction_amount: (payment.cents + (payment === bad ? 100 : 0)) / 100
+      };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const paymentEnv = { ...env, DB: db, MP_ACCESS_TOKEN: "testing-only", APP_ENV: "development" } as Env;
+    try {
+      const first = await reconcilePendingTopups(paymentEnv, 20);
+      expect(first.credited).toBe(2);
+      expect(first.errors).toBe(1);
+      expect((await getWallet(db, companyId))!.balance_cents).toBe(before + 3500);
+      const second = await reconcilePendingTopups(paymentEnv, 20);
+      expect(second.credited).toBe(0);
+      expect((await getWallet(db, companyId))!.balance_cents).toBe(before + 3500);
+      const uncredited = await db.prepare("SELECT status,credited_at FROM topup_orders WHERE code=?1")
+        .bind(bad.code).first<{ status: string; credited_at: string | null }>();
+      expect(uncredited?.status).toBe("pending");
+      expect(uncredited?.credited_at).toBeNull();
+      expect(fetchSpy).toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });
