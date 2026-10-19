@@ -717,12 +717,12 @@ const connectSchema = z.object({
   coexistence: z.enum(["unknown", "enabled", "not_eligible"]).default("unknown"),
 });
 adminRouter.post("/whatsapp/connect", async (c) => {
-  if (c.env.TIGU_STAGING === "1") return err(c, "Conexão com WhatsApp real indisponível na homologação. Use apenas o provedor de demonstração.", 403);
   const parsed = connectSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
   const db = P(c); const id = cid(c);
   const companyDemo = (await db.prepare(`SELECT demo FROM companies WHERE id=?1`).bind(id).first<{ demo: number }>())?.demo === 1;
   const d = parsed.data;
+  if (c.env.TIGU_STAGING === "1" && d.provider !== "mock") return err(c, "Somente o WhatsApp de demonstração está permitido na homologação.", 403);
   if (d.provider === "mock") {
     if (!mockAllowed({ env: { WHATSAPP_MOCK: c.env.WHATSAPP_MOCK } as Env, demo: companyDemo })) return err(c, "Provedor mock indisponível neste ambiente.", 403);
     await db.prepare(
