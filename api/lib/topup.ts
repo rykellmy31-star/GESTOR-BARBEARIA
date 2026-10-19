@@ -136,12 +136,17 @@ export async function reconcilePendingTopups(
      WHERE provider='mercadopago' AND status IN ('pending','expired')
        AND provider_payment_id IS NOT NULL AND provider_payment_id <> ''
        AND created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-48 hours')
-     ORDER BY created_at DESC LIMIT ?1`
+     ORDER BY updated_at ASC, id ASC LIMIT ?1`
   ).bind(batchSize).all<{ provider_payment_id: string }>();
   const out = { checked: 0, credited: 0, errors: 0 };
   for (const row of results) {
     out.checked++;
     try {
+      // Rotaciona os pedidos em espera entre execuções, evitando que o mesmo
+      // lote de Pix pendentes bloqueie a conferência das demais barbearias.
+      await db.prepare(`UPDATE topup_orders SET updated_at=?1 WHERE provider='mercadopago'
+        AND provider_payment_id=?2 AND status IN ('pending','expired')`)
+        .bind(nowIso(), row.provider_payment_id).run();
       const res = await confirmTopupFromProvider(env, row.provider_payment_id, "poll");
       if (res.credited) out.credited++;
       else if (!res.ok) out.errors++;
