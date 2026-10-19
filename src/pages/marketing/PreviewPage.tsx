@@ -229,6 +229,16 @@ function PreviewSection({ view, onNavigate }: { view: View; onNavigate: (v: View
         <Metric label="Em negociação" value="2" caption="Sem cobrança ou ativação" icon={MessageCircle} />
         <Metric label="Atendimentos encerrados" value="3" caption="Simulação do funil comercial" icon={CheckCircle2} />
       </div>
+      <Panel title="Privacidade dos contatos" aside={<Tag tone="gold">Simulação visual</Tag>}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-zinc-100">Prazo de retenção: 180 dias</p>
+            <p className="mt-1 text-xs text-zinc-400">O Superadmin poderá escolher 30, 90, 180 ou 365 dias e excluir contatos quando necessário.</p>
+          </div>
+          <span className="rounded-xl border border-[#39323a] px-4 py-2 text-xs text-zinc-400">Contatos fictícios — nenhum dado é excluído aqui</span>
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">Esta seção ilustra os controles de privacidade. No sistema funcional, alterações e exclusões exigem autenticação de Superadmin.</p>
+      </Panel>
       <Panel title="Interessados nos planos" aside={<Tag tone="gold">Exemplo, sem clientes reais</Tag>}>
         <div className="space-y-3">
           {[
