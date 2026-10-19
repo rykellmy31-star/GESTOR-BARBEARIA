@@ -1573,4 +1573,90 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
     }finally{fetchMock.mockRestore();}
   });
 
+
+  it("Pix vencido só pode ser reemitido após confirmação terminal do Mercado Pago",async()=>{
+    const o=await newOwner(),e=billingEnv(),url="/api/c/"+o.slug+"/billing";
+    let created=0,statusCalls=0;
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(input,init)=>{
+      if(String(input).endsWith("/v1/payments") && init?.method==="POST"){
+        created++;
+        return new Response(JSON.stringify({id:490000+created,
+          point_of_interaction:{transaction_data:{qr_code:"PIX-TESTE-"+created}}}),{status:201});
+      }
+      if(String(input).endsWith("/v1/payments/490001")){
+        statusCalls++;
+        return new Response(JSON.stringify({id:490001,status:"cancelled"}),{status:200});
+      }
+      throw new Error("Rede não prevista");
+    });
+    try {
+      const one=await request(e,url+"/pix",o.cookie,"POST",{plan_code:"free"});
+      expect(one.status).toBe(200);
+      const first:any=(await one.json() as any).invoice;
+      await db.prepare("UPDATE subscription_invoices SET expires_at=?1 WHERE id=?2")
+        .bind(new Date(Date.now()-60_000).toISOString(),first.id).run();
+      const two=await request(e,url+"/pix",o.cookie,"POST",{plan_code:"pro"});
+      expect(two.status).toBe(200);
+      const second:any=(await two.json() as any).invoice;
+      expect(second.id).not.toBe(first.id);
+      expect(second.plan_code).toBe("pro");
+      expect(second.amount_cents).toBe(4990);
+      expect(statusCalls).toBe(1);
+      expect(created).toBe(2);
+      const firstStatus=await db.prepare("SELECT status FROM subscription_invoices WHERE id=?1")
+        .bind(first.id).first<{status:string}>();
+      expect(firstStatus?.status).toBe("failed");
+      const sub=await db.prepare("SELECT plan_code,status FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(o.slug).first<any>();
+      expect(sub).toMatchObject({plan_code:"free",status:"trial"});
+    }finally{fetchMock.mockRestore();}
+  });
+
+  it("Pix vencido que foi pago é confirmado, sem gerar uma segunda cobrança",async()=>{
+    const o=await newOwner(),e=billingEnv(),url="/api/c/"+o.slug+"/billing";
+    let code="",calls=0;
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(input,init)=>{
+      if(String(input).endsWith("/v1/payments") && init?.method==="POST"){
+        calls++;code=JSON.parse(String(init.body)).external_reference;
+        return new Response(JSON.stringify({id:490111,
+          point_of_interaction:{transaction_data:{qr_code:"PIX-PAGO"}}}),{status:201});
+      }
+      return new Response(JSON.stringify({id:490111,status:"approved",transaction_amount:19.99,
+        external_reference:code,currency_id:"BRL",payment_method_id:"pix"}),{status:200});
+    });
+    try{
+      const one=await request(e,url+"/pix",o.cookie,"POST",{plan_code:"free"});
+      expect(one.status).toBe(200);
+      const invoice:any=(await one.json() as any).invoice;
+      await db.prepare("UPDATE subscription_invoices SET expires_at=?1 WHERE id=?2")
+        .bind(new Date(Date.now()-60_000).toISOString(),invoice.id).run();
+      const renewed=await request(e,url+"/pix",o.cookie,"POST",{plan_code:"free"});
+      expect(renewed.status).toBe(409);
+      expect(calls).toBe(1);
+      const row=await db.prepare("SELECT status FROM subscription_invoices WHERE id=?1")
+        .bind(invoice.id).first<{status:string}>();
+      expect(row?.status).toBe("paid");
+      const sub=await db.prepare("SELECT status FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(o.slug).first<{status:string}>();
+      expect(sub?.status).toBe("active");
+    }finally{fetchMock.mockRestore();}
+  });
+
+  it("timeout incerto na criação do Pix não permite duplicar cobranças",async()=>{
+    const o=await newOwner(),e=billingEnv(),url="/api/c/"+o.slug+"/billing";
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("network timeout"));
+    try{
+      const first=await request(e,url+"/pix",o.cookie,"POST",{plan_code:"free"});
+      expect(first.status).toBe(503);
+      const second=await request(e,url+"/pix",o.cookie,"POST",{plan_code:"free"});
+      expect(second.status).toBe(409);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const inv=await db.prepare(
+        "SELECT status,provider_payment_id FROM subscription_invoices WHERE company_id=(SELECT id FROM companies WHERE slug=?1)"
+      ).bind(o.slug).first<any>();
+      expect(inv.status).toBe("creating");
+      expect(inv.provider_payment_id).toBeNull();
+    }finally{fetchMock.mockRestore();}
+  });
+
 });
