@@ -3,6 +3,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
 import schema from "../migrations/0001_init.sql";
 import { consumePasswordReset } from "../api/lib/password-reset";
+import { app } from "../api/index";
+import type { Env } from "../api/types";
 
 const db = env.DB as D1Database;
 const at = "2026-10-19T15:00:00Z";
@@ -54,5 +56,23 @@ describe("recuperação: consumo único no D1", () => {
     if (reason === "wrong-user") input.userId = (await fixture()).userId;
     expect(await consumePasswordReset(db,input)).toBe(false);
     expect(await state(input.userId)).toEqual({password_hash:"original",must_change_password:1,sessions:1});
+  });
+});
+
+describe("recuperação: validação antes de consultar D1", () => {
+  it.each([null, [], {email:123}, {email:{}}, {}])("recusa corpo inválido %j sem erro interno", async body => {
+    for (const path of ["/api/auth/recover","/api/auth/recover/verify"]) {
+      const response = await app.request(path, {
+        method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),
+      }, {...env,APP_ENV:"development"} as Env);
+      expect(response.status).toBe(422);
+    }
+  });
+  it("recusa senha acima do limite antes de gerar hash", async () => {
+    const response = await app.request("/api/auth/recover/verify", {
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({email:"valid@tigu.test",code:"ABCD123456",password:"x".repeat(129)}),
+    }, {...env,APP_ENV:"development"} as Env);
+    expect(response.status).toBe(422);
   });
 });

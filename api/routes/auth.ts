@@ -158,7 +158,7 @@ async function myCompanies(db: D1Database, userId: number) {
   return results;
 }
 
-const changePwSchema = z.object({ current: z.string().min(6), next: z.string().min(10).max(128) });
+const changePwSchema = z.object({ current: z.string().min(6).max(128), next: z.string().min(10).max(128) });
 authRouter.post("/password", requireAuth, async (c) => {
   const parsed = changePwSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Senha atual incorreta ou nova senha muito curta (mín. 10)", 422);
@@ -192,8 +192,10 @@ authRouter.post("/recover", async (c) => {
       message: "Para recuperar o acesso, solicite atendimento ao suporte Tigu. Nossa equipe verificará sua identidade antes de redefinir a senha.",
     });
   }
-  const body = (await c.req.json().catch(() => ({}))) as { email?: string };
-  const email = (body.email || "").trim().toLowerCase();
+  const parsed = z.object({ email: z.string().trim().email().max(254) })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return err(c, "Informe um e-mail válido", 422);
+  const email = parsed.data.email.toLowerCase();
   const db = c.env.DB;
   const u = email ? await db.prepare(`SELECT id, demo FROM users WHERE email = ?1 AND active = 1`).bind(email).first<{ id: number; demo: number }>() : null;
   const generic = { ok: true, message: "Se o e-mail tiver conta, um código de recuperação foi gerado." };
