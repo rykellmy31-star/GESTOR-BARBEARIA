@@ -38,7 +38,7 @@ function EditablePlan({ plan, saved }: { plan: Plan; saved: () => void }) {
           <input className="input-dark mt-1.5 w-full" maxLength={60} minLength={4} required value={draft.name} onChange={e=>update("name",e.target.value)} />
         </label>
         <label className="block text-xs text-zinc-300">Mensalidade (em centavos)
-          <input className="input-dark mt-1.5 w-full" type="number" min={0} max={1000000} required disabled={plan.code==="free"}
+          <input className="input-dark mt-1.5 w-full" type="number" min={0} max={1000000} required
             value={draft.price_cents_month} onChange={e=>update("price_cents_month",Number(e.target.value))} />
         </label>
         <div className="grid grid-cols-2 gap-3">
@@ -57,7 +57,7 @@ function EditablePlan({ plan, saved }: { plan: Plan; saved: () => void }) {
         <label className="flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={draft.store_enabled}
           onChange={e=>update("store_enabled",e.target.checked)} className="accent-[#d4af37]" /> Habilitar loja</label>
       </div>
-      <button type="submit" disabled={save.isPending || (plan.code==="free" && draft.price_cents_month!==0)}
+      <button type="submit" disabled={save.isPending || (plan.code==="free" && draft.price_cents_month < 1)}
         className="btn-gold mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50">
         <Save size={14} /> {save.isPending ? "Salvando…" : "Salvar plano"}
       </button>
@@ -74,7 +74,7 @@ export function SalesPlansSettings() {
         <h2 className="font-display text-xl text-zinc-100">Planos e valores da página de vendas</h2>
         <p className="mt-2 max-w-3xl text-xs leading-relaxed text-zinc-400">
           Configure preços e limites dos planos. O site funcional lê os valores do banco D1.
-          Isso <strong>não cobra mensalidades automaticamente</strong>: ativação e pagamento recorrente continuam pendentes de integração.
+          O Start custa R$ 19,99/mês por padrão depois de um teste grátis de 15 dias. Você também pode editar sua mensalidade. Isso <strong>não cobra mensalidades automaticamente</strong>: ativação e pagamento recorrente continuam pendentes de integração.
         </p>
       </div>
       {q.isLoading ? <p className="text-sm text-zinc-400">Carregando planos…</p> :
