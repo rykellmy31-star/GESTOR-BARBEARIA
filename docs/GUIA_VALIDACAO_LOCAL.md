@@ -17,6 +17,7 @@ npm run test:local-e2e
 - criação de profissional e serviço, disponibilidade, reserva, remarcação e cancelamento;
 - criação de produto, pedido, reserva de estoque e devolução no cancelamento;
 - login do Superadmin, cadastro assistido e proteção da última conta administrativa;
+- cadastro de equipe, troca obrigatória de senha, remoção, reativação e reset de acesso;
 - indisponibilidade de Pix real durante todo o teste;
 - upload de foto pelo R2 local, recusa de formato falso, proteção de cache da API e política de referrer da página.
 

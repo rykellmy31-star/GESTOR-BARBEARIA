@@ -127,7 +127,7 @@ Trabalhar exclusivamente em `audit/tigu-primeira-validacao`, reportar ao proprie
 - [x] Apenas a mutação vencedora altera slots, versão e notificações do atendimento.
 - [x] Snapshot antigo de mensagem não cancela nem programa o lembrete de uma versão mais recente.
 - [x] Claim de envio revalida empresa, assinatura, plano, cota e versão; operações perdedoras preservam os créditos do envio assumido.
-- [x] Validação HTTP reproduzível em Worker/D1/R2 locais: 28 verificações, incluindo upload protegido, privacidade HTTP, vencimento do teste grátis e cancelamento público preservado.
+- [x] Validação HTTP reproduzível em Worker/D1/R2 locais: 34 verificações, incluindo equipe, upload protegido, privacidade HTTP, vencimento do teste grátis e cancelamento público preservado.
 - [x] Migrações 0001–0010 aplicadas em banco local novo e isolado.
 - [ ] Aplicar migrações 0009 e 0010 no banco remoto autorizado; não implantadas nesta rodada.
 - [ ] Conferir a interface em navegador funcional; download e instalação de navegador bloqueados no ambiente atual.
@@ -147,3 +147,15 @@ Trabalhar exclusivamente em `audit/tigu-primeira-validacao`, reportar ao proprie
 - [x] Respostas da API com no-store, nosniff e no-referrer, incluindo rejeições e erros.
 - [x] HTML compilado impede envio de referrer; erros de produção não retornam instruções de desenvolvimento.
 - [ ] Conferência visual das imagens em navegador e homologação HTTPS continuam pendentes; validação da assinatura não equivale a decodificação completa de imagem.
+
+## Rodada de cadastro e manutenção de equipe
+
+- [x] Conta, vínculo e aviso de boas-vindas da equipe gravados em transação única; falhas não ocupam e-mail com conta órfã.
+- [x] Cadastros concorrentes do mesmo e-mail não substituem acesso existente nem repetem aviso.
+- [x] Criação de acesso exige profissional ativo da empresa, conferido também no commit.
+- [x] Reset de equipe revalida papel global, vínculos em outras empresas e hash da senha na transação.
+- [x] Remoção não sobrescreve promoção concorrente para dono; operação obsoleta preserva sessões e códigos.
+- [x] Reativação aplicada no servidor e disponível no painel; exige conta global e profissional válidos.
+- [x] Erro ao carregar equipe permite tentar novamente; seleção mostra profissionais ativos e formulário apaga a senha provisória após cadastro.
+- [x] Fluxo de equipe exercitado via HTTP local, incluindo troca obrigatória, remoção, reativação e reset.
+- [ ] Conferência visual do botão de reativação em navegador de homologação continua pendente.
