@@ -74,12 +74,12 @@ export function SalesPlansSection() {
                   <ShieldCheck size={14} className="mt-0.5 shrink-0 text-[var(--c-gold)]" /> {b}
                 </li>)}
               </ul>
-              <Link to="/comecar" className={`${featured ? "btn-gold" : "border border-[#35313b] text-zinc-200 hover:border-[var(--c-gold)]"} mt-6 flex w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold`}>
-                {plan.code === "free" ? "Criar conta grátis" : "Começar grátis e consultar upgrade"}
+              <Link to={plan.code === "free" ? "/comecar" : `/contratar?plano=${plan.code}`} className={`${featured ? "btn-gold" : "border border-[#35313b] text-zinc-200 hover:border-[var(--c-gold)]"} mt-6 flex w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold`}>
+                {plan.code === "free" ? "Criar conta grátis" : "Solicitar atendimento comercial"}
               </Link>
               {plan.code !== "free" && (
                 <p className="mt-2 text-center text-[11px] leading-relaxed text-zinc-500">
-                  Planos pagos são ativados pela equipe Tigu. O cadastro inicial não contrata nem cobra este plano.
+                  Envie uma solicitação à equipe Tigu. Isso não gera assinatura nem cobrança.
                 </p>
               )}
             </article>
