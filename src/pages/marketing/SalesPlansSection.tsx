@@ -84,7 +84,7 @@ export function SalesPlansSection() {
                 {isStart ? "Começar meus 15 dias grátis" : "Solicitar atendimento comercial"}
               </Link>
               {isStart ? (
-                <p className="mt-2 text-center text-[11px] leading-relaxed text-zinc-500">Sem pagamento agora. Após 15 dias: {formatPrice(plan.price_cents_month)}/mês, mediante ativação do suporte. Sem cobrança automática.</p>
+                <p className="mt-2 text-center text-[11px] leading-relaxed text-zinc-500">Sem pagamento agora. Após 15 dias: {formatPrice(plan.price_cents_month)}/mês, com pagamento via Pix pelo painel. Sem débito automático.</p>
               ) : (
                 <p className="mt-2 text-center text-[11px] leading-relaxed text-zinc-500">
                   Envie uma solicitação à equipe Tigu. Isso não gera assinatura nem cobrança.
