@@ -1,7 +1,14 @@
 name: Tigu - verificacao de codigo
 
-# Sem eventos automáticos: toda execução remota exige acionamento manual.
+# Validacao gratuita somente em desenvolvimento, PRs para main e disparo manual.
+# Nao executa deploy, migrations remotas ou tokens de provedores.
 on:
+  push:
+    branches:
+      - audit/tigu-primeira-validacao
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
