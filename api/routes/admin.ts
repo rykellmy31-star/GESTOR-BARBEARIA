@@ -26,6 +26,7 @@ import { createTopup, confirmTopupFromProvider, getTopupLimits } from "../lib/to
 import { getConnection, sendImmediate, resolvePricing, processDueJobs } from "../lib/messaging/jobs";
 import { resolveProvider, exchangeEmbeddedSignupCode, mockAllowed } from "../lib/messaging/provider";
 import { pickPaymentProvider } from "../lib/payments";
+import { merchantStatus, configureMerchant, disconnectMerchant } from "../lib/merchant-payments";
 import { todayLocal, addDays, formatDayPtBr } from "../lib/time";
 
 export const adminRouter = new Hono<{ Bindings: Env }>();
@@ -803,6 +804,32 @@ adminRouter.put("/settings", async (c) => {
   await saveCompanySettings(db, id, parsed.data);
   await audit(db, c.get("user"), "settings.update", "company_settings", id, {}, { companyId: id });
   return json(c, { ok: true });
+});
+
+// As credenciais de recebimento pertencem EXCLUSIVAMENTE ao proprietário do tenant.
+// Nunca misturar com /billing (mensalidade) ou /wallet (recarga da plataforma).
+adminRouter.get("/payments/mercadopago", async c => {
+ if(c.get("user").company?.role!=="owner")return err(c,"Somente o proprietário pode gerenciar a conta recebedora.",403);
+ return json(c,{integration:await merchantStatus(c.env,cid(c))});
+});
+adminRouter.put("/payments/mercadopago",async c=>{
+ if(c.get("user").company?.role!=="owner")return err(c,"Apenas o dono da barbearia pode alterar os recebimentos.",403);
+ const parsed=z.object({access_token:z.string().min(25).max(500),
+  webhook_secret:z.string().min(16).max(500)}).safeParse(await c.req.json().catch(()=>null));
+ if(!parsed.success)return err(c,"Informe suas credenciais Mercado Pago.",422);
+ const result=await configureMerchant(c.env,cid(c),parsed.data.access_token,parsed.data.webhook_secret);
+ if(!result.ok)return err(c,result.message,result.status);
+ await audit(c.env.DB,c.get("user"),"merchant.payment.connect","company_payment_integrations",cid(c),
+  {account_id:result.account_id},{companyId:cid(c)});
+ return json(c,{ok:true,integration:await merchantStatus(c.env,cid(c))});
+});
+adminRouter.delete("/payments/mercadopago",async c=>{
+ if(c.get("user").company?.role!=="owner")return err(c,"Apenas o dono da barbearia pode desconectar o recebimento.",403);
+ const result=await disconnectMerchant(c.env,cid(c));
+ if(!result.ok)return err(c,result.message,result.status);
+ await audit(c.env.DB,c.get("user"),"merchant.payment.disconnect","company_payment_integrations",cid(c),
+  {},{companyId:cid(c)});
+ return json(c,{ok:true});
 });
 
 // ── sino de notificações ─────────────────────────────────────────────────────
