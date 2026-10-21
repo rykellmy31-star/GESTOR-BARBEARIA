@@ -6,6 +6,7 @@ import schema from "../migrations/0001_init.sql";
 import { createBooking, type BookingMutationCtx } from "../api/lib/booking";
 import { DEFAULT_SETTINGS } from "../api/lib/settings";
 import { localToUtc } from "../api/lib/time";
+import { bookingPixEnabled } from "../api/lib/booking-payments";
 import type { Env } from "../api/types";
 
 const db = env.DB as D1Database;
@@ -51,5 +52,32 @@ describe("idempotência de agendamento entre empresas", () => {
     expect(await db.prepare("SELECT count(*) AS n FROM customers WHERE company_id=?1").bind(b.ctx.companyId).first("n")).toBe(0);
     const repeat = await createBooking(a.ctx,{...input,barberId:a.barberId,serviceId:a.serviceId});
     expect(repeat).toMatchObject({ok:true,reused:true,bookingId:first.bookingId,cancelToken:first.cancelToken});
+  });
+});
+
+describe("checkout do serviço", () => {
+  it("o preço é registrado a partir do D1 e não do cliente", async () => {
+    const a=await company();
+    const day=new Date(Date.now()+5*86400000).toISOString().slice(0,10);
+    const booking=await createBooking(a.ctx,{
+      startsAt:localToUtc("America/Bahia",day,10*60).toISOString().replace(/\.\d{3}Z$/,"Z"),
+      serviceId:a.serviceId,barberId:a.barberId,
+      name:"Cliente Checkout Fictício",phone:"5573999991234",consent:true,whatsappOptin:false,
+      idempotencyKey:crypto.randomUUID(),paymentChoice:"pix"
+    });
+    expect(booking.ok).toBe(true);
+    if(!booking.ok)throw new Error(booking.message);
+    const stored=await db.prepare("SELECT price_cents,payment_choice FROM bookings WHERE id=?1 AND company_id=?2")
+      .bind(booking.bookingId,a.ctx.companyId).first<{price_cents:number;payment_choice:string}>();
+    expect(stored).toMatchObject({price_cents:1999,payment_choice:"pix"});
+  });
+  it("a flag financeira é fechada por padrão e staging nunca permite cobrança", () => {
+    const configured={APP_ENV:"production",BOOKING_PIX_ENABLED:"1",MP_ACCESS_TOKEN:"token",
+      MP_WEBHOOK_SECRET:"segredo",PUBLIC_URL:"https://tigu.example/"} as Env;
+    expect(bookingPixEnabled({...configured,BOOKING_PIX_ENABLED:"0"})).toBe(false);
+    expect(bookingPixEnabled({...configured,TIGU_STAGING:"1"})).toBe(false);
+    expect(bookingPixEnabled({...configured,PAYMENTS_MOCK:"1"})).toBe(false);
+    expect(bookingPixEnabled({...configured,MP_WEBHOOK_SECRET:undefined})).toBe(false);
+    expect(bookingPixEnabled(configured)).toBe(true);
   });
 });
