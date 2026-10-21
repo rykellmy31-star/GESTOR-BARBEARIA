@@ -105,3 +105,16 @@ test("Pix real não pode ser cancelado apenas no banco local",()=>{
   assert.match(topup,/t\.status === "cancelled" && t\.provider === "mercadopago"/);
   assert.match(ui,/checkout\.provider === "mock"/);
 });
+
+
+test("CI roda Chromium real local e dashboard trata indisponibilidade",()=>{
+  const ci=readFileSync(new URL("../.github/workflows/ci.yml",import.meta.url),"utf8");
+  const smoke=readFileSync(new URL("../scripts/browser-smoke.mjs",import.meta.url),"utf8");
+  const dashboard=readFileSync(new URL("../src/pages/admin/DashboardPage.tsx",import.meta.url),"utf8");
+  assert.match(ci,/node scripts\/browser-smoke\.mjs/);
+  assert.match(smoke,/TIGU_STAGING: "1"/);
+  assert.match(smoke,/--headless=new/);
+  assert.match(smoke,/Page\.navigate/);
+  assert.match(smoke,/Runtime\.evaluate/);
+  assert.match(dashboard,/q\.isError \|\| !q\.data/);
+});

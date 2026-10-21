@@ -20,6 +20,12 @@ export function DashboardPage() {
   }, [days, tz]);
   const q = useQuery({ queryKey: ["dashboard", siteBase(), from, to], queryFn: () => api.get<any>(`/admin/dashboard?from=${from}&to=${to}`) });
   if (q.isLoading) return <Spinner label="Carregando indicadores…" />;
+  if (q.isError || !q.data) return (
+    <div role="alert" className="rounded-xl border border-amber-500/40 bg-panel p-5 text-sm text-amber-200">
+      Não foi possível carregar o dashboard. Nenhum dado foi alterado.
+      <button className="ml-2 underline" onClick={() => void q.refetch()}>Tentar novamente</button>
+    </div>
+  );
   const d = q.data;
   const k = d.kpis;
 

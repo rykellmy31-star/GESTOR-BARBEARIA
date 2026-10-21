@@ -34,6 +34,8 @@ jobs:
         run: npm run validate
       - name: Homologar fluxos HTTP completos com Worker, D1 e R2 locais
         run: node scripts/local-e2e.mjs
+      - name: Testar jornada real no navegador Chromium local
+        run: node scripts/browser-smoke.mjs
       # Executa somente depois da suite local, em push da branch autorizada,
       # quando o operador definir uma URL do Worker de testes nas Variables.
       # Script faz apenas GET, recusa dominios fora de tigu-staging.*.workers.dev.
