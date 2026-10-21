@@ -108,6 +108,20 @@ describe("LGPD: anonimização de dados operacionais por empresa",()=>{
         .toEqual({anonymized_at:null,phone:f.phone});
     }
   });
+  it("limita auditoria administrativa mesmo com parametro negativo ou invalido",async()=>{
+    const f=await fixture();
+    for(let i=0;i<5;i++)await db.prepare(`INSERT INTO audit_log(company_id,action,entity) VALUES (?1,'teste','cliente')`)
+      .bind(f.companyId).run();
+    const get=async limit=>app.request(`/api/c/${f.companySlug}/admin/audit?limit=${limit}`,{
+      headers:{cookie:f.cookie},
+    },e,ctx);
+    const small=await get("-1");
+    expect(small.status).toBe(200);
+    expect(((await small.json()) as {log:unknown[]}).log).toHaveLength(1);
+    const invalid=await get("NaN");
+    expect(invalid.status).toBe(200);
+    expect(((await invalid.json()) as {log:unknown[]}).log).toHaveLength(5);
+  });
   it("impede que o administrador de outra empresa anonimize o titular",async()=>{
     const a=await fixture(),b=await fixture();
     const foreign=await app.request(`/api/c/${a.companySlug}/admin/customers/${a.customerId}/anonymize`,{
