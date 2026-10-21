@@ -21,4 +21,6 @@ test("Actions: permissao de leitura e validacao sem deploy ou migracoes remotas"
   assert.match(content, /run: npm ci/);
   assert.match(content, /run: npm run validate/);
   assert.doesNotMatch(content, /run:\s*[^\n]*(?:wrangler deploy|--remote|staging:deploy|npm run deploy)/i);
+  assert.match(content, /run: node scripts\/local-e2e\.mjs/);
+
 });
