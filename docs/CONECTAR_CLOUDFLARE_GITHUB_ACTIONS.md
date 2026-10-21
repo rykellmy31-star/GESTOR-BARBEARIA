@@ -41,3 +41,7 @@ O GitHub Actions da branch de auditoria executa o diagnóstico no evento `push`,
 ## Diagnóstico solicitado após configurar credenciais
 
 Quando o operador informar que finalizou a variável `CLOUDFLARE_ACCOUNT_ID` e o Secret `CLOUDFLARE_AUDIT_TOKEN`, o próximo commit nesta branch executará novamente o CI. Só considerar a Cloudflare conectada se o passo **Diagnosticar acesso Cloudflare por token (se configurado)** tiver conclusão `success` e logs confirmarem a autenticação e permissões de leitura. `skipped` significa que o evento ou a branch não atenderam ao gatilho; `failure` indica credencial ausente/inválida, permissão insuficiente ou resposta remota inadequada e exige análise sem divulgar segredos.
+
+## Reteste autorizado após correção do Account ID — 21/10/2026
+
+O proprietário informou que ajustou `CLOUDFLARE_ACCOUNT_ID` no GitHub do TIGU. Este commit dispara novamente o workflow de `push` na branch de auditoria, para confirmar que a etapa `Diagnosticar acesso Cloudflare por token (se configurado)` lê o ID atualizado e realiza exclusivamente consultas GET. O status real deverá ser conferido no log do run correspondente; nenhuma publicação ou modificação Cloudflare faz parte desse teste.
