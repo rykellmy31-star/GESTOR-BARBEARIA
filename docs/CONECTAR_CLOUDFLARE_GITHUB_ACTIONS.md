@@ -95,3 +95,7 @@ A branch de auditoria contém `scripts/staging-d1-export-verify.mjs`, que consul
 A execução remota por GitHub Actions exige um `push` na branch `audit/tigu-primeira-validacao` cujo commit tenha mensagem exatamente `TIGU_VERIFY_D1_EXPORT_ONCE`. Não executa em PR ou commits comuns, não lê outros bancos, não faz importação no D1 da Cloudflare e não salva artifact. A execução deve ser comprovada nos logs de Actions antes de considerá-la aprovada.
 
 **Limites:** recriar o export da Cloudflare num SQLite temporário é uma evidência mais forte que o teste de migração local, mas **não comprova restauração num D1 remoto separado**, não cobre R2 nem estabelece RPO/RTO ou cópia externa de longo prazo. Mantém a verificação integral de backups como etapa pendente.
+
+## Disparo único da exportação real D1 de staging
+
+Aprovada a validação do script no CI do PR, o proprietário autorizou prosseguir com os testes de homologação e backup. Este commit habilita somente a exportação SQL do D1 `tigu-staging-db` para arquivo efêmero de GitHub Actions, com importação local para conferência. Nenhum SQL será enviado ao chat, artifact ou repositório. O resultado remoto precisa ser conferido nos logs; R2 e restore dentro da Cloudflare continuam independentes.
