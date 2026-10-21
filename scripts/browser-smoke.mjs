@@ -368,6 +368,13 @@ try{
     'const d=await r.json();return d.companies.find(x=>x.slug==='+JSON.stringify(newSlug)+')||null;})');
   assert.ok(newlyCreated?.id,"Cadastro Superadmin deve persistir empresa no D1");
   await go(base+"/superadmin/companies/"+newlyCreated.id);
+  const detailResponse=await js('fetch("/api/super/companies/'+newlyCreated.id+'")'+
+    '.then(async r=>({status:r.status,body:(await r.text()).slice(0,900)}))');
+  assert.equal(detailResponse.status,200,
+    "API de detalhes de barbearia deve funcionar: "+JSON.stringify(detailResponse));
+  await pause(500);
+  const detailScreen=await js('document.querySelector("main")?.innerText.slice(0,1400)');
+  console.log("Diagnóstico local de empresa Superadmin:",JSON.stringify({id:newlyCreated.id,detailScreen}));
   await until("detalhe da nova barbearia",'document.body.innerText.includes("Nova Barbearia Chromium")'+
     '&&document.body.innerText.includes("Ajuste manual de créditos")');
   pass("Superadmin abre detalhes e configurações de barbearia");
