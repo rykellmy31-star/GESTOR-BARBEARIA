@@ -699,7 +699,7 @@ adminRouter.get("/customers", async (c) => {
       FROM orders WHERE company_id=?1 AND status IN ('pago','entregue')
       GROUP BY customer_phone
     )
-    SELECT cu.id, cu.name, cu.phone, cu.email, cu.whatsapp_optin, cu.created_at,
+    SELECT cu.id, cu.name, cu.phone, cu.email, cu.whatsapp_optin, cu.anonymized_at, cu.created_at,
       COALESCE(b.visits,0) AS visits,
       COALESCE(b.visits,0) AS bookings_count,
       COALESCE(b.completed,0) AS completed,
