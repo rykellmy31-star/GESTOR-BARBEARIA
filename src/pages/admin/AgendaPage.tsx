@@ -224,18 +224,27 @@ function BookingModal({ item: b, onClose, onChanged, tz }: any) {
 function BlockRequestsModal({ onClose, onDone }: any) {
   const toast = useToast();
   const qc = useQueryClient();
+  const [acting, setActing] = useState<number | null>(null);
   const q = useQuery({ queryKey: ["block-requests", siteBase()], queryFn: () => api.get<any>("/admin/block-requests") });
   const act = async (id: number, ok: boolean) => {
+    if (acting !== null) return;
+    setActing(id);
     try {
       const r = await api.post<any>(`/admin/block-requests/${id}/${ok ? "approve" : "reject"}`, {});
       toast.push("ok", r.message || (ok ? "Bloqueio aplicado à agenda." : "Pedido recusado."));
       qc.invalidateQueries({ queryKey: ["block-requests"] });
       onDone();
     } catch (e: any) { toast.push("err", e.message); }
+    finally { setActing(null); }
   };
   return (
     <Modal open onClose={onClose} title="Pedidos de bloqueio dos barbeiros" wide>
-      {q.isLoading ? <Spinner /> : (
+      {q.isLoading ? <Spinner /> : q.isError ? (
+        <div role="alert" className="rounded-xl border border-amber-500/40 p-4 text-sm text-amber-200">
+          Não foi possível carregar os pedidos.
+          <button className="ml-2 underline" onClick={() => void q.refetch()}>Tentar novamente</button>
+        </div>
+      ) : (
         <ul className="space-y-2">
           {(q.data?.requests ?? []).map((r: any) => (
             <li key={r.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-ink-soft px-3 py-2.5 text-sm">
@@ -244,8 +253,8 @@ function BlockRequestsModal({ onClose, onDone }: any) {
               <span className="min-w-0 flex-1 truncate text-zinc-500">{r.reason}</span>
               {r.status === "pendente" ? (
                 <span className="flex gap-1.5">
-                  <Button size="sm" onClick={() => act(r.id, true)}>Aprovar</Button>
-                  <Button size="sm" variant="danger" onClick={() => act(r.id, false)}>Recusar</Button>
+                  <Button size="sm" disabled={acting !== null} onClick={() => void act(r.id, true)}>Aprovar</Button>
+                  <Button size="sm" variant="danger" disabled={acting !== null} onClick={() => void act(r.id, false)}>Recusar</Button>
                 </span>
               ) : <Badge tone={r.status === "aprovado" ? "green" : "red"}>{r.status}</Badge>}
             </li>

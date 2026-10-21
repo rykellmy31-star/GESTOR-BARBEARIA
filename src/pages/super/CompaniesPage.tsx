@@ -38,7 +38,12 @@ export function SuperCompanies() {
     <div>
       <H title="Barbearias" sub="Cadastrar cliente, ajustar plano, semear demonstração — tudo auditado." action={<Button className="btn-gold" onClick={() => setOpen(true)}><Plus size={15} /> Nova barbearia</Button>} />
       <div className="relative mb-4 max-w-sm"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" /><Input placeholder="nome ou slug…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" /></div>
-      {list.isLoading ? <Spinner /> : (
+      {list.isLoading ? <Spinner /> : list.isError ? (
+        <div role="alert" className="rounded-xl border border-amber-500/40 p-4 text-sm text-amber-200">
+          Não foi possível carregar as barbearias.
+          <button className="ml-2 underline" onClick={() => void list.refetch()}>Tentar novamente</button>
+        </div>
+      ) : (
         <Table head={["Empresa", "Slug", "Plano", "Status", "Saldo", "Msgs mês", "Reservas", "Membros"]}>
           {(list.data ?? []).map((c: any) => (
             <Tr key={c.id} onClick={() => navigate(`${c.id}`)}>
@@ -49,7 +54,7 @@ export function SuperCompanies() {
               <Td><Money cents={c.balance_cents} /></Td>
               <Td>{c.msgs_this_month}{c.upcoming > 0 && <span className="ml-1.5 text-[10px] text-zinc-500">{c.upcoming} reservas</span>}</Td>
               <Td>{c.members}</Td>
-              <Td className="text-right"><button className="text-xs text-[var(--c-gold)] hover:underline" onClick={(e) => { e.stopPropagation(); if (confirm(`Semear dados de demonstração em ${c.name}?`)) seed.mutate(c.id); }}>{seed.isPending ? "…" : "seed demo"}</button></Td>
+              <Td className="text-right"><button disabled={seed.isPending} className="text-xs text-[var(--c-gold)] hover:underline disabled:opacity-40" onClick={(e) => { e.stopPropagation(); if (confirm(`Semear dados de demonstração em ${c.name}?`)) seed.mutate(c.id); }}>{seed.isPending ? "…" : "seed demo"}</button></Td>
             </Tr>
           ))}
         </Table>

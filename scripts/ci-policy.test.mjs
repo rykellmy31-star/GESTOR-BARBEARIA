@@ -142,3 +142,16 @@ test("Consulta pública e cancelamento exigem confirmação com bloqueio de envi
   assert.match(browser,/cliente remarca reserva para horário livre pela interface/);
   assert.match(browser,/cliente cancela reserva pela confirmação e libera horário/);
 });
+
+
+test("Bloqueios e Superadmin são exercitados no Chromium com proteção de envio",()=>{
+  const smoke=readFileSync(new URL("../scripts/browser-smoke.mjs",import.meta.url),"utf8");
+  const agenda=readFileSync(new URL("../src/pages/admin/AgendaPage.tsx",import.meta.url),"utf8");
+  const companies=readFileSync(new URL("../src/pages/super/CompaniesPage.tsx",import.meta.url),"utf8");
+  assert.match(smoke,/profissional solicita bloqueio sem alterar a agenda sozinho/);
+  assert.match(smoke,/proprietário aprova bloqueio e retira intervalo da agenda/);
+  assert.match(smoke,/Superadmin cadastra empresa e dono com teste grátis, sem cobrança/);
+  assert.match(agenda,/disabled=\{acting !== null\}/);
+  assert.match(agenda,/q\.isError/);
+  assert.match(companies,/list\.isError/);
+});

@@ -233,6 +233,24 @@ try{
   assert.ok(selectedDay,"Dia da reserva não apareceu no calendário do profissional");
   await until("reserva exibida ao profissional",'document.body.innerText.includes("Cliente Reserva Chromium")');
   pass("profissional vê seu agendamento, horário e ações na agenda");
+  await click("Pedir bloqueio");
+  await until("modal de bloqueio do funcionário",
+    'document.body.innerText.includes("Solicitar bloqueio de agenda")');
+  await js('(()=>{const input=document.querySelector("textarea");if(!input)return false;'+
+    'const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set;'+
+    'setter.call(input,"Compromisso Chromium");input.dispatchEvent(new Event("input",{bubbles:true}));'+
+    'return true})()');
+  await click("Enviar para aprovação");
+  await until("pedido fechado após envio",'!document.body.innerText.includes("Solicitar bloqueio de agenda")');
+  const requestsBefore=await api(base,"/api/c/"+slug+"/admin/block-requests","GET",undefined,signup.cookie);
+  assert.equal(requestsBefore.status,200);
+  const request=requestsBefore.data.requests.find(x=>x.reason==="Compromisso Chromium");
+  assert.ok(request&&request.status==="pendente","Bloqueio deve aguardar decisão do proprietário");
+  pass("profissional solicita bloqueio sem alterar a agenda sozinho");
+  await go(base+"/superadmin/overview");
+  await until("acesso de plataforma negado ao profissional",
+    'document.body.innerText.includes("Acesso negado")');
+  pass("profissional não acessa Superadmin");
 
 
   // Cliente gerencia pelo site o mesmo agendamento, sem ter uma sessão de funcionário.
@@ -275,7 +293,66 @@ try{
   assert.ok(afterCancel.data.bookings.some(x=>x.code===bookingCode&&x.status==="cancelado"),
     "Cancelamento deve persistir no D1");
   pass("cliente cancela reserva pela confirmação e libera horário");
-  console.log("15 verificações Chromium aprovadas: loja, agendamento, painel profissional, remarcação e cancelamento. Nenhum pagamento real.");
+  // Dono valida e aprova pedido diretamente na tela de agenda.
+  await go(base+"/login");
+  await until("login de volta ao proprietário",'document.querySelector("input[type=email]")!==null');
+  await fill("input[type=email]",email);await fill("input[type=password]",password);
+  await click("Entrar");
+  await until("dono reautenticado",'location.pathname.includes("/admin")');
+  await go(base+"/c/"+slug+"/admin/agenda");
+  await until("agenda administrativa",'document.body.innerText.includes("Pedidos")');
+  await click("Pedidos");
+  await until("pedido do profissional no modal",'document.body.innerText.includes("Compromisso Chromium")');
+  await click("Aprovar");
+  await until("solicitação aprovada no D1",'!document.body.innerText.includes("Pedidos de bloqueio dos barbeiros")');
+  const requestsAfter=await api(base,"/api/c/"+slug+"/admin/block-requests","GET",undefined,signup.cookie);
+  assert.equal(requestsAfter.status,200);
+  assert.ok(requestsAfter.data.requests.some(x=>x.id===request.id&&x.status==="aprovado"),
+    "Aprovação deve persistir com estado aprovado");
+  const blockedAgenda=await api(base,"/api/c/"+slug+"/admin/agenda?view=day&date="+bookingDay,
+    "GET",undefined,signup.cookie);
+  assert.equal(blockedAgenda.status,200);
+  assert.ok(JSON.stringify(blockedAgenda.data).includes('"bloqueio"'),"Aprovação deve criar bloqueio real");
+  pass("proprietário aprova bloqueio e retira intervalo da agenda");
+
+  // Administrador global criado somente no D1 local a partir do hash do fixture.
+  // Nunca configura nem modifica qualquer conta em ambientes remotos.
+  const superEmail="smoke-super-"+randomBytes(5).toString("hex")+"@tigu.test";
+  const sql="INSERT INTO users(name,email,password_hash,platform_role,active,must_change_password) "+
+    "SELECT 'Superadmin Chromium', '"+superEmail+"',password_hash,'superadmin',1,0 "+
+    "FROM users WHERE email='"+email+"'";
+  wrangler(["d1","execute","tigu-chromium-smoke-db","--command",sql]);
+  await go(base+"/login");
+  await until("login Superadmin",'document.querySelector("input[type=email]")!==null');
+  await fill("input[type=email]",superEmail);await fill("input[type=password]",password);
+  await click("Entrar");
+  await until("Superadmin abre visão geral",
+    'location.pathname.startsWith("/superadmin")&&document.body.innerText.includes("Barbearias ativas")');
+  pass("Superadmin autentica e consulta indicadores globais");
+  await go(base+"/superadmin/companies");
+  await until("Superadmin enxerga empresa existente",
+    'document.body.innerText.includes("Barbearia Chromium Local")');
+  await click("Nova barbearia");
+  await until("formulário de onboarding",
+    'document.body.innerText.includes("Cadastrar barbearia (onboarding assistido)")');
+  const newOwner="novo-dono-"+randomBytes(4).toString("hex")+"@tigu.test";
+  const newSlug="nova-chromium-"+randomBytes(4).toString("hex");
+  const formFilled=await js('(()=>{const data=[["Nome","Nova Barbearia Chromium"],'+
+    '["Slug do link (opcional)",'+JSON.stringify(newSlug)+'],["E-mail do dono",'+JSON.stringify(newOwner)+'],'+
+    '["Nome do dono","Proprietário da nova barbearia"]];'+
+    'const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;'+
+    'for(const [label,value] of data){const el=[...document.querySelectorAll("label")]'+
+    '.find(x=>x.querySelector("span")?.textContent?.trim()===label)?.querySelector("input");'+
+    'if(!el)return label;setter.call(el,value);el.dispatchEvent(new Event("input",{bubbles:true}));}'+
+    'return "ok"})()');
+  assert.equal(formFilled,"ok","Campos do cadastro assistido devem estar presentes");
+  await until("formulário de Superadmin validado",
+    '[...document.querySelectorAll("button")].some(x=>x.textContent.trim()==="Criar"&&!x.disabled)');
+  await click("Criar");
+  await until("empresa criada na interface",
+    'document.body.innerText.includes("Barbearia criada")&&document.body.innerText.includes('+JSON.stringify(newSlug)+')');
+  pass("Superadmin cadastra empresa e dono com teste grátis, sem cobrança");
+  console.log("20 verificações Chromium aprovadas: cliente, profissional, proprietário e Superadmin; sem cobranças reais.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){
