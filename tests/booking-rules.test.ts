@@ -1118,7 +1118,7 @@ describe("funil comercial: paginação com cursor e autorização",()=>{
     const unique=crypto.randomUUID();
     const statements=Array.from({length:160},(_,i)=>
       db.prepare("INSERT INTO sales_leads(contact_name,company_name,email,phone,plan_code,price_snapshot_cents,consent_at,submission_bucket) VALUES (?1,?2,?3,'5573999999999','pro',4990,?4,?5)")
-        .bind("Interessado "+i,"Grupo-"+unique,\`lead-\${unique}-\${i}@tigu.test\`,new Date().toISOString(),i+1)
+        .bind("Interessado "+i,"Grupo-"+unique,`lead-${unique}-${i}@tigu.test`,new Date().toISOString(),i+1)
     );
     for(let i=0;i<statements.length;i+=40)await db.batch(statements.slice(i,i+40));
     const adminEmail="paginar-"+unique+"@tigu.test";
