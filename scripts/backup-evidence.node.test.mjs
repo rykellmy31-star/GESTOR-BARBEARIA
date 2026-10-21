@@ -28,7 +28,7 @@ test("audita export SQL contendo todas as migrações e não divulga dados pesso
 });
 test("recusa SQL truncado, esquema incompatível, comando que pode escrever arquivos e vínculos órfãos",()=>{
   assert.throws(()=>auditD1Export("SELECT 1"),/muito curta/);
-  assert.throws(()=>auditD1Export("CREATE TABLE teste(id INTEGER PRIMARY KEY);".repeat(3)),/Tabelas essenciais/);
+  assert.throws(()=>auditD1Export("CREATE TABLE IF NOT EXISTS teste(id INTEGER PRIMARY KEY);".repeat(3)),/Tabelas essenciais/);
   assert.throws(()=>auditD1Export(sql+"\nATTACH DATABASE '/tmp/arquivo' AS outro;"),/não permitidos/);
   const broken=sql+"\nPRAGMA foreign_keys=OFF;\n"+
     "INSERT INTO customers(company_id,name,phone) VALUES (999999,'Pessoa','73999997777');\nPRAGMA foreign_keys=ON;\n";
