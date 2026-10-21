@@ -60,7 +60,7 @@ test("não trata ausência de recursos como homologação; ainda confirma permis
 test("recusa token ausente, Account ID inválido e token desativado sem requisições indevidas", async () => {
   const requests = [];
   await assert.rejects(inspectCloudflare({ token: "", accountId, fetcher: fake(good, requests) }), /Secret/);
-  await assert.rejects(inspectCloudflare({ token, accountId: "ID_INVALIDO", fetcher: fake(good, requests) }), /Account ID/);
+  await assert.rejects(inspectCloudflare({ token, accountId: "ID_INVALIDO", fetcher: fake(good, requests) }), /CLOUDFLARE_ACCOUNT_ID/);
   assert.equal(requests.length, 0);
   const revoked = structuredClone(good);
   revoked["/user/tokens/verify"].result.status = "disabled";
