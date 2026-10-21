@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { Instagram, MapPin, Menu, MessageCircle, Phone, ShoppingBag, Scissors, X, CalendarClock } from "lucide-react";
 import { clsx } from "clsx";
-import { siteBase, cartKey, cartEvent } from "@/lib/api";
+import { siteBase, cartEvent } from "@/lib/api";
+import { readCart } from "@/lib/cart";
 import { useConfig } from "@/lib/hooks";
 import { Badge } from "@/components/ui";
 
@@ -13,7 +14,7 @@ export function CartBadge() {
     window.addEventListener(cartEvent(), h);
     return () => window.removeEventListener(cartEvent(), h);
   }, []);
-  const cart = JSON.parse(localStorage.getItem(cartKey()) || "{}") as Record<string, number>;
+  const cart = readCart();
   const count = Object.values(cart).reduce((a, b) => a + b, 0);
   if (!count) return null;
   return (
