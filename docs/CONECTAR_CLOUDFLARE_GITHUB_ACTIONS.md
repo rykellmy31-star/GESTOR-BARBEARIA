@@ -133,3 +133,7 @@ A nova versão do Worker `tigu-staging` foi publicada no Actions run `3965098461
 ## Diagnóstico controlado do HTTP 500 no cadastro de staging
 
 O cadastro remoto segue retornando HTTP 500 mesmo depois do ajuste de D1 `run()` e da atualização do Worker. Para não adivinhar outra causa, há um workflow exclusivo de diagnóstico que inicia uma sessão temporária `wrangler tail` para `tigu-staging`, envia **somente um cadastro fictício** com email `example.test`, captura unicamente mensagens de exceção e erro da rota `/api/auth/register`, redige emails, telefones e tokens, e encerra o tail sem armazenar dados em artifact. O disparo exige commit com mensagem `TIGU_DIAGNOSE_SIGNUP_ONCE` na branch de auditoria. Logs indisponíveis ou permissão de tail insuficiente exigem outro diagnóstico antes de declarar correção.
+
+## Bateria separada de recuperação D1 após indisponibilidade do tail
+
+O `wrangler tail` do Worker staging foi negado com o token existente, por isso nenhum erro interno foi capturado e a falha HTTP 500 de signup permanece aberta. A execução isolada de restore D1 e R2 pode seguir independentemente do cadastro, sem tocar dados de produção. Este commit aciona apenas o ensaio D1 que exporta `tigu-staging-db`, cria exclusivamente `tigu-staging-restore-check` se ausente e compara conteúdo recuperado. Não autoriza recursos externos, acesso a outros bancos ou migrações no banco de origem.
