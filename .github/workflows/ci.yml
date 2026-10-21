@@ -146,3 +146,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_DR_INVENTORY_APPROVED: YES
         run: node scripts/staging-dr-inventory-ci.mjs
+
+      # Compara só duas bases staging existentes via Wrangler D1 EXPORT.
+      # Não importa SQL, não cria D1/R2 e não sobrescreve dados.
+      - name: Comparar recuperação D1 existente sem nenhuma escrita
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_D1_READONLY_COMPARE_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_D1_COMPARE_APPROVED: YES
+        run: node scripts/staging-d1-restore-readonly-compare.mjs
