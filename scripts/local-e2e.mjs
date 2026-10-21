@@ -102,8 +102,9 @@ try {
     {email:professionalEmail,password:"BarberRedefinida#123456"});
   check("Dono redefine credencial existente sem criar conta duplicada",
     renewed.status===200&&renewed.data.created===false);
+  const staleSession=await professional("GET","/api/auth/me");
   check("Redefinição encerra sessão anterior do profissional",
-    (await professional("GET","/api/auth/me")).status===401);
+    staleSession.status===200&&staleSession.data.user===null);
   const currentProfessional=client();
   const professionalRenewLogin=await currentProfessional("POST","/api/auth/login",
     {email:professionalEmail,password:"BarberRedefinida#123456"});
