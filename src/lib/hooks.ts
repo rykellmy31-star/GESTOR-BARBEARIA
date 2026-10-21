@@ -11,7 +11,7 @@ export function useConfig(enabled = true) {
   const isCompany = /^\/c\//.test(location.pathname);
   const q = useQuery({
     queryKey: ["config", location.pathname.split("/")[2]],
-    queryFn: () => api.get<{ settings: ShopSettings; demo_active?: boolean; company?: { slug: string; name: string } }>("/config"),
+    queryFn: () => api.get<{ settings: ShopSettings; demo_active?: boolean; payment_options?: {after_service:boolean;pix_enabled:boolean}; company?: { slug: string; name: string } }>("/config"),
     staleTime: 20_000,
     enabled: enabled && isCompany,
   });
