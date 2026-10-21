@@ -1,6 +1,7 @@
 import mutationSchema from "../../migrations/0009_booking_mutation_token.sql";
 import daySchema from "../../migrations/0010_booking_local_day_guard.sql";
 import checkoutSchema from "../../migrations/0018_booking_checkout.sql";
+import orderPaidSchema from "../../migrations/0011_order_paid_at.sql";
 import merchantSchema from "../../migrations/0019_merchant_payments.sql";
 /** Completa as fixtures antigas que carregam a base 0001 diretamente. */
 export async function applyBookingMigrations(db:D1Database):Promise<void> {
@@ -14,6 +15,7 @@ export async function applyBookingMigrations(db:D1Database):Promise<void> {
       await db.prepare(sql).run();
   }
   const orderColumns=new Set((await db.prepare("PRAGMA table_info(orders)").all<{name:string}>()).results.map(row=>row.name));
+  if(!orderColumns.has("paid_at")) await db.prepare(orderPaidSchema.match(/ALTER TABLE[^;]+;/)![0]).run();
   if(!orderColumns.has("payment_choice")){
     const triggers=merchantSchema.match(/CREATE TRIGGER[\s\S]+?END;/g)||[];
     const remaining=merchantSchema.replace(/--[^\n]*/g,"").replace(/CREATE TRIGGER[\s\S]+?END;/g,"");
