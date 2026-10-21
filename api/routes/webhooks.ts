@@ -17,6 +17,7 @@ import { nowIso } from "../lib/utils";
 export const webhooksRouter = new Hono<{ Bindings: Env }>();
 
 webhooksRouter.get("/whatsapp", async (c) => {
+  if (c.env.TIGU_STAGING === "1") return c.json({ error: "Verificação Meta desativada na homologação." }, 403);
   const mode = c.req.query("hub.mode");
   const token = c.req.query("hub.verify_token");
   const challenge = c.req.query("hub.challenge");
@@ -50,10 +51,22 @@ webhooksRouter.post("/whatsapp", async (c) => {
 webhooksRouter.post("/mercadopago", async (c) => {
   if (c.env.TIGU_STAGING === "1") return c.json({ error: "Webhooks Pix reais estão desativados na homologação." }, 403);
   const raw = await c.req.text();
-  let body: { type?: string; data?: { id?: string }; action?: string } = {};
-  try { body = JSON.parse(raw); } catch { return c.json({ ok: true }); }
-  const dataId = String(body.data?.id ?? c.req.query("data.id") ?? "");
-  if (!dataId) return c.json({ ok: true, ignored: "sem data.id" });
+  // Não confiar nos tipos de JSON recebido de terceiros. Em particular,
+  // null, arrays ou data.id como objeto não podem gerar erro 500 nem consulta ao gateway.
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return c.json({ ok: true, ignored: "json inválido" }); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return c.json({ ok: true, ignored: "evento inválido" });
+  const body = parsed as Record<string, unknown>;
+  const data = body.data && typeof body.data === "object" && !Array.isArray(body.data)
+    ? body.data as Record<string, unknown> : null;
+  const idValue = data?.id ?? c.req.query("data.id");
+  const dataId = typeof idValue === "string" ? idValue
+    : typeof idValue === "number" && Number.isSafeInteger(idValue) && idValue >= 0 ? String(idValue) : "";
+  if (!/^[A-Za-z0-9_-]{1,100}$/.test(dataId))
+    return c.json({ ok: true, ignored: "data.id inválido" });
+  const action = typeof body.action === "string" && /^[A-Za-z0-9_.-]{1,80}$/.test(body.action)
+    ? body.action : "update";
 
   const secret = c.env.MP_WEBHOOK_SECRET || "";
   if (secret) {
@@ -64,7 +77,7 @@ webhooksRouter.post("/mercadopago", async (c) => {
   }
 
   const db = c.env.DB;
-  const uid = paymentWebhookUid("mercadopago", dataId, body.action || "update");
+  const uid = paymentWebhookUid("mercadopago", dataId, action);
   const ins = await db.prepare(`INSERT OR IGNORE INTO payment_webhook_events (provider, event_uid, payload, created_at) VALUES ('mercadopago', ?1, ?2, ?3)`).bind(uid, raw.slice(0, 4000), nowIso()).run();
 
   // responde 200 já; o processamento re-consulta o gateway (fonte da verdade)
