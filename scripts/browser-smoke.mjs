@@ -222,9 +222,17 @@ try{
   await click("Salvar nova senha");
   await until("nova senha aceita",'location.pathname==="/selecionar"');
   await go(base+"/c/"+slug+"/painel");
-  await until("painel do profissional",'document.body.innerText.includes("Painel do profissional")');
+  await until("painel do profissional",'document.body.innerText.includes("PAINEL DO PROFISSIONAL")');
   pass("acesso individual do profissional após troca obrigatória");
-  console.log("11 verificações Chromium aprovadas: loja, agendamento e painel profissional. Nenhum pagamento real.");
+  const selectedDay=await js('(()=>{const tabs=document.querySelector("main .overflow-x-auto");'+
+    'const b=[...(tabs?.querySelectorAll("button")||[])].find(x=>'+
+    'x.querySelector("span.font-display")?.textContent.trim()==='+JSON.stringify(String(Number(bookingDay.slice(8))))+');'+
+    'if(!b)return false;b.click();return true})()');
+  assert.ok(selectedDay,"Dia da reserva não apareceu no calendário do profissional");
+  await until("reserva exibida ao profissional",'document.body.innerText.includes("Cliente Reserva Chromium")');
+  pass("profissional vê seu agendamento, horário e ações na agenda");
+
+  console.log("12 verificações Chromium aprovadas: loja, agendamento e painel profissional. Nenhum pagamento real.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){
