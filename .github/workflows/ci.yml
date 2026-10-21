@@ -156,3 +156,22 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_D1_COMPARE_APPROVED: YES
         run: node scripts/staging-d1-restore-readonly-compare.mjs
+
+      # Autorizado pelo proprietário: recursos novos e isolados para DR.
+      # Nunca tocar nos destinos antigos nem na produção. Criar recursos
+      # exclusivos desta execução e verificar conteúdo antes de aprovar.
+      - name: Restaurar D1 em novo banco isolado e comparar hashes
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_NEW_ISOLATED_RECOVERY_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_REMOTE_D1_RESTORE_APPROVED: YES
+        run: node scripts/staging-d1-new-isolated-recovery.mjs
+
+      - name: Restaurar arquivo de prova em novo bucket R2 e comparar SHA-256
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_NEW_ISOLATED_RECOVERY_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_REMOTE_R2_RESTORE_APPROVED: YES
+        run: node scripts/staging-r2-new-isolated-recovery.mjs
