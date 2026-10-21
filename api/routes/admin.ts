@@ -22,7 +22,7 @@ import { barberCapacitySql } from "../lib/barber-capacity";
 import { calendarDaySchema, intervalBlockSchema, createAdminIntervalBlock, dayBlockSchema, createAdminDayBlock } from "../lib/admin-blocks";
 import { barberScheduleFields, barberScheduleSchema } from "../lib/schedule-validation";
 import { getWallet, manualAdjustment } from "../lib/wallet";
-import { createTopup, confirmTopupFromProvider } from "../lib/topup";
+import { createTopup, confirmTopupFromProvider, getTopupLimits } from "../lib/topup";
 import { getConnection, sendImmediate, resolvePricing, processDueJobs } from "../lib/messaging/jobs";
 import { resolveProvider, exchangeEmbeddedSignupCode, mockAllowed } from "../lib/messaging/provider";
 import { pickPaymentProvider } from "../lib/payments";
@@ -932,13 +932,14 @@ adminRouter.get("/wallet", async (c) => {
   const wallet = await getWallet(db, id);
   const { results: txs } = await db.prepare(`SELECT type, amount_cents, balance_after, reserved_after, ref_type, ref_id, note, created_at FROM wallet_transactions WHERE company_id=?1 ORDER BY id DESC LIMIT 60`).bind(id).all();
   const { results: topups } = await db.prepare(`SELECT code, amount_cents, status, provider, qr_code_text, qr_code_base64, expires_at, paid_at, credited_at, created_at FROM topup_orders WHERE company_id=?1 ORDER BY id DESC LIMIT 20`).bind(id).all();
-  const pricing = await resolvePricing(db, id, "any");
+  const [pricing, topupLimits] = await Promise.all([resolvePricing(db, id, "any"), getTopupLimits(db)]);
   const monthSpend = await db.prepare(`SELECT COALESCE(SUM(-amount_cents),0) cents FROM wallet_transactions WHERE company_id=?1 AND type='capture' AND created_at>=strftime('%Y-%m-%dT00:00:00Z', date('now','start of month'))`).bind(id).first<{ cents: number }>();
   return json(c, {
     wallet: wallet ? { balance_cents: wallet.balance_cents, reserved_cents: wallet.reserved_cents, available_cents: wallet.balance_cents - wallet.reserved_cents, low_balance_alert_cents: wallet.low_balance_alert_cents, lifetime_charged_cents: wallet.lifetime_charged_cents, lifetime_recharged_cents: wallet.lifetime_recharged_cents } : null,
     transactions: txs,
     topups,
     pricing,
+    topup_limits: topupLimits,
     month_spend_cents: monthSpend?.cents ?? 0,
     payments_available: Boolean(pickPaymentProvider(c.env, false).provider),
   });
