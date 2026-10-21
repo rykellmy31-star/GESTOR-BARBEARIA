@@ -342,7 +342,7 @@ publicRouter.post("/orders",async c=>{
     .bind(companyId,code,parsed.data.name.trim(),phone,parsed.data.email||null,key,choice,total,at),
    ...parsed.data.items.map(it=>db.prepare("INSERT INTO order_items(order_id,product_id,product_name,qty,unit_price_cents) SELECT id,?1,?2,?3,?4 FROM orders WHERE code=?5 AND company_id=?6")
     .bind(it.productId,stock.get(it.productId)!.name,it.qty,stock.get(it.productId)!.price_cents,code,companyId)),
-   ...parsed.data.items.map(it=>db.prepare("UPDATE products SET stock=stock-?1 WHERE id=?2 AND company_id=?3 AND active=1 AND stock>=?1")
+   ...parsed.data.items.map(it=>db.prepare("UPDATE products SET stock=stock-?1 WHERE id=?2 AND company_id=?3")
     .bind(it.qty,it.productId,companyId)),
    ...parsed.data.items.map(it=>db.prepare("INSERT INTO stock_movements(company_id,product_id,delta,reason,ref,created_at) VALUES (?1,?2,-?3,'pedido',?4,?5)")
     .bind(companyId,it.productId,it.qty,code,at)),
