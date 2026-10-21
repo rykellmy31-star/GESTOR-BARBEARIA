@@ -1,6 +1,6 @@
 import type { Env } from "../types";
 import { nowIso } from "./utils";
-import { mpProvider } from "./payments";
+import { mercadoPagoNotificationUrl, mpProvider } from "./payments";
 import { audit } from "./audit";
 import { listPublicPlans } from "./plans";
 
@@ -37,7 +37,7 @@ export async function createSubscriptionPix(
 ): Promise<{ ok: true; invoice: SubscriptionInvoice } | { ok: false; status: number; message: string }> {
   if (env.TIGU_STAGING === "1" || env.PAYMENTS_MOCK === "1")
     return { ok:false, status:503, message:"Pagamentos Pix reais desativados nesta homologação." };
-  if (!env.MP_ACCESS_TOKEN || !env.MP_WEBHOOK_SECRET || !env.PUBLIC_URL?.startsWith("https://"))
+  if (!env.MP_ACCESS_TOKEN || !env.MP_WEBHOOK_SECRET || !mercadoPagoNotificationUrl(env))
     return { ok:false,status:503,message:"Mercado Pago não configurado com token, webhook e URL HTTPS." };
   const db=env.DB;
   const summary=await billingSummary(db,companyId);

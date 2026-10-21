@@ -17,6 +17,23 @@ export interface PaymentProvider {
 
 const MP_BASE = "https://api.mercadopago.com";
 
+/** Recargas Pix exigem um webhook público HTTPS explícito e sem rota intermediária. */
+export function mercadoPagoNotificationUrl(env: Pick<Env, "PUBLIC_URL">): string | null {
+  const raw = env.PUBLIC_URL || "";
+  if (!raw || raw.trim() !== raw) return null;
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== "https:" || url.username || url.password || url.port ||
+        url.pathname !== "/" || url.search || url.hash ||
+        host === "localhost" || host.endsWith(".localhost") ||
+        host === "127.0.0.1" || host === "[::1]") return null;
+    return new URL("/api/webhooks/mercadopago", url).toString();
+  } catch {
+    return null;
+  }
+}
+
 export function mpProvider(env: Env): PaymentProvider {
   const token = env.MP_ACCESS_TOKEN || "";
   const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -25,12 +42,15 @@ export function mpProvider(env: Env): PaymentProvider {
     async createPixPayment(inp) {
       if (env.TIGU_STAGING === "1") return { ok: false, error: "Pix real bloqueado no ambiente de homologação." };
       if (!token) return { ok: false, error: "Gateway de pagamento não configurado (MP_ACCESS_TOKEN ausente)." };
+      const notificationUrl = mercadoPagoNotificationUrl(env);
+      if (!env.MP_WEBHOOK_SECRET || !notificationUrl)
+        return { ok: false, error: "Webhook Pix não configurado com segredo e URL HTTPS pública válida." };
       const body = {
         transaction_amount: Math.round(inp.amountCents / 100 * 100) / 100,
         description: inp.description,
         payment_method_id: "pix",
         external_reference: inp.externalReference,
-        notification_url: `${env.PUBLIC_URL || ""}/api/webhooks/mercadopago`.replace(/^\/\//, "https://"),
+        notification_url: notificationUrl,
         expiration_date_interval: "01:00:00",
         date_of_expiration: new Date(Date.now() + 60 * 60_000).toISOString().replace(/\.\d{3}Z$/, "-00:00"),
         payer: { email: inp.payerEmail || "checkout@tigu.app" },
@@ -110,6 +130,8 @@ export function pickPaymentProvider(env: Env, demo: boolean): { provider: Paymen
     return { provider: mockPaymentProvider(env) };
   }
   if (!env.MP_ACCESS_TOKEN) return { provider: null, error: "Pix não configurado neste ambiente (recargas manuais pelo Tigu seguem disponíveis)." };
+  if (!env.MP_WEBHOOK_SECRET || !mercadoPagoNotificationUrl(env))
+    return { provider: null, error: "Pix não configurado: informe segredo do webhook e PUBLIC_URL HTTPS pública válida." };
   return { provider: mpProvider(env) };
 }
 
