@@ -481,7 +481,7 @@ describe("Pix: recuperar confirmação sem webhook", () => {
 describe("Pix de recarga: cancelamento seguro e conciliação legada",()=>{
   it("não cancela Pix real localmente, nem de outra empresa; mock pode ser cancelado",async()=>{
     const companyId=(await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{id:number}>())!.id;
-    const nonce=crypto.randomUUID();
+    const nonce=crypto.randomUUID().toUpperCase();
     const real="PIX-REAL-"+nonce, mock="PIX-MOCK-"+nonce;
     for(const item of [{code:real,provider:"mercadopago"},{code:mock,provider:"mock"}]){
       await db.prepare("INSERT INTO topup_orders(company_id,code,amount_cents,status,provider,provider_payment_id) VALUES (?1,?2,2500,'pending',?3,?4)")
