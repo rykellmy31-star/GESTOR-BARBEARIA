@@ -96,3 +96,23 @@ jobs:
           STAGING_URL: https://tigu-staging.netssh3-0.workers.dev/
           TIGU_AUTH_E2E_APPROVED: YES
         run: node scripts/staging-auth-e2e.mjs
+
+      # D1: export SQL de staging -> NOVO D1 tigu-staging-restore-check.
+      # Requer commit unico. Recusa sobrescrever banco existente.
+      - name: Recuperar D1 Cloudflare em banco separado (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_D1_REMOTE_RESTORE_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_REMOTE_D1_RESTORE_APPROVED: YES
+        run: node scripts/staging-d1-remote-restore.mjs
+
+      # R2: usa APENAS objeto fictício em staging e bucket de restore novo.
+      # Nunca copia/edita objetos de clientes, não usa produção.
+      - name: Recuperar objeto R2 em bucket separado (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_R2_REMOTE_RESTORE_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_REMOTE_R2_RESTORE_APPROVED: YES
+        run: node scripts/staging-r2-remote-restore.mjs
