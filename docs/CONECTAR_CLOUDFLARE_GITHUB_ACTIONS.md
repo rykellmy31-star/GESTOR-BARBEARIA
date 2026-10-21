@@ -141,3 +141,7 @@ O `wrangler tail` do Worker staging foi negado com o token existente, por isso n
 ## Restauração real D1 concluída; próximo R2
 
 O GitHub Actions run `39656147680` restaurou o export SQL do D1 de homologação em `tigu-staging-restore-check`, recuperando 40 tabelas com hash semântico e totais idênticos. O D1 original permaneceu inalterado, embora ainda não houvesse dados comerciais fictícios nele. Este commit ativa **somente** a verificação remota de objeto R2 sintético para bucket de restore separado; a conclusão dependerá do resultado no CI.
+
+## Atualização temporária para diagnóstico por etapas do signup staging
+
+A leitura de logs do Worker depende da permissão `Account → Workers Tail → Read`, ausente no token atual. Para identificar o ponto exato do HTTP 500 sem esse acesso e sem divulgar o erro interno, o Worker de **staging somente** inclui temporariamente no JSON de erro de `/api/auth/register` dois campos de diagnóstico de baixa sensibilidade: fase fixa de cadastro (`middleware-rate-limit`, `signup-password-hash`, etc.) e categoria (`database`, `cryptography`, `other`). Em produção esses campos nunca aparecem. Nenhuma senha, SQL, email, ID de conta, stack trace ou segredo é retornado. Após identificar/corrigir o bloqueio, esses marcadores devem ser removidos em novo deploy. Este commit faz atualização única do Worker existente preservando os secrets de homologação, D1 e R2.
