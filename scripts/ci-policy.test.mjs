@@ -46,9 +46,9 @@ test("Actions: token Cloudflare apenas na etapa opcional e com diagnostico GET s
   assert.ok(gate, "Etapa Cloudflare por token ausente");
   assert.match(gate[0], /github\.event_name == 'push'/);
   assert.match(gate[0], /github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
-  assert.match(gate[0], /vars\.CLOUDFLARE_ACCOUNT_ID != ''/);
+  assert.doesNotMatch(gate[0], /vars\.CLOUDFLARE_ACCOUNT_ID != ''/);
   assert.match(gate[0], /CLOUDFLARE_AUDIT_TOKEN: \$\{\{ secrets\.CLOUDFLARE_AUDIT_TOKEN \}\}/);
-  assert.match(gate[0], /CLOUDFLARE_ACCOUNT_ID: \$\{\{ vars\.CLOUDFLARE_ACCOUNT_ID \}\}/);
+  assert.match(gate[0], /CLOUDFLARE_ACCOUNT_ID: \$\{\{ vars\.CLOUDFLARE_ACCOUNT_ID \|\| secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/);
   const diagnostic = readFileSync(new URL("./cloudflare-audit.mjs", import.meta.url), "utf8");
   assert.match(diagnostic, /method: "GET"/);
   assert.doesNotMatch(diagnostic, /method: "(?:POST|PUT|PATCH|DELETE)"/);
