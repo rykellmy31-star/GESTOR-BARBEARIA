@@ -75,3 +75,7 @@ Após confirmação **real** da criação de `tigu-staging-db` e `tigu-staging-m
 A primeira publicação do Worker pode exigir permissões adicionais de Workers Admin conforme o sistema de papéis da conta. Falha 403 é reportada; não aumentar escopo ou alterar a produção automaticamente. Se a implantação falhar após parte das operações, verificar estado real antes de retentar, pois o mecanismo recusa sobrescrever Worker já existente.
 
 Mesmo após deploy, a **homologação funcional remota** e a **validação de recuperação de backups** continuam pendentes até testes reais, acessos fictícios e evidências verificadas.
+
+## Disparo unico do Worker de homologação — 21/10/2026
+
+CI local completo aprovado previamente; o proprietário autorizou disponibilizar o token `CLOUDFLARE_STAGING_TOKEN`. O commit desta anotação é o gatilho único para preparar e migrar **somente D1 staging** e tentar implantar **somente o Worker tigu-staging** com segredos próprios. Os resultados devem ser confirmados no GitHub Actions; esta anotação não representa aprovação remota nem restauração de backups.
