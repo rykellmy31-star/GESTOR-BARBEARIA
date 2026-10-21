@@ -5,7 +5,9 @@
 // ============================================================================
 import { Hono } from "hono";
 import { z } from "zod";
-import { bookingPixEnabled, generateBookingPix, lookupBookingPix } from "../lib/booking-payments";
+import { generateBookingPix, lookupBookingPix } from "../lib/booking-payments";
+import { merchantPixReady } from "../lib/merchant-payments";
+import { generateOrderPix, lookupOrderPix } from "../lib/order-payments";
 import type { Env } from "../types";
 import { err, json, normalizePhone, nowIso, brl } from "../lib/utils";
 import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
@@ -36,7 +38,7 @@ publicRouter.use("*", tenantMiddleware({ auth: "none" }));
 publicRouter.get("/config", async (c) => {
   const company = c.get("company") as { id: number };
   const co = await c.env.DB.prepare(`SELECT demo FROM companies WHERE id=?1`).bind(company.id).first<{ demo: number }>();
-  return json(c, { settings: { ...ctxSettings(c) }, demo_active: co?.demo === 1, payment_options: { after_service: true, pix_enabled: bookingPixEnabled(c.env) } });
+  return json(c, { settings: { ...ctxSettings(c) }, demo_active: co?.demo === 1, payment_options: { after_service: true, pix_enabled: await merchantPixReady(c.env,company.id) } });
 });
 publicRouter.get("/barbers", async (c) => {
   const { results } = await c.env.DB.prepare(`SELECT id, slug, name, specialty, bio, photo, rating, reviews_count, work_days, work_start, work_end, active FROM barbers WHERE company_id=?1 AND active=1 ORDER BY sort, name`).bind(cid(c)).all();
@@ -144,7 +146,7 @@ publicRouter.post("/bookings", async (c) => {
   const parsed = createBookingSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
   const s = ctxSettings(c);
-  if (parsed.data.paymentChoice === "pix" && !bookingPixEnabled(c.env))
+  if (parsed.data.paymentChoice === "pix" && !(await merchantPixReady(c.env,cid(c))))
     return err(c,"Pix indisponível nesta barbearia. Escolha pagar após o serviço.",503);
   if (parsed.data.paymentChoice === "pix" && !parsed.data.email)
     return err(c,"Informe um e-mail para gerar o Pix.",422);
@@ -298,41 +300,84 @@ publicRouter.get("/products", async (c) => {
   return json(c, { products: results.map((p: Record<string, unknown>) => ({ ...p, price: Number(p.price_cents) / 100 })) });
 });
 
-publicRouter.post("/orders", async (c) => {
-  const s = ctxSettings(c);
-  if (!s.products_enabled) return err(c, "Loja desativada", 403);
-  const parsed = z
-    .object({ name: z.string().min(2).max(90), phone: z.string().min(8).max(20), items: z.array(z.object({ productId: z.number().int().positive(), qty: z.number().int().min(1).max(20) })).min(1).max(20) })
-    .safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "Dados inválidos", 422);
-  const company = c.get("company") as { id: number };
-  const db = c.env.DB;
-  const ids = parsed.data.items.map((i) => i.productId);
-  const ph = ids.map((_, i) => `?${i + 2}`).join(",");
-  const prods = await db.prepare(`SELECT id, name, price_cents, stock, active FROM products WHERE company_id = ?1 AND id IN (${ph})`).bind(company.id, ...ids).all<{ id: number; name: string; price_cents: number; stock: number; active: number }>();
-  const map = new Map(prods.results.map((p) => [p.id, p]));
-  let total = 0;
-  for (const it of parsed.data.items) {
-    const p = map.get(it.productId);
-    if (!p || !p.active) return err(c, "Produto indisponível", 409);
-    if (p.stock < it.qty) return err(c, `Estoque insuficiente de "${p.name}" (restam ${p.stock})`, 409);
-    total += p.price_cents * it.qty;
-  }
-  const code = `PED-${Array.from(crypto.getRandomValues(new Uint8Array(4))).map((b) => b.toString(36).padStart(2, "0").replace(/[^a-z0-9]/gi, "")).join("").toUpperCase().slice(0, 7)}`;
-  const phone = normalizePhone(parsed.data.phone);
-  try {
-    await db.batch([
-      db.prepare(`INSERT INTO orders (company_id, code, customer_name, customer_phone, channel, status, total_cents, created_at, updated_at) VALUES (?1,?2,?3,?4,'online','novo',?5,?6,?6)`).bind(company.id, code, parsed.data.name.trim(), phone, total, nowIso()),
-      ...parsed.data.items.map((it) =>
-        db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, qty, unit_price_cents) SELECT id, ?1, ?2, ?3, ?4 FROM orders WHERE code = ?5`).bind(it.productId, map.get(it.productId)!.name, it.qty, map.get(it.productId)!.price_cents, code)
-      ),
-      ...parsed.data.items.map((it) => db.prepare(`UPDATE products SET stock = stock - ?1 WHERE id = ?2 AND company_id = ?3`).bind(it.qty, it.productId, company.id)),
-      ...parsed.data.items.map((it) => db.prepare(`INSERT INTO stock_movements (company_id, product_id, delta, reason, ref, created_at) VALUES (?1,?2,-?3,'pedido',?4,?5)`).bind(company.id, it.productId, it.qty, code, nowIso())),
-      db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin','Novo pedido da loja',?2,'order')`).bind(company.id, `${parsed.data.name} • ${parsed.data.items.length} item(ns) • ${brl(total)} • pedido ${code}`),
-    ]);
-  } catch (e) {
-    return err(c, "Não foi possível registrar o pedido (estoque mudou?). Tente novamente.", 409);
-  }
-  const wa = s.whatsapp ? `https://wa.me/${s.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(`Olá! Fiz o pedido ${code} na loja on-line (${brl(total)}). Pode confirmar?`)}` : null;
-  return json(c, { ok: true, code, total: total / 100, whatsapp_link: wa }, 201);
+publicRouter.post("/orders",async c=>{
+ const settings=ctxSettings(c);
+ if(!settings.products_enabled)return err(c,"Loja desativada",403);
+ const parsed=z.object({
+  name:z.string().min(2).max(90),phone:z.string().min(8).max(20),
+  email:z.string().email().or(z.literal("")).optional(),
+  paymentChoice:z.enum(["after_service","pix"]).optional(),
+  idempotencyKey:z.string().min(8).max(64).optional(),
+  items:z.array(z.object({productId:z.number().int().positive(),
+   qty:z.number().int().min(1).max(20)})).min(1).max(20)
+ }).safeParse(await c.req.json().catch(()=>null));
+ if(!parsed.success)return err(c,"Dados inválidos",422);
+ const companyId=cid(c),db=c.env.DB,choice=parsed.data.paymentChoice??"after_service";
+ if(choice==="pix"&&!(await merchantPixReady(c.env,companyId)))
+  return err(c,"Esta barbearia não habilitou Pix. Selecione pagamento na retirada.",503);
+ if(choice==="pix"&&!parsed.data.email)return err(c,"Informe e-mail para gerar Pix.",422);
+ const key=parsed.data.idempotencyKey||crypto.randomUUID(),phone=normalizePhone(parsed.data.phone);
+ const previous=await db.prepare("SELECT id,code,status,total_cents,payment_choice FROM orders WHERE company_id=?1 AND checkout_key=?2")
+  .bind(companyId,key).first<{id:number;code:string;status:string;total_cents:number;payment_choice:string}>();
+ if(previous)return respond(previous);
+ const ids=parsed.data.items.map(it=>it.productId);
+ if(new Set(ids).size!==ids.length)return err(c,"Produtos repetidos no mesmo pedido.",422);
+ const placeholders=ids.map((_,i)=>"?"+(i+2)).join(",");
+ const prods=await db.prepare("SELECT id,name,price_cents,stock,active FROM products WHERE company_id=?1 AND id IN ("+placeholders+")")
+  .bind(companyId,...ids).all<{id:number;name:string;price_cents:number;stock:number;active:number}>();
+ const stock=new Map(prods.results.map(p=>[p.id,p]));let total=0;
+ for(const item of parsed.data.items){
+  const product=stock.get(item.productId);
+  if(!product||!product.active||!Number.isSafeInteger(product.price_cents)||product.price_cents<=0)
+   return err(c,"Produto indisponível",409);
+  if(product.stock<item.qty)return err(c,"Estoque insuficiente de "+product.name,409);
+  total+=product.price_cents*item.qty;
+ }
+ const code="PED-"+Array.from(crypto.getRandomValues(new Uint8Array(4)))
+  .map(b=>b.toString(36).padStart(2,"0")).join("").toUpperCase().slice(0,7);
+ const at=nowIso();
+ try {
+  await db.batch([
+   db.prepare("INSERT INTO orders(company_id,code,customer_name,customer_phone,customer_email,checkout_key,payment_choice,channel,status,total_cents,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,'online','novo',?8,?9,?9)")
+    .bind(companyId,code,parsed.data.name.trim(),phone,parsed.data.email||null,key,choice,total,at),
+   ...parsed.data.items.map(it=>db.prepare("INSERT INTO order_items(order_id,product_id,product_name,qty,unit_price_cents) SELECT id,?1,?2,?3,?4 FROM orders WHERE code=?5 AND company_id=?6")
+    .bind(it.productId,stock.get(it.productId)!.name,it.qty,stock.get(it.productId)!.price_cents,code,companyId)),
+   ...parsed.data.items.map(it=>db.prepare("UPDATE products SET stock=stock-?1 WHERE id=?2 AND company_id=?3 AND active=1 AND stock>=?1")
+    .bind(it.qty,it.productId,companyId)),
+   ...parsed.data.items.map(it=>db.prepare("INSERT INTO stock_movements(company_id,product_id,delta,reason,ref,created_at) VALUES (?1,?2,-?3,'pedido',?4,?5)")
+    .bind(companyId,it.productId,it.qty,code,at)),
+   db.prepare("INSERT INTO notifications(company_id,audience,title,body,kind) VALUES (?1,'admin','Novo pedido da loja',?2,'order')")
+    .bind(companyId,parsed.data.name+" • "+brl(total)+" • "+code)
+  ]);
+ }catch{
+  const saved=await db.prepare("SELECT id,code,status,total_cents,payment_choice FROM orders WHERE company_id=?1 AND checkout_key=?2")
+   .bind(companyId,key).first<{id:number;code:string;status:string;total_cents:number;payment_choice:string}>();
+  if(saved)return respond(saved);
+  return err(c,"Não foi possível registrar pedido (estoque alterado?).",409);
+ }
+ const created=await db.prepare("SELECT id,code,status,total_cents,payment_choice FROM orders WHERE company_id=?1 AND checkout_key=?2")
+  .bind(companyId,key).first<{id:number;code:string;status:string;total_cents:number;payment_choice:string}>();
+ if(!created)return err(c,"Não foi possível encontrar o pedido.",503);
+ return respond(created);
+
+ async function respond(order:{id:number;code:string;status:string;total_cents:number;payment_choice:string}){
+  if(order.payment_choice!==choice)return err(c,"Chave de pedido pertence a outra escolha de pagamento.",409);
+  const result=choice==="pix"?await generateOrderPix(c.env,companyId,order.id):null;
+  const wa=settings.whatsapp?"https://wa.me/"+settings.whatsapp.replace(/\D/g,"")+"?text="+
+   encodeURIComponent("Olá! Fiz o pedido "+order.code+" na loja ("+brl(order.total_cents)+")."):null;
+  return json(c,{ok:true,code:order.code,total:order.total_cents/100,payment_choice:choice,
+   payment:result?.payment??null,payment_token:result?.lookup_token??null,whatsapp_link:wa},201);
+ }
+});
+publicRouter.post("/orders/pix/status",async c=>{
+ const parsed=z.object({code:z.string().min(4).max(32),
+  phone:z.string().min(8).max(20),payment_token:z.string().uuid()})
+  .safeParse(await c.req.json().catch(()=>null));
+ if(!parsed.success)return err(c,"Dados inválidos",422);
+ const {rateLimit}=await import("../lib/auth");
+ const ip=c.req.header("cf-connecting-ip")||"local";
+ if(!(await rateLimit(c.env,"order-pix-status:"+ip,15,300000)))return err(c,"Limite de consultas.",429);
+ const payment=await lookupOrderPix(c.env,cid(c),parsed.data.code,parsed.data.phone,parsed.data.payment_token);
+ if(!payment)return err(c,"Pedido ou pagamento não encontrado",404);
+ return json(c,{payment});
 });
