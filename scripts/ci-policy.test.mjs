@@ -30,8 +30,8 @@ test("Actions: verificacao online opcional, somente leitura e limitada a staging
   assert.ok(gate, "Etapa de verificacao remota ausente");
   assert.match(gate[0], /github\.event_name == 'push'/);
   assert.match(gate[0], /github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
-  assert.match(gate[0], /vars\.TIGU_STAGING_URL != ''/);
-  assert.match(gate[0], /STAGING_URL: \$\{\{ vars\.TIGU_STAGING_URL \}\}/);
+  assert.doesNotMatch(gate[0], /vars\.TIGU_STAGING_URL != ''/);
+  assert.match(gate[0], /STAGING_URL: \$\{\{ vars\.TIGU_STAGING_URL \|\| 'https:\/\/tigu-staging\.netssh3-0\.workers\.dev' \}\}/);
   assert.doesNotMatch(gate[0], /secrets\.|wrangler|deploy|--remote|npm run/);
   const diagnostic = readFileSync(new URL("./staging-smoke.mjs", import.meta.url), "utf8");
   assert.match(diagnostic, /redirect: "manual"/);
