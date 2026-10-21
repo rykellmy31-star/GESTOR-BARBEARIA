@@ -26,6 +26,13 @@ export const superRouter = new Hono<{ Bindings: Env }>();
 superRouter.use("*", requireSuper);
 
 const idParam = (c: { req: { param: (k: string) => string | undefined } }) => parseInt(c.req.param("id") || "0", 10);
+/** Apenas para rotas /wallets/:companyId, nunca confundir com parâmetro :id. */
+const companyIdParam = (c: { req: { param: (k: string) => string | undefined } }): number | null => {
+  const value = c.req.param("companyId");
+  if (!value || !/^[1-9]\d*$/.test(value)) return null;
+  const id = Number(value);
+  return Number.isSafeInteger(id) ? id : null;
+};
 
 // ── visão geral (KPIs financeiros da plataforma) ────────────────────────────
 superRouter.get("/overview", async (c) => {
@@ -271,15 +278,18 @@ superRouter.delete("/memberships/:id", async (c) => {
 
 // ── carteira: ajustes, consultas ────────────────────────────────────────────
 superRouter.get("/wallets/:companyId", async (c) => {
-  const id = idParam(c);
+  const id = companyIdParam(c);
+  if (id === null) return err(c, "Identificador da empresa inválido", 400);
   const wallet = await getWallet(c.env.DB, id);
+  if (!wallet) return err(c, "Carteira não encontrada", 404);
   const { results } = await c.env.DB.prepare(`SELECT * FROM wallet_transactions WHERE company_id=?1 ORDER BY id DESC LIMIT 100`).bind(id).all();
   return json(c, { wallet, transactions: results });
 });
 superRouter.post("/wallets/:companyId/adjust", async (c) => {
   const parsed = z.object({ delta_cents: z.number().int(), justification: z.string().min(10).max(300) }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "delta_cents + justificativa (10+ chars)", 400);
-  const db = c.env.DB; const id = idParam(c);
+  const db = c.env.DB; const id = companyIdParam(c);
+  if (id === null) return err(c, "Identificador da empresa inválido", 400);
   const co = await db.prepare(`SELECT id FROM companies WHERE id=?1`).bind(id).first();
   if (!co) return err(c, "Empresa inválida", 404);
   await ensureWallet(db, id);
@@ -293,9 +303,14 @@ superRouter.post("/wallets/:companyId/adjust", async (c) => {
 superRouter.put("/wallets/:companyId/policy", async (c) => {
   const parsed = z.object({ allow_negative: z.boolean(), low_balance_alert_cents: z.number().int().min(0).max(100000).optional() }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 400);
+  const id = companyIdParam(c);
+  if (id === null) return err(c, "Identificador da empresa inválido", 400);
+  const exists = await c.env.DB.prepare("SELECT id FROM companies WHERE id=?1").bind(id).first();
+  if (!exists) return err(c, "Empresa inválida", 404);
+  await ensureWallet(c.env.DB, id);
   await c.env.DB.prepare(`UPDATE wallets SET allow_negative=?1, low_balance_alert_cents=COALESCE(?2, low_balance_alert_cents), updated_at=?3 WHERE company_id=?4`)
-    .bind(parsed.data.allow_negative ? 1 : 0, parsed.data.low_balance_alert_cents ?? null, nowIso(), idParam(c)).run();
-  await audit(c.env.DB, c.get("user"), "wallet.policy", "wallet", idParam(c), parsed.data, { companyId: idParam(c), scope: "platform" });
+    .bind(parsed.data.allow_negative ? 1 : 0, parsed.data.low_balance_alert_cents ?? null, nowIso(), id).run();
+  await audit(c.env.DB, c.get("user"), "wallet.policy", "wallet", id, parsed.data, { companyId: id, scope: "platform" });
   return json(c, { ok: true, warning: "Permitir saldo negativo autoriza cobrança além do saldo — use só para clientes com contrato firme." });
 });
 
