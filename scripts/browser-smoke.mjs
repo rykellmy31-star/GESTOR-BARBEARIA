@@ -280,6 +280,26 @@ try{
   assert.equal(originalServices.data.services.find(x=>x.id===service.data.id)?.active,1,
     "Tentativa de outra empresa não deve alterar serviço da barbearia original");
   pass("exclusão de serviço respeita o isolamento entre empresas");
+  const missingBarber=await api(base,"/api/c/"+slug+"/admin/barbers/999999999","DELETE",
+    undefined,signup.cookie);
+  assert.equal(missingBarber.status,404,"Desativação de barbeiro inexistente precisa retornar 404");
+  pass("barbeiro inexistente retorna 404 na exclusão");
+  const crossBarberDelete=await api(base,"/api/c/"+secondCompany.data.company.slug+
+    "/admin/barbers/"+barber.data.id,"DELETE",undefined,secondCompany.cookie);
+  assert.equal(crossBarberDelete.status,404,"Outra empresa não pode desativar barbeiro alheio");
+  const originalBarbers=await api(base,"/api/c/"+slug+"/admin/barbers","GET",undefined,signup.cookie);
+  assert.equal(originalBarbers.data.barbers.find(x=>x.id===barber.data.id)?.active,1);
+  pass("barbeiro de outra empresa não pode ser desativado");
+  const noAuth=await api(base,"/api/c/"+slug+"/admin/team");
+  assert.equal(noAuth.status,401,"Equipe não pode ser listada sem sessão");
+  pass("equipe administrativa exige autenticação");
+  const secondOwnerCross=await api(base,"/api/c/"+slug+"/admin/team",
+    "GET",undefined,secondCompany.cookie);
+  assert.equal(secondOwnerCross.status,403,"Dono da empresa B não pode ver equipe da A");
+  const firstOwnerCross=await api(base,"/api/c/"+secondCompany.data.company.slug+
+    "/admin/customers","GET",undefined,signup.cookie);
+  assert.equal(firstOwnerCross.status,403,"Dono da empresa A não pode ver clientes da B");
+  pass("dados administrativos isolados entre donos de empresas diferentes");
   // Configurações editáveis refletidas na API e mantidas após recarregar a tela.
   await go(base+"/c/"+slug+"/admin/configuracoes");
   await until("configurações carregadas",'document.body.innerText.includes("Identidade da barbearia")');
@@ -345,6 +365,10 @@ try{
     "DELETE",undefined,signup.cookie);
   assert.equal(deleteBookedService.status,409,"Serviço com reserva ativa não pode ser desativado");
   pass("exclusão de serviço com reserva ativa é bloqueada");
+  const bookedBarberDelete=await api(base,"/api/c/"+slug+"/admin/barbers/"+barber.data.id,
+    "DELETE",undefined,signup.cookie);
+  assert.equal(bookedBarberDelete.status,409,"Não pode desativar barbeiro com reserva futura ativa");
+  pass("desativação de barbeiro com agendamento futuro é bloqueada");
   const bookingCode=await js('(()=>{const item=[...document.querySelectorAll("b")]'+
     '.find(el=>el.parentElement?.textContent?.includes("Protocolo"));'+
     'return item?.textContent?.trim()||""})()');
@@ -374,6 +398,13 @@ try{
   assert.equal(passwords,3);
   await click("Salvar nova senha");
   await until("nova senha aceita",'location.pathname==="/selecionar"');
+  const proSession=await api(base,"/api/auth/login","POST",{email:proEmail,password:replacement});
+  assert.equal(proSession.status,200,"Nova senha do profissional deve autenticar");
+  const proAdmin=await api(base,"/api/c/"+slug+"/admin/team","GET",undefined,proSession.cookie);
+  assert.equal(proAdmin.status,403,"Profissional não pode listar/gerenciar equipes no backend");
+  const proSettings=await api(base,"/api/c/"+slug+"/admin/settings","GET",undefined,proSession.cookie);
+  assert.equal(proSettings.status,403,"Profissional não pode acessar configurações administrativas");
+  pass("profissional autenticado não pode acessar endpoints do administrador");
   await go(base+"/c/"+slug+"/painel");
   await until("painel do profissional",'document.body.innerText.includes("PAINEL DO PROFISSIONAL")');
   pass("acesso individual do profissional após troca obrigatória");
@@ -483,6 +514,43 @@ try{
     'document.querySelector(".modal-backdrop")?.innerText.includes("HISTÓRICO")&&'+
     'document.querySelector(".modal-backdrop")?.innerText.includes("Corte Navegador")');
   pass("cliente abre histórico e indicadores corretos no painel");
+  // Exercita gerenciamento de membros pela interface, incluindo revogação e restauração.
+  await go(base+"/c/"+slug+"/admin/equipe");
+  await until("painel de equipe carregado",'document.body.innerText.includes("Equipe & acessos")');
+  await click("Adicionar integrante");
+  await until("modal de integrante",'document.querySelector(".modal-backdrop")!==null');
+  const managerEmail="gerente-"+randomBytes(5).toString("hex")+"@tigu.test";
+  await fillField("Nome","Gerente Chromium");
+  await fillField("E-mail (login)",managerEmail);
+  await fillField("Senha provisória","Gerente!"+randomBytes(10).toString("hex"));
+  const managerRole=await js('(()=>{const e=document.querySelector(".modal-backdrop select");'+
+    'if(!e)return false;Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set.call(e,"manager");'+
+    'e.dispatchEvent(new Event("change",{bubbles:true}));return e.value==="manager"})()');
+  assert.ok(managerRole,"Papel gerente precisa estar disponível no cadastro");
+  await click("Criar acesso");
+  await until("gerente criado no painel",'document.querySelector(".modal-backdrop")===null&&'+
+    'document.body.innerText.includes("Gerente Chromium")');
+  const teamAfterCreate=await api(base,"/api/c/"+slug+"/admin/team","GET",undefined,signup.cookie);
+  const manager=teamAfterCreate.data.team.find(x=>x.email===managerEmail);
+  assert.ok(manager&&manager.role==="manager"&&manager.active===1,
+    "Gerente criado na UI deve ter vínculo ativo somente nesta barbearia");
+  pass("dono cria gerente com papel correto via interface administrativa");
+  const clickManagerAction=async textPart=>js('(()=>{const row=[...document.querySelectorAll("tbody tr")]'+
+    '.find(x=>x.textContent.includes("Gerente Chromium"));const btn=[...row?.querySelectorAll("button")||[]]'+
+    '.find(x=>x.textContent.includes('+JSON.stringify(textPart)+'));'+
+    'if(!btn)return false;window.confirm=()=>true;btn.click();return true})()');
+  assert.ok(await clickManagerAction("remover"),"Botão de remoção de gerente não encontrado");
+  await until("acesso de gerente removido",
+    '[...document.querySelectorAll("tbody tr")].some(x=>x.textContent.includes("Gerente Chromium")&&x.textContent.includes("reativar acesso"))');
+  const teamAfterRevoke=await api(base,"/api/c/"+slug+"/admin/team","GET",undefined,signup.cookie);
+  assert.equal(teamAfterRevoke.data.team.find(x=>x.membership_id===manager.membership_id)?.active,0);
+  pass("dono revoga acesso de gerente pelo painel e persiste no D1");
+  assert.ok(await clickManagerAction("reativar acesso"),"Botão de reativação não encontrado");
+  await until("gerente reativado",
+    '[...document.querySelectorAll("tbody tr")].some(x=>x.textContent.includes("Gerente Chromium")&&x.textContent.includes("remover"))');
+  const teamAfterRestore=await api(base,"/api/c/"+slug+"/admin/team","GET",undefined,signup.cookie);
+  assert.equal(teamAfterRestore.data.team.find(x=>x.membership_id===manager.membership_id)?.active,1);
+  pass("dono restaura acesso ao gerente sem promover permissões");
   await go(base+"/c/"+slug+"/admin/agenda");
   await until("agenda administrativa",'document.body.innerText.includes("Pedidos")');
   await click("Pedidos");
@@ -591,7 +659,7 @@ try{
   await until("tabela de precificação",
     'document.body.innerText.includes("Precificação de mensagens")');
   pass("Superadmin consulta precificação vigente");
-  console.log("40 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
+  console.log("49 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){
