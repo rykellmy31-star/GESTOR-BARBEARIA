@@ -18,6 +18,12 @@ CREATE TABLE booking_payments (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX idx_booking_payments_company_status ON booking_payments(company_id,status,created_at);
+CREATE TRIGGER booking_payment_company_guard BEFORE INSERT ON booking_payments
+WHEN NOT EXISTS (SELECT 1 FROM bookings WHERE id=NEW.booking_id AND company_id=NEW.company_id)
+BEGIN
+  SELECT RAISE(ABORT,'bookings tenant mismatch');
+END;
+
 CREATE TRIGGER booking_payment_cancel_refund AFTER UPDATE OF status ON bookings
 WHEN NEW.status='cancelado' AND OLD.status<>'cancelado'
 BEGIN
