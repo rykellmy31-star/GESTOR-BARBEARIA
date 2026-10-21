@@ -154,6 +154,33 @@ try {
     superadmin("POST","/api/super/messages/run-cron?companyId="+value,{})));
   check("Cron manual rejeita empresa inválida sem processar fila global",
     invalidTenant.every(x=>x.status===400));
+  // Homologação financeira direta via Worker+D1, não apenas testes unitários.
+  const financeInitial=await superadmin("GET","/api/super/settings");
+  const pricing=financeInitial.data.settings;
+  check("Superadmin lê os limites financeiros da plataforma",
+    financeInitial.status===200 && Number.isSafeInteger(pricing.topup_min_cents) &&
+    pricing.topup_max_cents>=pricing.topup_min_cents);
+  const badAttempts=await superadmin("PUT","/api/super/settings",{key:"msg_max_attempts",value:0});
+  check("HTTP impede número de tentativas inválido",badAttempts.status===422);
+  const badText=await superadmin("PUT","/api/super/settings",{key:"topup_min_cents",value:"1000"});
+  check("HTTP impede valores financeiros enviados como texto",badText.status===422);
+  const badFloor=await superadmin("PUT","/api/super/settings",{key:"topup_min_cents",value:pricing.topup_max_cents+1});
+  check("HTTP recusa recarga mínima maior que máxima",badFloor.status===422);
+  const badCeiling=await superadmin("PUT","/api/super/settings",{key:"topup_max_cents",value:pricing.topup_min_cents-1});
+  check("HTTP recusa recarga máxima menor que mínima",badCeiling.status===422);
+  const goodAttempts=await superadmin("PUT","/api/super/settings",{key:"msg_max_attempts",value:4});
+  const financeUpdated=await superadmin("GET","/api/super/settings");
+  check("HTTP aceita ajuste válido e grava no D1",goodAttempts.status===200 &&
+    financeUpdated.status===200 && financeUpdated.data.settings.msg_max_attempts===4);
+  const race=await Promise.all([
+    superadmin("PUT","/api/super/settings",{key:"topup_min_cents",value:4000}),
+    superadmin("PUT","/api/super/settings",{key:"topup_max_cents",value:2000}),
+  ]);
+  const afterRace=await superadmin("GET","/api/super/settings");
+  check("Gravações concorrentes preservam consistência dos limites de recarga",
+    race.every(x=>x.status===200||x.status===422) && race.some(x=>x.status===200) &&
+    race.some(x=>x.status===422) && afterRace.status===200 &&
+    afterRace.data.settings.topup_min_cents<=afterRace.data.settings.topup_max_cents);
   console.log(`\n${checks} verificações HTTP locais aprovadas. Nenhum deploy, pagamento ou envio real.`);
 } catch(error) {
   console.error(error.message);process.exitCode=1;
