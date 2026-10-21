@@ -142,7 +142,12 @@ export function WalletPage() {
                 {(checkout.mock === true || checkout.provider === "mock") && (
                   <Button className="w-full justify-center border border-sky-500/50 py-2.5 text-sm text-sky-200" onClick={() => simu.mutate(checkout.code)}>Simular pagamento aprovado (demo)</Button>
                 )}
-                <button className="flex w-full items-center justify-center gap-1 text-xs text-zinc-500 hover:text-red-300" onClick={() => cancel.mutate(checkout.code)}><X size={12} /> cancelar cobrança</button>
+                {checkout.provider === "mock" ? (
+                  <button disabled={cancel.isPending} className="flex w-full items-center justify-center gap-1 text-xs text-zinc-500 hover:text-red-300 disabled:opacity-50"
+                    onClick={() => cancel.mutate(checkout.code)}><X size={12} /> cancelar simulação</button>
+                ) : (
+                  <p className="text-xs text-zinc-400">O Pix real não pode ser cancelado aqui. Após vencer, confirme o status antes de gerar outra cobrança.</p>
+                )}
               </>
             ) : (
               <p className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"><Check size={15} /> Status: {checkout.status} — créditos {checkout.credited_at ? "já creditados ✓" : ""}</p>

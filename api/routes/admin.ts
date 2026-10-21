@@ -979,9 +979,19 @@ adminRouter.post("/wallet/topup/:code/simulate", async (c) => {
 
 adminRouter.post("/wallet/topup/:code/cancel", async (c) => {
   const db = P(c); const id = cid(c);
-  const r = await db.prepare(`UPDATE topup_orders SET status='cancelled', updated_at=?1 WHERE code=?2 AND company_id=?3 AND status='pending'`).bind(nowIso(), (c.req.param("code") || "").toUpperCase(), id).run();
-  if (!r.meta?.changes) return err(c, "Só dá para cancelar recargas ainda não pagas", 409);
-  return json(c, { ok: true });
+  const code = (c.req.param("code") || "").toUpperCase();
+  const topup = await db.prepare("SELECT status,provider FROM topup_orders WHERE code=?1 AND company_id=?2")
+    .bind(code,id).first<{status:string;provider:string}>();
+  if (!topup) return err(c,"Recarga não encontrada",404);
+  // A rota não cancela o pagamento junto ao Mercado Pago. Marcar um Pix real
+  // como cancelado aqui perderia a reconciliação de um pagamento posterior.
+  if (topup.provider !== "mock")
+    return err(c,"Pix real não pode ser cancelado por este painel. Aguarde o vencimento; pagamentos aprovados serão conciliados.",409);
+  const r = await db.prepare(`UPDATE topup_orders SET status='cancelled', updated_at=?1
+    WHERE code=?2 AND company_id=?3 AND status='pending' AND provider='mock'`)
+    .bind(nowIso(),code,id).run();
+  if (!r.meta?.changes) return err(c,"Só dá para cancelar recargas simuladas pendentes",409);
+  return json(c,{ok:true});
 });
 
 // ── uploads (R2) ─────────────────────────────────────────────────────────────

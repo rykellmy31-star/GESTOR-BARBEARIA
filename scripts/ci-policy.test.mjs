@@ -93,3 +93,15 @@ test("Valor personalizado é o mesmo enviado à API, sem cobranças quando gatew
   assert.match(src,/topup_limits/);
   assert.doesNotMatch(src,/amount_cents: amount/);
 });
+
+
+test("Pix real não pode ser cancelado apenas no banco local",()=>{
+  const api=readFileSync(new URL("../api/routes/admin.ts",import.meta.url),"utf8");
+  const topup=readFileSync(new URL("../api/lib/topup.ts",import.meta.url),"utf8");
+  const ui=readFileSync(new URL("../src/pages/admin/WalletPage.tsx",import.meta.url),"utf8");
+  const cancelRoute=api.split('adminRouter.post("/wallet/topup/:code/cancel"')[1]?.split("\n});")[0]??"";
+  assert.match(cancelRoute,/topup\.provider !== "mock"/);
+  assert.match(topup,/status IN \('pending','expired','cancelled'\)/);
+  assert.match(topup,/t\.status === "cancelled" && t\.provider === "mercadopago"/);
+  assert.match(ui,/checkout\.provider === "mock"/);
+});

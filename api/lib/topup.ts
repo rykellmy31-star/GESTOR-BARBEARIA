@@ -99,6 +99,13 @@ export async function confirmTopupFromProvider(env: Env, externalId: string, via
       }
     }
   }
+  // Recuperação de Pix real CANCELADO apenas localmente em versões antigas:
+  // o gateway já comprovou status aprovado, valor, referência, Pix e BRL.
+  // Nenhum cancelamento mock/manual é reaberto por essa reconciliação.
+  if (t.status === "cancelled" && t.provider === "mercadopago" && via !== "mock" && via !== "manual") {
+    await db.prepare("UPDATE topup_orders SET status='expired',updated_at=?1 WHERE id=?2 AND status='cancelled' AND provider='mercadopago'")
+      .bind(nowIso(),t.id).run();
+  }
   const credited = await creditTopup(db, t.company_id, t.amount_cents, t.id, via === "manual" ? `Confirmação manual pelo Tigu: ${justification}` : via === "mock" ? "Confirmação simulada (ambiente de demonstração)" : "Pix aprovado (re-consultado no gateway)");
   if (credited) {
     await ensureWallet(db, t.company_id);
@@ -136,7 +143,7 @@ export async function reconcilePendingTopups(
   const batchSize = Math.max(1, Math.min(50, Math.trunc(limit)));
   const { results } = await db.prepare(
     `SELECT provider_payment_id FROM topup_orders
-     WHERE provider='mercadopago' AND status IN ('pending','expired')
+     WHERE provider='mercadopago' AND status IN ('pending','expired','cancelled')
        AND provider_payment_id IS NOT NULL AND provider_payment_id <> ''
        AND created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-48 hours')
      ORDER BY updated_at ASC, id ASC LIMIT ?1`
@@ -148,7 +155,7 @@ export async function reconcilePendingTopups(
       // Rotaciona os pedidos em espera entre execuções, evitando que o mesmo
       // lote de Pix pendentes bloqueie a conferência das demais barbearias.
       await db.prepare(`UPDATE topup_orders SET updated_at=?1 WHERE provider='mercadopago'
-        AND provider_payment_id=?2 AND status IN ('pending','expired')`)
+        AND provider_payment_id=?2 AND status IN ('pending','expired','cancelled')`)
         .bind(nowIso(), row.provider_payment_id).run();
       const res = await confirmTopupFromProvider(env, row.provider_payment_id, "poll");
       if (res.credited) out.credited++;
