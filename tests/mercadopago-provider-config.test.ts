@@ -45,7 +45,7 @@ describe("Pix: pré-requisitos antes de criar cobranças reais", () => {
   it("não libera recarga sem token ou segredo do webhook", async () => {
     for (const missing of [{ MP_ACCESS_TOKEN: "" }, { MP_WEBHOOK_SECRET: "" }]) {
       const e = ready(missing);
-      expect(pickPaymentProvider(e).provider).toBeNull();
+      expect(pickPaymentProvider(e, false).provider).toBeNull();
       const result = await mpProvider(e).createPixPayment({
         amountCents: 1000, externalReference: "TIGU-TEST",
         description: "Teste", payerEmail: "demo@example.com",
