@@ -359,7 +359,7 @@ try{
   await click("Revisar agendamento");
   await until("revisão do atendimento",'document.body.innerText.includes("Confirme seu horário")');
   await click("Confirmar agendamento");
-  await until("reserva confirmada",'document.body.innerText.includes("Seu horário está garantido")');
+  await until("reserva registrada",'document.body.innerText.includes("Seu horário foi registrado")');
   pass("visitante agenda serviço e profissional pela interface real");
   const deleteBookedService=await api(base,"/api/c/"+slug+"/admin/services/"+service.data.id,
     "DELETE",undefined,signup.cookie);
