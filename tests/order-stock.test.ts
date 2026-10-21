@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
 import schema1 from "../migrations/0001_init.sql";
 import schema6 from "../migrations/0006_request_rate_limits.sql";
+import {applyBookingMigrations} from "./helpers/booking-migrations";
 import { app } from "../api/index";
 import { sha256hex } from "../api/lib/crypto";
 import { changeOrderStatus } from "../api/lib/orders";
@@ -12,6 +13,7 @@ const e={...env,APP_ENV:"development",SESSION_SECRET:"order-test-secret-at-least
 const ctx={waitUntil:()=>{},passThroughOnException:()=>{}} as unknown as ExecutionContext;
 beforeAll(async()=>{
   for(const schema of [schema1,schema6]) for(const sql of schema.replace(/--[^\n]*/g,"").split(";").map(s=>s.trim()).filter(Boolean)) await db.prepare(sql).run();
+  await applyBookingMigrations(db);
 });
 
 describe("catálogo: edição e vínculos isolados",()=>{
