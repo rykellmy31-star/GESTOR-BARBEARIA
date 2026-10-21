@@ -234,10 +234,15 @@ try{
 
 
   // Cliente gerencia pelo site o mesmo agendamento, sem ter uma sessão de funcionário.
+  const lookupBefore=await api(base,"/api/c/"+slug+"/bookings/lookup","POST",
+    {code:bookingCode,phone:"73999991111"});
+  assert.equal(lookupBefore.status,200,"Protocolo e telefone da reserva são válidos na API");
   await go(base+"/c/"+slug+"/meus-agendamentos");
-  await until("busca pública de reservas",'document.body.innerText.includes("Meus agendamentos")');
+  await until("busca pública de reservas",'document.querySelector("input[placeholder=\"AUR-XXXXXXXX\"]")!==null');
+  await fill('input[placeholder="AUR-XXXXXXXX"]',bookingCode);
+  await fill('input[placeholder*="99999-0000"]',"73999991111");
   await click("Consultar");
-  await until("reserva localizada pelo próprio cliente",'document.body.innerText.includes("Cliente") && document.body.innerText.includes("Corte Navegador")');
+  await until("reserva localizada pelo próprio cliente",'document.body.innerText.includes("Corte Navegador")');
   pass("cliente consulta a própria reserva pelo protocolo e telefone");
   await click("Remarcar");
   await until("modal de remarcação",'document.body.innerText.includes("Novo horário — Profissional Navegador")');
