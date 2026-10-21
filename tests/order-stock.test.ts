@@ -65,7 +65,10 @@ async function fixture(stock=5){
   },e,ctx);
   const create=(items:{productId:number;qty:number}[])=>request("/orders",{name:"Cliente",phone:"5573999990000",items});
   const value=(sql:string)=>db.prepare(sql).bind(companyId).first("n");
-  return {companyId,productId,request,create,value};
+  const get=(path:string)=>app.request("/api/c/"+slug+path,{
+    method:"GET",headers:{cookie:"aurum_session=uid."+userId+"."+token},
+  },e,ctx);
+  return {companyId,productId,slug,request,create,value,get};
 }
 describe("loja: estoque e pedidos transacionais",()=>{
   it("consulta múltiplos produtos e calcula valores com preços do servidor",async()=>{
@@ -123,5 +126,37 @@ describe("loja: estoque e pedidos transacionais",()=>{
       expect(await f.value("SELECT count(*) n FROM notifications WHERE company_id=?1")).toBe(1);
       expect(await db.prepare("SELECT stock FROM products WHERE id=?1").bind(f.productId).first("stock")).toBe(4);
     } finally { await db.prepare(`DROP TRIGGER ${trigger}`).run(); }
+  });
+});
+
+describe("fluxo de compras: catálogo, cliente e painel",()=>{
+  it("mostra estoque esgotado no catálogo e não aceita compra",async()=>{
+    const f=await fixture(0);
+    const response=await f.get("/products");
+    expect(response.status).toBe(200);
+    const result=await response.json() as {products:{id:number;stock:number;price_cents:number}[]};
+    expect(result.products.find(p=>p.id===f.productId)).toMatchObject({id:f.productId,stock:0,price_cents:1999});
+    expect((await f.create([{productId:f.productId,qty:1}])).status).toBe(409);
+    expect(await f.value("SELECT count(*) n FROM orders WHERE company_id=?1")).toBe(0);
+  });
+  it("compra, consulta pedido, registra pagamento e entrega sem novo débito de estoque",async()=>{
+    const f=await fixture(4);
+    const created=await f.create([{productId:f.productId,qty:2}]);
+    expect(created.status).toBe(201);
+    const receipt=await created.json() as {code:string;total:number};
+    expect(receipt.total).toBe(39.98);
+    const response=await f.get("/admin/orders");
+    expect(response.status).toBe(200);
+    const result=await response.json() as {orders:{id:number;code:string;status:string;total_cents:number;items:{qty:number;unit_price_cents:number}[]}[]};
+    const order=result.orders.find(o=>o.code===receipt.code);
+    expect(order).toMatchObject({status:"novo",total_cents:3998});
+    expect(order?.items).toEqual(expect.arrayContaining([expect.objectContaining({qty:2,unit_price_cents:1999})]));
+    expect(await db.prepare("SELECT stock FROM products WHERE id=?1").bind(f.productId).first("stock")).toBe(2);
+    const path="/admin/orders/"+order!.id+"/status";
+    expect((await f.request(path,{status:"pago"},"PATCH")).status).toBe(200);
+    expect(await db.prepare("SELECT stock FROM products WHERE id=?1").bind(f.productId).first("stock")).toBe(2);
+    expect((await f.request(path,{status:"entregue"},"PATCH")).status).toBe(200);
+    expect((await f.request(path,{status:"novo"},"PATCH")).status).toBe(409);
+    expect(await f.value("SELECT count(*) n FROM stock_movements WHERE company_id=?1 AND delta<0")).toBe(1);
   });
 });
