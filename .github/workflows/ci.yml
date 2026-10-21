@@ -54,3 +54,14 @@ jobs:
           CLOUDFLARE_AUDIT_TOKEN: ${{ secrets.CLOUDFLARE_AUDIT_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: node scripts/cloudflare-audit.mjs
+
+      # Um unico commit com mensagem exata libera SOMENTE criação D1/R2
+      # em homologação. Não roda em PR, no disparo manual ou em commits
+      # seguintes. O script usa allowlist de endpoints e nomes literais.
+      - name: Provisionar D1 e R2 isolados do TIGU (commit unico)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_PROVISION_STAGING_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_STAGING_CREATE_APPROVED: YES
+        run: node scripts/staging-provision.mjs create
