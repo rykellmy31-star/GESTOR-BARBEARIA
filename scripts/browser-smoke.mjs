@@ -146,6 +146,29 @@ try{
   await go(base+"/c/"+slug+"/admin/pedidos");
   await until("pedido no painel",'document.body.innerText.includes("Cliente Navegador")');
   pass("venda aparece no painel administrativo");
+  // Exercita os botões reais de pagamento e cancelamento: somente D1 isolado,
+  // sem gateway financeiro, com estorno único do estoque reservado.
+  const expandedOrder=await js('(()=>{const b=[...document.querySelectorAll("button")]'+
+    '.find(x=>x.textContent.includes("Cliente Navegador"));if(!b)return false;b.click();return true})()');
+  assert.ok(expandedOrder,"Pedido não abriu no painel");
+  await until("botão para pagamento manual",
+    '[...document.querySelectorAll("button")].some(x=>x.textContent.includes("Registrar pagamento"))');
+  await click("Registrar pagamento");
+  await until("pedido pago após atualização",
+    '[...document.querySelectorAll("button")].some(x=>x.textContent.includes("Marcar entregue"))');
+  const paidOrder=await api(base,"/api/c/"+slug+"/admin/orders","GET",undefined,signup.cookie);
+  assert.ok(paidOrder.data.orders.some(x=>x.customer_name==="Cliente Navegador"&&x.status==="pago"),
+    "O pagamento manual deve persistir no D1");
+  pass("proprietário registra pagamento manual pelo painel, sem cobrança real");
+  await click("Cancelar (devolve estoque)");
+  await until("pedido cancelado após atualização",'document.body.innerText.includes("Pedido finalizado.")');
+  const canceledOrder=await api(base,"/api/c/"+slug+"/admin/orders","GET",undefined,signup.cookie);
+  assert.ok(canceledOrder.data.orders.some(x=>x.customer_name==="Cliente Navegador"&&x.status==="cancelado"),
+    "Cancelamento deve persistir no D1");
+  const productsAfter=await api(base,"/api/c/"+slug+"/admin/products","GET",undefined,signup.cookie);
+  assert.equal(productsAfter.data.products.find(x=>x.id===product.data.id)?.stock,4,
+    "Cancelar pedido pago deve estornar exatamente a unidade reservada");
+  pass("cancelamento de pedido pago estorna o estoque no D1");
   await go(base+"/c/"+slug+"/admin/produtos");
   await until("produto no painel",'document.body.innerText.includes("Pomada Navegador")');
   pass("estoque aparece no painel");
@@ -299,6 +322,33 @@ try{
   await fill("input[type=email]",email);await fill("input[type=password]",password);
   await click("Entrar");
   await until("dono reautenticado",'location.pathname.includes("/admin")');
+  const customerList=await api(base,"/api/c/"+slug+"/admin/customers","GET",undefined,signup.cookie);
+  assert.equal(customerList.status,200,"Listagem de clientes do painel");
+  const customer=customerList.data.customers.find(x=>x.phone==="73999991111");
+  assert.ok(customer,"A reserva deve criar cadastro de cliente");
+  assert.equal(customer.visits,1,"Cliente tem uma reserva");
+  assert.equal(customer.canceled,1,"Cancelamento é exibido no histórico");
+  assert.equal(customer.completed,0,"Reserva cancelada não conta como concluída");
+  assert.equal(customer.spent_cents,0,"Reserva cancelada não gera faturamento");
+  pass("indicadores de clientes respeitam o status e o D1 da empresa");
+  await go(base+"/c/"+slug+"/admin/clientes");
+  await until("cliente exibido na lista",'document.body.innerText.includes("Cliente Reserva Chromium")');
+  const customerRow=await js('(()=>{const r=[...document.querySelectorAll("tbody tr")]'+
+    '.find(x=>x.textContent.includes("Cliente Reserva Chromium"));'+
+    'return r?[...r.querySelectorAll("td")].map(x=>x.textContent.trim()):null})()');
+  assert.ok(customerRow&&customerRow[1]==="1"&&customerRow[3]==="1",
+    "Visitas e cancelamentos precisam estar visíveis na tabela");
+  const openedCustomer=await js('(()=>{const r=[...document.querySelectorAll("tbody tr")]'+
+    '.find(x=>x.textContent.includes("Cliente Reserva Chromium"));if(!r)return false;r.click();return true})()');
+  assert.ok(openedCustomer,"Detalhe do cliente deve abrir pelo clique");
+  await until("histórico real do cliente no modal",
+    'document.body.innerText.includes("Histórico")&&document.body.innerText.includes("Corte Navegador")');
+  const customerDetail=await api(base,"/api/c/"+slug+"/admin/customers/"+customer.id,
+    "GET",undefined,signup.cookie);
+  assert.equal(customerDetail.status,200,"Detalhe do cliente deve responder");
+  assert.ok(customerDetail.data.bookings.some(x=>x.code===bookingCode&&x.status==="cancelado"),
+    "Detalhe deve mostrar a reserva do mesmo cliente");
+  pass("cliente abre histórico e indicadores corretos no painel");
   await go(base+"/c/"+slug+"/admin/agenda");
   await until("agenda administrativa",'document.body.innerText.includes("Pedidos")');
   await click("Pedidos");
@@ -407,7 +457,7 @@ try{
   await until("tabela de precificação",
     'document.body.innerText.includes("Precificação de mensagens")');
   pass("Superadmin consulta precificação vigente");
-  console.log("25 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
+  console.log("29 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){
