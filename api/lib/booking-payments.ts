@@ -106,7 +106,7 @@ export async function confirmBookingPix(env:Env,paymentId:string):Promise<{ok:bo
     const at=nowIso();
     // Verifica o cancelamento dentro do próprio UPDATE, não com snapshot antigo:
     // evita marcar "paid" caso cliente cancele no instante do webhook.
-    await db.prepare("UPDATE booking_payments SET status=CASE WHEN EXISTS(SELECT 1 FROM bookings b WHERE b.id=booking_id AND b.company_id=company_id AND b.status='cancelado') THEN 'refund_required' ELSE 'paid' END,paid_at=?2,updated_at=?2 WHERE id=?1 AND status IN ('pending','expired','failed')")
+    await db.prepare("UPDATE booking_payments SET status=CASE WHEN EXISTS(SELECT 1 FROM bookings b WHERE b.id=booking_payments.booking_id AND b.company_id=booking_payments.company_id AND b.status='cancelado') THEN 'refund_required' ELSE 'paid' END,paid_at=?2,updated_at=?2 WHERE id=?1 AND status IN ('pending','expired','failed')")
       .bind(inv.id,at).run();
     const latest=await db.prepare("SELECT status FROM booking_payments WHERE id=?1").bind(inv.id).first<{status:string}>();
     return {ok:true,status:latest?.status??"pending"};
