@@ -12,6 +12,8 @@ import { verifyWebhookSignature } from "../lib/messaging/provider";
 import { verifyMpWebhookSignature, paymentWebhookUid } from "../lib/payments";
 import { confirmTopupFromProvider } from "../lib/topup";
 import { confirmBookingPix } from "../lib/booking-payments";
+import { confirmOrderPix } from "../lib/order-payments";
+import { merchantByWebhookKey } from "../lib/merchant-payments";
 import { confirmSubscriptionPix } from "../lib/subscription-billing";
 import { nowIso } from "../lib/utils";
 
@@ -47,6 +49,41 @@ webhooksRouter.post("/whatsapp", async (c) => {
     console.error("[whatsapp-webhook]", String(e));
     return c.json({ error: "Falha temporária no processamento; reenvie o evento." }, 503);
   }
+});
+
+// Webhook PRÓPRIO de cada barbearia. Não consulta nem credita a carteira TIGU.
+// A assinatura é a da aplicação Mercado Pago conectada pelo proprietário.
+webhooksRouter.post("/merchant-mercadopago/:key",async c=>{
+ if(c.env.TIGU_STAGING==="1")return c.json({error:"Pagamentos reais bloqueados na homologação."},403);
+ const merchant=await merchantByWebhookKey(c.env,c.req.param("key")||"");
+ if(!merchant)return c.json({error:"Conta recebedora não encontrada."},404);
+ const raw=await c.req.text();
+ let body:unknown;
+ try{body=JSON.parse(raw);}catch{return c.json({ok:true,ignored:"json"});}
+ if(!body||typeof body!=="object"||Array.isArray(body))
+  return c.json({ok:true,ignored:"payload"});
+ const event=body as Record<string,unknown>;
+ if(event.type!=="payment")return c.json({ok:true,ignored:"tipo"});
+ const data=event.data&&typeof event.data==="object"&&!Array.isArray(event.data)?
+  event.data as Record<string,unknown>:null;
+ const rawId=data?.id??c.req.query("data.id");
+ const paymentId=(typeof rawId==="string"||typeof rawId==="number")?String(rawId):"";
+ if(!/^[0-9]{1,24}$/.test(paymentId))return c.json({ok:true,ignored:"id"});
+ if(!await verifyMpWebhookSignature(merchant.webhookSecret,
+  c.req.header("x-signature")??null,c.req.header("x-request-id")??null,paymentId))
+  return c.json({error:"assinatura inválida"},401);
+ // Responder falha transitória 503 para permitir reenvio; nunca confirmar
+ // pagamento com base apenas na notificação.
+ try {
+  const booking=await confirmBookingPix(c.env,merchant.company_id,paymentId);
+  const result=booking.status==="not_found"?
+   await confirmOrderPix(c.env,merchant.company_id,paymentId):booking;
+  if(!result.ok&&result.status!=="not_found")
+   return c.json({error:"Não foi possível conciliar com o recebedor."},503);
+  return c.json({ok:true,status:result.status});
+ }catch{
+  return c.json({error:"Falha temporária ao conferir recebimento."},503);
+ }
 });
 
 webhooksRouter.post("/mercadopago", async (c) => {
@@ -88,7 +125,7 @@ webhooksRouter.post("/mercadopago", async (c) => {
       // registros e efeitos são inteiramente separados por payment_id.
       const topup = await confirmTopupFromProvider(c.env,dataId,"webhook");
       const subscription = topup.ok ? null : await confirmSubscriptionPix(c.env,dataId);
-      const result = topup.ok ? topup : subscription?.ok ? subscription : await confirmBookingPix(c.env,dataId);
+      const result = topup.ok ? topup : subscription ?? {ok:false,status:"not_found"};
       if(result.ok && result.status==="paid") {
         await db.prepare("UPDATE payment_webhook_events SET processed=1 WHERE event_uid=?1")
           .bind(uid).run();
