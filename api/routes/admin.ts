@@ -581,7 +581,7 @@ adminRouter.post("/products/:id/stock", async (c) => {
 adminRouter.get("/orders", async (c) => {
   const db = P(c); const id = cid(c);
   const status = c.req.query("status");
-  const { results } = await db.prepare(`SELECT * FROM orders WHERE company_id=?1 ${status ? "AND status = ?2" : ""} ORDER BY id DESC LIMIT 200`).bind(id, ...(status ? [status] : [])).all();
+  const { results } = await db.prepare(`SELECT o.*,op.status AS payment_status FROM orders o LEFT JOIN order_payments op ON op.order_id=o.id AND op.company_id=o.company_id WHERE o.company_id=?1 ${status ? "AND o.status = ?2" : ""} ORDER BY o.id DESC LIMIT 200`).bind(id, ...(status ? [status] : [])).all();
   const ids = (results as { id: number }[]).map((r) => r.id);
   let items: { order_id: number; product_name: string; qty: number; unit_price_cents: number }[] = [];
   if (ids.length) items = (await db.prepare(`SELECT * FROM order_items WHERE order_id IN (${ids.map((_, i) => `?${i + 1}`).join(",")})`).bind(...ids).all()).results as typeof items;
