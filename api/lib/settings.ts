@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { openingRangeSchema, timezoneSchema } from "./schedule-validation";
+import { isValidPlatformSetting } from "./platform-setting-validation";
 
 // ============================================================================
 // Configurações POR EMPRESA (company_settings.data) + defaults DA PLATAFORMA
@@ -131,19 +132,50 @@ export async function loadPlatformSettings(db: D1Database, ttlMs = 10_000): Prom
   const { results } = await db.prepare("SELECT key, value FROM platform_settings").all<{ key: string; value: string }>();
   const data = { ...platformDefaults } as Record<PlatformKey, number | string>;
   for (const r of results) {
-    if (r.key in data) data[r.key as PlatformKey] = Number.isFinite(Number(r.value)) && typeof platformDefaults[r.key as PlatformKey] === "number" ? Number(r.value) : r.value;
+    if (!Object.prototype.hasOwnProperty.call(data, r.key)) continue;
+    const key = r.key as PlatformKey;
+    // Não transformar "", "NaN", Infinity ou decimais em valores financeiros.
+    const parsed = typeof platformDefaults[key] === "number"
+      && typeof r.value === "string" && /^(?:0|[1-9]\d*)$/.test(r.value)
+      ? Number(r.value) : r.value;
+    if (!isValidPlatformSetting(key, parsed)) {
+      throw new Error("Configuração financeira inválida: " + key);
+    }
+    data[key] = parsed;
+  }
+  if (Number(data.topup_min_cents) > Number(data.topup_max_cents)) {
+    throw new Error("Limites de recarga incompatíveis na plataforma");
   }
   platformCache.at = now;
   platformCache.data = data;
   return data;
 }
 
-export async function setPlatformSetting(db: D1Database, key: PlatformKey, value: number | string): Promise<void> {
-  await db
-    .prepare(`INSERT INTO platform_settings (key, value, updated_at) VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ','now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
-    .bind(key, String(value))
-    .run();
-  platformCache.at = 0; // cache curto; invalida já para o próximo load
+export async function setPlatformSetting(db: D1Database, key: PlatformKey, value: number | string): Promise<boolean> {
+  if (!isValidPlatformSetting(key, value)) return false;
+  // A condição de consistência roda no MESMO comando SQL da gravação:
+  // duas escritas simultâneas não podem deixar min > max.
+  const otherKey = key === "topup_min_cents" ? "topup_max_cents"
+    : key === "topup_max_cents" ? "topup_min_cents" : null;
+  const defaultOther = otherKey === "topup_max_cents" ? platformDefaults.topup_max_cents
+    : otherKey === "topup_min_cents" ? platformDefaults.topup_min_cents : 0;
+  const result = await db.prepare(`INSERT INTO platform_settings (key, value, updated_at)
+    SELECT ?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ','now')
+    WHERE ?3 IS NULL OR EXISTS (
+      SELECT 1 FROM (SELECT COALESCE(
+        (SELECT CASE WHEN value <> '' AND value NOT GLOB '*[^0-9]*'
+          AND LENGTH(value) <= 9 AND CAST(value AS INTEGER) BETWEEN 1 AND 100000000
+          THEN CAST(value AS INTEGER) ELSE -1 END
+          FROM platform_settings WHERE key=?3), ?4) AS opposite)
+      WHERE opposite BETWEEN 1 AND 100000000
+        AND ((?1='topup_min_cents' AND CAST(?2 AS INTEGER) <= opposite)
+          OR (?1='topup_max_cents' AND CAST(?2 AS INTEGER) >= opposite))
+    )
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`)
+    .bind(key, String(value), otherKey, defaultOther).run();
+  if (result.success === false || result.meta?.changes !== 1) return false;
+  platformCache.at = 0;
+  return true;
 }
 
 export const platformSettingKeys = Object.keys(platformDefaults) as PlatformKey[];

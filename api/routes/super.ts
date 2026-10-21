@@ -13,6 +13,7 @@ import { hashPassword } from "../lib/crypto";
 import { ensureWallet, getWallet, manualAdjustment, resolveUncertainNotSent } from "../lib/wallet";
 import { confirmTopupFromProvider } from "../lib/topup";
 import { loadPlatformSettings, setPlatformSetting, platformSettingKeys, type PlatformKey } from "../lib/settings";
+import { isValidPlatformSetting } from "../lib/platform-setting-validation";
 import { DEFAULT_SETTINGS } from "../lib/settings";
 import { loadSalesContact, saveSalesContact, salesContactSchema } from "../lib/marketing";
 import { changePlan, listPublicPlans, planCodeSchema, planEditSchema } from "../lib/plans";
@@ -477,9 +478,11 @@ superRouter.delete("/pricing/:id", async (c) => {
 // ── configurações da plataforma ──────────────────────────────────────────────
 superRouter.get("/settings", async (c) => json(c, { settings: await loadPlatformSettings(c.env.DB, 0), keys: platformSettingKeys }));
 superRouter.put("/settings", async (c) => {
-  const parsed = z.object({ key: z.enum(platformSettingKeys as unknown as [PlatformKey, ...PlatformKey[]]), value: z.union([z.number().int().min(0).max(100000000), z.enum(["sent", "delivered"])]) }).safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "chave/valor inválidos", 400);
-  await setPlatformSetting(c.env.DB, parsed.data.key, parsed.data.value);
+  const parsed = z.object({ key: z.enum(platformSettingKeys as unknown as [PlatformKey, ...PlatformKey[]]), value: z.union([z.number().int().min(0).max(100000000), z.enum(["sent", "delivered"])]) }).strict().safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success || !isValidPlatformSetting(parsed.data.key, parsed.data.value))
+    return err(c, "chave/valor inválidos", 422);
+  const saved = await setPlatformSetting(c.env.DB, parsed.data.key, parsed.data.value);
+  if (!saved) return err(c, "Configuração recusada: limites financeiros incompatíveis", 422);
   await audit(c.env.DB, c.get("user"), "platform.setting", "platform_settings", parsed.data.key, parsed.data, { companyId: null, scope: "platform" });
   return json(c, { ok: true });
 });
