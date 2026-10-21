@@ -103,11 +103,13 @@ export async function confirmBookingPix(env:Env,paymentId:string):Promise<{ok:bo
       d.currency_id!=="BRL" || d.payment_method_id!=="pix" ||
       !Number.isFinite(amount)||Math.round(amount*100)!==inv.amount_cents)
       return {ok:false,status:"mismatch"};
-    const status=inv.booking_status==="cancelado"?"refund_required":"paid";
     const at=nowIso();
-    await db.prepare("UPDATE booking_payments SET status=?2,paid_at=?3,updated_at=?3 WHERE id=?1 AND status IN ('pending','expired','failed')")
-      .bind(inv.id,status,at).run();
-    return {ok:true,status};
+    // Verifica o cancelamento dentro do próprio UPDATE, não com snapshot antigo:
+    // evita marcar "paid" caso cliente cancele no instante do webhook.
+    await db.prepare("UPDATE booking_payments SET status=CASE WHEN EXISTS(SELECT 1 FROM bookings b WHERE b.id=booking_id AND b.company_id=company_id AND b.status='cancelado') THEN 'refund_required' ELSE 'paid' END,paid_at=?2,updated_at=?2 WHERE id=?1 AND status IN ('pending','expired','failed')")
+      .bind(inv.id,at).run();
+    const latest=await db.prepare("SELECT status FROM booking_payments WHERE id=?1").bind(inv.id).first<{status:string}>();
+    return {ok:true,status:latest?.status??"pending"};
   }
   if(["cancelled","rejected","expired"].includes(payment.status)) {
     const status=payment.status==="expired"?"expired":"failed";
