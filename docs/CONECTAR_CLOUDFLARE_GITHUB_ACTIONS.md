@@ -137,3 +137,7 @@ O cadastro remoto segue retornando HTTP 500 mesmo depois do ajuste de D1 `run()`
 ## Bateria separada de recuperação D1 após indisponibilidade do tail
 
 O `wrangler tail` do Worker staging foi negado com o token existente, por isso nenhum erro interno foi capturado e a falha HTTP 500 de signup permanece aberta. A execução isolada de restore D1 e R2 pode seguir independentemente do cadastro, sem tocar dados de produção. Este commit aciona apenas o ensaio D1 que exporta `tigu-staging-db`, cria exclusivamente `tigu-staging-restore-check` se ausente e compara conteúdo recuperado. Não autoriza recursos externos, acesso a outros bancos ou migrações no banco de origem.
+
+## Restauração real D1 concluída; próximo R2
+
+O GitHub Actions run `39656147680` restaurou o export SQL do D1 de homologação em `tigu-staging-restore-check`, recuperando 40 tabelas com hash semântico e totais idênticos. O D1 original permaneceu inalterado, embora ainda não houvesse dados comerciais fictícios nele. Este commit ativa **somente** a verificação remota de objeto R2 sintético para bucket de restore separado; a conclusão dependerá do resultado no CI.
