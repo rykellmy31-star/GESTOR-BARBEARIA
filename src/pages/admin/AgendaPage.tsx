@@ -183,6 +183,13 @@ function BookingModal({ item: b, onClose, onChanged, tz }: any) {
           </div>
           <p className="text-zinc-200">{b.service_name} <span className="text-zinc-500">({b.duration_min} min)</span> com <b className="text-zinc-100">{b.barber_name}</b></p>
           <p className="text-zinc-300">{new Date(b.starts_at).toLocaleString("pt-BR", { timeZone: tz })} → {new Date(b.ends_at).toLocaleString("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit" })}</p>
+          <p className="text-xs text-zinc-400">Pagamento: <b className="text-zinc-200">
+            {b.payment_choice === "pix"
+              ? b.payment_status === "paid" ? "Pix confirmado" :
+                b.payment_status === "refund_required" ? "Estorno pendente" :
+                b.payment_status === "pending" ? "Pix aguardando pagamento" : "Pix não confirmado"
+              : "Após o atendimento"}
+          </b> · {money(b.price_cents)}</p>
           <div className="rounded-xl border border-line bg-ink-soft p-3 text-[13px]">
             <p className="flex items-center gap-1.5 text-zinc-200"><User size={13} className="text-zinc-500" /> {b.customer_name}</p>
             {b.customer_phone && <a className="flex items-center gap-1.5 text-[var(--c-gold)]" href={`https://wa.me/${b.customer_phone.replace(/\D/g, "").replace(/^(?!55)/, "55")}`} target="_blank" rel="noreferrer"><Link2 size={13} /> {b.customer_phone} (WhatsApp)</a>}
