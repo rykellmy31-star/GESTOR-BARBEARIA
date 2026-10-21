@@ -107,12 +107,34 @@ try {
   check("Cancelamento libera o atendimento",(await owner("POST",c+`/admin/bookings/${bookingId}/cancel`,{reason:"Validação local"})).status===200);
   check("Atendimento cancelado não pode ser restaurado por status",(await owner("PUT",c+`/admin/bookings/${bookingId}/status`,{status:"confirmado"})).status===409);
   const product=await owner("POST",c+"/admin/products",{name:"Pomada local",price_cents:2500,stock:3});
+  const catalogue=await visitor("GET",c+"/products");
+  check("Cliente vê produto ativo, preço e estoque no catálogo",product.status===200&&catalogue.status===200&&
+    catalogue.data.products.some(item=>item.id===product.data.id&&item.stock===3&&item.price_cents===2500));
   const order=await visitor("POST",c+"/orders",{name:"Cliente local",phone:"5573999990000",items:[{productId:product.data.id,qty:2}]});
-  check("Pedido reserva estoque sem cobrar pagamento",product.status===200&&order.status===201);
+  check("Cliente finaliza pedido sem pagamento automático",order.status===201&&order.data.total===50);
   const orders=(await owner("GET",c+"/admin/orders")).data.orders;
-  const orderId=orders.find(item=>item.code===order.data.code).id;
-  check("Cancelar pedido devolve estoque",(await owner("POST",c+`/admin/orders/${orderId}/status`,{status:"cancelado"})).status===200&&
-    (await owner("GET",c+"/admin/products")).data.products.find(item=>item.id===product.data.id).stock===3);
+  const found=orders.find(item=>item.code===order.data.code);
+  const orderId=found?.id;
+  check("Painel mostra pedido, quantidade e valor corretos",!!orderId&&found.status==="novo"&&found.total_cents===5000&&
+    found.items?.length===1&&found.items[0].qty===2&&found.items[0].unit_price_cents===2500);
+  check("Pedido reserva estoque ao chegar, sem aguardar pagamento",(await owner("GET",c+"/admin/products")).data.products
+    .find(item=>item.id===product.data.id).stock===1);
+  const paid=await owner("PATCH",c+"/admin/orders/"+orderId+"/status",{status:"pago"});
+  check("Pagamento manual não baixa estoque pela segunda vez",paid.status===200&&
+    (await owner("GET",c+"/admin/products")).data.products.find(item=>item.id===product.data.id).stock===1);
+  const delivered=await owner("PATCH",c+"/admin/orders/"+orderId+"/status",{status:"entregue"});
+  check("Entrega concluída bloqueia reabertura indevida",delivered.status===200&&
+    (await owner("PATCH",c+"/admin/orders/"+orderId+"/status",{status:"novo"})).status===409);
+  const cancellation=await visitor("POST",c+"/orders",{name:"Outro cliente",phone:"5573999991111",items:[{productId:product.data.id,qty:1}]});
+  const nextOrders=(await owner("GET",c+"/admin/orders")).data.orders;
+  const cancelledId=nextOrders.find(item=>item.code===cancellation.data.code)?.id;
+  check("Cancelamento devolve estoque ao catálogo",cancellation.status===201&&!!cancelledId&&
+    (await owner("POST",c+"/admin/orders/"+cancelledId+"/status",{status:"cancelado"})).status===200&&
+    (await visitor("GET",c+"/products")).data.products.find(item=>item.id===product.data.id).stock===1);
+  const empty=await owner("POST",c+"/admin/products",{name:"Produto esgotado",price_cents:100,stock:0});
+  const unavailable=await visitor("POST",c+"/orders",{name:"Cliente",phone:"5573999992222",items:[{productId:empty.data.id,qty:1}]});
+  check("Produto sem estoque aparece na loja mas não aceita pedido",empty.status===200&&unavailable.status===409&&
+    (await visitor("GET",c+"/products")).data.products.some(item=>item.id===empty.data.id&&item.stock===0));
   const login=await superadmin("POST","/api/auth/login",{email:superEmail,password:superPassword});
   check("Superadmin local autentica",login.status===200&&login.data.user.platform_role==="superadmin");
   const assisted=await superadmin("POST","/api/super/companies",{name:"Assistida local",slug:"assistida-local",owner_name:"Dono assistido",owner_email:"assisted@local-e2e.test",plan_code:"pro"});
