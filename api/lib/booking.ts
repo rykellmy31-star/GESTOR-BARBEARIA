@@ -31,6 +31,7 @@ export const createBookingSchema = z.object({
   consent: z.boolean().refine((v) => v === true, { message: "É necessário aceitar o uso dos dados (LGPD)" }),
   idempotencyKey: z.string().min(8).max(64),
   paymentChoice: z.enum(["after_service","pix"]).optional(),
+  fitInDurationMin: z.number().int().min(5).max(180).multipleOf(5).optional(),
 });
 
 export interface BookingMutationCtx {
@@ -58,6 +59,8 @@ export interface CreateResult {
 
 export async function createBooking(ctx: BookingMutationCtx, input: z.infer<typeof createBookingSchema>): Promise<CreateResult | { ok: false; message: string; status: number; issues?: unknown }> {
   const { db, companyId, settings } = ctx;
+  if(input.fitInDurationMin!=null && ctx.origin!=="admin")
+    return {ok:false,message:"Somente a empresa pode autorizar redução de duração para encaixes.",status:403};
   const existing = await db.prepare(`SELECT * FROM bookings WHERE idempotency_key = ?1 AND company_id = ?2`).bind(input.idempotencyKey, companyId).first<Record<string, unknown> & { id: number; starts_at: string; cancel_token: string; allowed_cancel_until: string }>();
   if (existing) {
     return {
@@ -87,7 +90,7 @@ export async function createBooking(ctx: BookingMutationCtx, input: z.infer<type
   let startsAt = input.startsAt;
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/.test(startsAt)) startsAt = startsAt.slice(0, 16) + ":00Z";
 
-  const check = await assertSlotAllowed(db, { barber, service, startsAt, settings, origin: ctx.origin });
+  const check = await assertSlotAllowed(db, { barber, service, startsAt, settings, origin: ctx.origin, fitInDurationMin:input.fitInDurationMin });
   if (!check.ok) return { ok: false, message: check.error, status: check.status };
 
   const phone = normalizePhone(input.phone);
@@ -112,13 +115,13 @@ export async function createBooking(ctx: BookingMutationCtx, input: z.infer<type
       db
         .prepare(
           `INSERT INTO bookings (company_id, code, customer_id, barber_id, service_id, starts_at, ends_at, price_cents, status, origin,
-                                 customer_name, customer_phone, customer_email, notes, whatsapp_optin, cancel_token, allowed_cancel_until, idempotency_key, demo, created_at, updated_at,local_day,payment_choice)
-           VALUES (?1,?2,(SELECT id FROM customers WHERE company_id=?1 AND phone=?3),?4,?5,?6,?7,?8,'pendente',?9,?10,?3,?11,?12,?13,?14,?15,?16,?17,?18,?18,?19,?20)`
+                                 customer_name, customer_phone, customer_email, notes, whatsapp_optin, cancel_token, allowed_cancel_until, idempotency_key, demo, created_at, updated_at,local_day,payment_choice,fit_in_duration_min)
+           VALUES (?1,?2,(SELECT id FROM customers WHERE company_id=?1 AND phone=?3),?4,?5,?6,?7,?8,'pendente',?9,?10,?3,?11,?12,?13,?14,?15,?16,?17,?18,?18,?19,?20,?21)`
         )
         .bind(
           companyId, code, phone, barber.id, service.id, startsAt, check.endsAt, service.price_cents, ctx.origin,
           input.name.trim(), input.email || null, input.notes ?? "", input.whatsappOptin ? 1 : 0, cancelToken, allowedCancelUntil,
-          input.idempotencyKey, demo, nowIso(),utcToLocal(settings.timezone,startsAt).day,input.paymentChoice??"after_service"
+          input.idempotencyKey, demo, nowIso(),utcToLocal(settings.timezone,startsAt).day,input.paymentChoice??"after_service",input.fitInDurationMin??null
         ),
       ...slotKeys.map((k) => db.prepare(`INSERT INTO booking_slots (company_id, booking_id, barber_id, slot) SELECT ?1, id, ?2, ?3 FROM bookings WHERE code = ?4`).bind(companyId, barber.id, k, code)),
       ...insertBookingNotifications(
@@ -164,7 +167,7 @@ export async function createBooking(ctx: BookingMutationCtx, input: z.infer<type
   const messaging = await scheduleBookingMessage({ db, companyId, booking: bookingSnap, settings, kind: "reminder" });
   const confirmMessaging = await scheduleBookingMessage({ db, companyId, booking: bookingSnap, settings, kind: "confirmation" });
 
-  await audit(db, ctx.user ?? null, "create", "booking", bookingId, { code, origin: ctx.origin, barber: barber.name, service: service.name }, { companyId });
+  await audit(db, ctx.user ?? null, "create", "booking", bookingId, { code, origin: ctx.origin, barber: barber.name, service: service.name, fit_in_duration_min:input.fitInDurationMin??null }, { companyId });
   return { ok: true, bookingId, code, startsAt, endsAt: check.endsAt, cancelToken, allowedCancelUntil, messaging, confirmMessaging };
 }
 
@@ -261,6 +264,69 @@ export async function rescheduleBooking(
     : null;
   await audit(db, ctx.user ?? null, "reschedule", "booking", b.id, { code: b.code, newStart: startsAt, via: actorRole }, { companyId });
   return { ok: true, startsAt, endsAt: check.endsAt };
+}
+
+/**
+ * Libera apenas os minutos ainda disponíveis após um serviço encerrado.
+ * Preserva fim originalmente previsto e instante real de conclusão.
+ */
+export async function finishBookingEarly(ctx:BookingMutationCtx,bookingId:number,at=new Date()):
+ Promise<{ok:true;releasedFrom:string;originalEnd:string;minutesAvailable:number}|
+ {ok:false;message:string;status:number}> {
+ const {db,companyId,settings}=ctx;
+ if(ctx.origin==="cliente")return {ok:false,message:"Somente o salão pode concluir o atendimento.",status:403};
+ if(!Number.isSafeInteger(bookingId)||bookingId<1)return {ok:false,message:"Reserva inválida.",status:400};
+ const b=await db.prepare(`SELECT b.*,s.name AS service_name,br.name AS barber_name
+   FROM bookings b LEFT JOIN services s ON s.id=b.service_id
+   JOIN barbers br ON br.id=b.barber_id WHERE b.id=?1 AND b.company_id=?2`)
+   .bind(bookingId,companyId).first<{id:number;status:string;starts_at:string;ends_at:string;
+    code:string;schedule_version:number;mutation_token:string;customer_name:string;
+    customer_phone:string;price_cents:number;barber_id:number;
+    service_name:string;barber_name:string}>();
+ if(!b)return {ok:false,message:"Agendamento não encontrado.",status:404};
+ if(!["pendente","confirmado"].includes(b.status))
+  return {ok:false,message:"Somente atendimentos ativos podem liberar tempo.",status:409};
+ const now=at.getTime(),start=Date.parse(b.starts_at),end=Date.parse(b.ends_at);
+ if(!Number.isFinite(now)||now<start||now>=end)
+  return {ok:false,message:"A conclusão antecipada só é permitida durante o atendimento.",status:409};
+ const rounded=Math.ceil(now/300000)*300000;
+ if(rounded+300000>end)
+  return {ok:false,message:"Não restam pelo menos 5 minutos para encaixe.",status:409};
+ const releasedFrom=new Date(rounded).toISOString().replace(/\.\d{3}Z$/,"Z");
+ const finishedAt=at.toISOString().replace(/\.\d{3}Z$/,"Z");
+ const token=crypto.randomUUID();
+ try{
+  const results=await db.batch([
+   db.prepare(`UPDATE bookings SET status='concluido',
+    scheduled_ends_at=COALESCE(scheduled_ends_at,ends_at),ends_at=?3,
+    actual_finished_at=?4,schedule_version=schedule_version+1,
+    mutation_token=?5,updated_at=?4
+    WHERE id=?1 AND company_id=?2 AND status=?6 AND schedule_version=?7
+      AND mutation_token=?8 AND starts_at<=?4 AND ends_at>?3`)
+    .bind(b.id,companyId,releasedFrom,finishedAt,token,b.status,b.schedule_version,b.mutation_token),
+   db.prepare(`DELETE FROM booking_slots WHERE booking_id=?1 AND company_id=?2
+     AND EXISTS(SELECT 1 FROM bookings WHERE id=?1 AND company_id=?2
+      AND mutation_token=?3 AND status='concluido')`)
+    .bind(b.id,companyId,token),
+   ...insertBookingNotifications(db,companyId,{
+    code:b.code,customer_name:b.customer_name,customer_phone:b.customer_phone,
+    barber_id:b.barber_id,barber_name:b.barber_name,service_name:b.service_name??"",
+    starts_at:b.starts_at,price_cents:b.price_cents,status:"concluido"
+   },settings.timezone,"Atendimento concluído antecipadamente, tempo liberado","booking",token),
+  ]);
+  if(results[0].meta.changes!==1)
+   return {ok:false,message:"Reserva alterada por outra operação. Atualize a agenda.",status:409};
+ }catch(e){
+  if(isBookingConflictError(e))
+   return {ok:false,message:"Conflito de agenda; atualize antes de concluir.",status:409};
+  throw e;
+ }
+ await cancelPendingJobs(db,companyId,b.id,null,"concluído antecipadamente",undefined,b.schedule_version+1);
+ await audit(db,ctx.user??null,"complete_early","booking",b.id,{
+   originally_planned_end:b.ends_at,actual_finished_at:finishedAt,
+   released_from:releasedFrom,minutes_available:(end-rounded)/60000
+ },{companyId});
+ return {ok:true,releasedFrom,originalEnd:b.ends_at,minutesAvailable:(end-rounded)/60000};
 }
 
 export async function setBookingStatus(ctx: BookingMutationCtx, bookingId: number, status: "confirmado" | "concluido" | "no_show"): Promise<{ ok: true } | { ok: false; message: string; status: number }> {
