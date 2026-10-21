@@ -121,3 +121,7 @@ O proprietário solicitou a realização de todos os testes necessários. A suí
 ## Reteste integral — cadastro remoto e diagnóstico HTTP
 
 Após o primeiro ensaio remoto identificar recusa de cadastro fictício, o script foi alterado para enviar `Origin` de staging e informar exclusivamente código HTTP e mensagem genérica de erro. O CI local aprovou a correção. Este novo commit habilita nova bateria integral; nenhum recurso de restauração separado foi criado na tentativa anterior, que encerrou na primeira etapa.
+
+## Atualização corretiva do Worker de homologação — 21/10/2026
+
+A bateria autenticada identificou um HTTP 500 ao cadastrar a primeira barbearia fictícia. A correção candidata em `api/lib/rate-limit.ts` usa `run()` para UPSERT com `RETURNING` em vez de `first()`. O CI de Push e PR aprovou os testes. Este commit habilita **uma única atualização do Worker existente `tigu-staging`** sem migrações, sem criar ou sobrescrever bancos/buckets e **sem rotacionar segredos existentes**. O resultado do redeploy e do cadastro remoto deve ser confirmado nos logs antes de declarar o bloqueio resolvido.
