@@ -37,12 +37,12 @@ jobs:
       - name: Testar jornada real no navegador Chromium local
         run: node scripts/browser-smoke.mjs
       # Executa somente depois da suite local, em push da branch autorizada,
-      # quando o operador definir uma URL do Worker de testes nas Variables.
+      # usando a URL homologada do Worker (ou Variable explicitamente definida).
       # Script faz apenas GET, recusa dominios fora de tigu-staging.*.workers.dev.
       - name: Conferir homologacao Cloudflare online (se configurada)
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && vars.TIGU_STAGING_URL != '' }}
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' }}
         env:
-          STAGING_URL: ${{ vars.TIGU_STAGING_URL }}
+          STAGING_URL: ${{ vars.TIGU_STAGING_URL || 'https://tigu-staging.netssh3-0.workers.dev' }}
         run: node scripts/staging-smoke.mjs
       # Apenas leitura de metadados, depois dos testes locais e somente na
       # branch de auditoria; o token fica em Repository secrets do TIGU.
