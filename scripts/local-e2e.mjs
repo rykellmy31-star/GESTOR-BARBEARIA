@@ -79,6 +79,16 @@ try {
   const bid=barber.data.id;
   const service=await owner("POST",c+"/admin/services",{name:"Corte local",price_cents:1999,duration_min:30,barber_ids:[bid]});
   check("Profissional e serviço vinculados",barber.status===200&&service.status===200);
+  const publicServices=await visitor("GET",c+"/services");
+  check("Agendamento lista profissionais associados ao serviço público",
+    publicServices.status===200&&publicServices.data.services.some(item=>
+      item.id===service.data.id&&Array.isArray(item.barber_ids)&&item.barber_ids.includes(bid)));
+  const publicBarber=await visitor("GET",c+"/barbers/"+bid);
+  check("Perfil público do profissional carrega antes da confirmação",
+    publicBarber.status===200&&publicBarber.data.barber.id===bid&&publicBarber.data.barber.name==="Barbeiro local");
+  const otherSlug=second.data.company.slug;
+  check("Outra empresa não consegue acessar perfil do profissional",
+    (await visitor("GET","/api/c/"+otherSlug+"/barbers/"+bid)).status===404);
   const staff=client(),staffEmail="staff@local-e2e.test",staffPassword=`Equipe!${randomBytes(12).toString("hex")}`;
   const createdStaff=await owner("POST",c+"/admin/team",{name:"Gerente local",email:staffEmail,password:staffPassword,role:"manager"});
   const team=(await owner("GET",c+"/admin/team")).data.team;
@@ -101,6 +111,12 @@ try {
   check("Disponibilidade pública contém horários reais",availability.status===200&&free.length>=3);
   const booking=await visitor("POST",c+"/bookings",{barberId:bid,serviceId:service.data.id,startsAt:free[0].t,name:"Cliente local",phone:"5573999990000",consent:true,whatsappOptin:false,idempotencyKey:randomBytes(16).toString("hex")});
   check("Agendamento público confirmado na API",booking.status===201&&booking.data.booking.id>0);
+  const bookingLookup=await visitor("GET",c+"/bookings/lookup?code="+encodeURIComponent(booking.data.booking.code)+"&phone=5573999990000");
+  check("Cliente encontra reserva com IDs de serviço e barbeiro para remarcar",
+    bookingLookup.status===200&&bookingLookup.data.bookings[0]?.service_id===service.data.id&&
+    bookingLookup.data.bookings[0]?.barber_id===bid);
+  check("Consulta de reserva não vaza para outra barbearia",
+    (await visitor("GET","/api/c/"+otherSlug+"/bookings/lookup?code="+encodeURIComponent(booking.data.booking.code)+"&phone=5573999990000")).status===404);
   const bookingId=booking.data.booking.id;
   const moved=await owner("POST",c+`/admin/bookings/${bookingId}/reschedule`,{startsAt:free[2].t});
   check("Remarcação aplica versão e slots novos",moved.status===200);

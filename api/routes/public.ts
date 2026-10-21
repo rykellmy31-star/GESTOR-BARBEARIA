@@ -17,7 +17,7 @@ async function findPublicBooking(db: D1Database, companyId: number, code: string
   const where = `WHERE b.company_id = ?1 AND UPPER(b.code) = ?2 AND b.customer_phone = ?3`;
   const { results } = await db
     .prepare(
-      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.price_cents, b.notes, b.allowed_cancel_until, b.barber_id, b.customer_name,
+      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.price_cents, b.notes, b.allowed_cancel_until, b.barber_id, b.service_id, b.customer_name,
               s.name AS service_name, s.duration_min, br.name AS barber_name, br.photo AS barber_photo
        FROM bookings b JOIN services s ON s.id = b.service_id JOIN barbers br ON br.id = b.barber_id
        ${where}${tail}`
