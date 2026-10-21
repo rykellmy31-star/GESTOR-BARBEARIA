@@ -29,7 +29,7 @@ export function SuperOverview() {
         <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="rounded-lg border border-line bg-panel px-3 py-1.5 text-xs text-zinc-300"><option value={7}>7 dias</option><option value={30}>30 dias</option><option value={90}>90 dias</option></select>} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi label="Barbearias ativas" value={d.counts.active} sub={`${d.counts.suspended} suspensas · ${d.counts.created_period} criadas no período`} tone="gold" />
-        <Kpi label="Receita de mensagens" value={d.finance.consumption_cents != null ? <Money cents={d.finance.consumption_cents} /> : 0} sub={`${d.topups.n} recargas pagas · ${<Money cents={d.topups.cents} />} no período` as any} />
+        <Kpi label="Receita de mensagens" value={d.finance.consumption_cents != null ? <Money cents={d.finance.consumption_cents} /> : 0} sub={`${d.topups.n} recargas pagas · ${money0(d.topups.cents)} no período`} />
         <Kpi label="Custo provedor" value={<Money cents={d.finance.provider_cost_cents} />} sub={`Refunds: ${money0(d.finance.refund_cents)}`} />
         <Kpi label="Margem bruta" value={<Money cents={d.finance.gross_margin_cents} />} sub={`${d.finance.margin_pct}% · float retido em carteiras: ${money0(d.finance.float_held_cents)}`} tone="green" />
       </div>

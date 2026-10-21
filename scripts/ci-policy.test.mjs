@@ -155,3 +155,12 @@ test("Bloqueios e Superadmin são exercitados no Chromium com proteção de envi
   assert.match(agenda,/q\.isError/);
   assert.match(companies,/list\.isError/);
 });
+
+
+test("Visão geral Superadmin usa texto monetário e evita [object Object]",()=>{
+  const overview=readFileSync(new URL("../src/pages/super/OverviewPage.tsx",import.meta.url),"utf8");
+  const smoke=readFileSync(new URL("../scripts/browser-smoke.mjs",import.meta.url),"utf8");
+  assert.match(overview,/money0\(d\.topups\.cents\)/);
+  assert.doesNotMatch(overview,/\$\{<Money cents=\{d\.topups\.cents\}/);
+  assert.match(smoke,/BARBEARIAS ATIVAS/);
+});

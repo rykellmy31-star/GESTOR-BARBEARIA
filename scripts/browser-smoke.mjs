@@ -332,13 +332,8 @@ try{
     '.then(async r=>({status:r.status,body:(await r.text()).slice(0,500)}))');
   assert.equal(superOverview.status,200,
     "Indicadores globais devem carregar para o Superadmin: "+JSON.stringify(superOverview));
-  await pause(700);
-  const superScreen=await js('(()=>({main:document.querySelector("main")?.innerText.slice(0,1200),'+
-    'root:document.body.innerText.slice(-600)}))()');
-  console.log("Diagnóstico local da visão geral Superadmin:",
-    JSON.stringify({api:superOverview,screen:superScreen}));
   await until("Superadmin abre visão geral",
-    'document.body.innerText.includes("Barbearias ativas")');
+    'document.body.innerText.includes("BARBEARIAS ATIVAS")');
   pass("Superadmin autentica e consulta indicadores globais");
   await go(base+"/superadmin/companies");
   await until("Superadmin enxerga empresa existente",
