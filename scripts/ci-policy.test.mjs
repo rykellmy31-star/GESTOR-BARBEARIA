@@ -146,6 +146,20 @@ test("Actions: restore D1/R2 remotos exigem commit único, staging e secrets",()
   }
 });
 
+test("Actions: atualizar somente Worker staging por commit explicito e sem rotacao de secret",()=>{
+ const gate=content.match(/      - name: Atualizar Worker staging preservando segredos \(commit único\)[\s\S]*?run: node scripts\/staging-update-ci\.mjs/);
+ assert.ok(gate,"gate update Worker ausente");
+ assert.match(gate[0],/github\.event_name == 'push'/);
+ assert.match(gate[0],/github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
+ assert.match(gate[0],/github\.event\.head_commit\.message == 'TIGU_UPDATE_WORKER_STAGING_ONCE'/);
+ assert.match(gate[0],/CLOUDFLARE_STAGING_TOKEN: \$\{\{ secrets\.CLOUDFLARE_STAGING_TOKEN \}\}/);
+ const code=readFileSync(new URL("./staging-update-ci.mjs",import.meta.url),"utf8");
+ assert.match(code,/TIGU_STAGING_UPDATE_APPROVED!=="YES"/);
+ assert.match(code,/get\(base\+"\/workers\/scripts"\)/);
+ assert.match(code,/config\.vars\.TIGU_STAGING!=="1"/);
+ assert.doesNotMatch(code,/secret","put"|scripts\/staging\.mjs","migrate"|r2 object|d1 export/);
+});
+
 test("Painéis: consultas sensíveis usam cache separado por barbearia", () => {
   const cases = {
     "ServicesPage.tsx": ['"admin-services", siteBase()', '"admin-barbers", siteBase()'],
