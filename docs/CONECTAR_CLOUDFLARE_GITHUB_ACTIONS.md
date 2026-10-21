@@ -125,3 +125,7 @@ Após o primeiro ensaio remoto identificar recusa de cadastro fictício, o scrip
 ## Atualização corretiva do Worker de homologação — 21/10/2026
 
 A bateria autenticada identificou um HTTP 500 ao cadastrar a primeira barbearia fictícia. A correção candidata em `api/lib/rate-limit.ts` usa `run()` para UPSERT com `RETURNING` em vez de `first()`. O CI de Push e PR aprovou os testes. Este commit habilita **uma única atualização do Worker existente `tigu-staging`** sem migrações, sem criar ou sobrescrever bancos/buckets e **sem rotacionar segredos existentes**. O resultado do redeploy e do cadastro remoto deve ser confirmado nos logs antes de declarar o bloqueio resolvido.
+
+## Reteste remoto após atualização do Worker e do D1 Rate Limit
+
+A nova versão do Worker `tigu-staging` foi publicada no Actions run `39650984613` sem recriar D1/R2 nem modificar segredos. Este commit reexecuta a bateria autenticada fictícia seguida dos ensaios de recuperação D1/R2, com gating seguro. Cada etapa deverá ser comprovada nos logs. A fonte original e a produção não devem ser alteradas.
