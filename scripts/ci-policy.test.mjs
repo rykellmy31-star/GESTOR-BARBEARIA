@@ -41,6 +41,20 @@ test("Actions: verificacao online opcional, somente leitura e limitada a staging
 });
 
 
+test("Actions: token Cloudflare apenas na etapa opcional e com diagnostico GET sem mutacoes", () => {
+  const gate = content.match(/      - name: Diagnosticar acesso Cloudflare por token \(se configurado\)[\s\S]*?run: node scripts\/cloudflare-audit\.mjs/);
+  assert.ok(gate, "Etapa Cloudflare por token ausente");
+  assert.match(gate[0], /github\.event_name == 'push'/);
+  assert.match(gate[0], /github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
+  assert.match(gate[0], /vars\.CLOUDFLARE_ACCOUNT_ID != ''/);
+  assert.match(gate[0], /CLOUDFLARE_AUDIT_TOKEN: \$\{\{ secrets\.CLOUDFLARE_AUDIT_TOKEN \}\}/);
+  assert.match(gate[0], /CLOUDFLARE_ACCOUNT_ID: \$\{\{ vars\.CLOUDFLARE_ACCOUNT_ID \}\}/);
+  const diagnostic = readFileSync(new URL("./cloudflare-audit.mjs", import.meta.url), "utf8");
+  assert.match(diagnostic, /method: "GET"/);
+  assert.doesNotMatch(diagnostic, /method: "(?:POST|PUT|PATCH|DELETE)"/);
+  assert.doesNotMatch(diagnostic, /wrangler deploy|migrations apply|d1 execute|R2\.put/);
+});
+
 test("Painéis: consultas sensíveis usam cache separado por barbearia", () => {
   const cases = {
     "ServicesPage.tsx": ['"admin-services", siteBase()', '"admin-barbers", siteBase()'],
