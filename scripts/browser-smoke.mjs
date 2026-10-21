@@ -351,14 +351,8 @@ try{
     '.then(async r=>({status:r.status,data:await r.json().catch(()=>null)}))');
   assert.equal(detailInBrowser.status,200,
     "Sessão Chromium não acessa o detalhe do cliente: "+JSON.stringify(detailInBrowser));
-  await pause(800);
-  const modalSnapshot=await js('(()=>{const m=document.querySelector(".modal-backdrop");'+
-    'return {text:m?.innerText.slice(0,1600)||"",html:m?.outerHTML.slice(0,2200)||"",'+
-    'errors:[...document.querySelectorAll("[role=alert]")].map(x=>x.textContent)}})()');
-  console.log("Diagnóstico do modal de cliente (apenas dados fictícios locais): "+
-    JSON.stringify(modalSnapshot));
   await until("histórico real do cliente no modal",
-    'document.querySelector(".modal-backdrop")?.innerText.includes("Histórico")&&'+
+    'document.querySelector(".modal-backdrop")?.innerText.includes("HISTÓRICO")&&'+
     'document.querySelector(".modal-backdrop")?.innerText.includes("Corte Navegador")');
   pass("cliente abre histórico e indicadores corretos no painel");
   await go(base+"/c/"+slug+"/admin/agenda");
