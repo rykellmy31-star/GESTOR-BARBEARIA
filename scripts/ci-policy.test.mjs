@@ -90,6 +90,23 @@ test("Actions: deploy staging exige commit unico, branch TIGU e somente o script
   assert.doesNotMatch(deploy,/tigu-platform.*deploy|DELETE|payments\.create/);
 });
 
+test("Actions: exportação real D1 homologação só no commit e sem publicação do SQL",()=>{
+  const gate=content.match(/      - name: Exportar D1 staging e validar restauração SQLite efêmera \(commit único\)[\s\S]*?run: node scripts\/staging-d1-export-verify\.mjs/);
+  assert.ok(gate,"Gate de exportação D1 ausente");
+  assert.match(gate[0],/github\.event_name == 'push'/);
+  assert.match(gate[0],/github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
+  assert.match(gate[0],/github\.event\.head_commit\.message == 'TIGU_VERIFY_D1_EXPORT_ONCE'/);
+  assert.match(gate[0],/CLOUDFLARE_STAGING_TOKEN: \$\{\{ secrets\.CLOUDFLARE_STAGING_TOKEN \}\}/);
+  assert.match(gate[0],/TIGU_D1_EXPORT_APPROVED: YES/);
+  assert.doesNotMatch(gate[0],/upload-artifact|actions\/upload|wrangler d1 execute|deploy|import/);
+  const src=readFileSync(new URL("./staging-d1-export-verify.mjs",import.meta.url),"utf8");
+  assert.match(src,/const DATABASE="tigu-staging-db"/);
+  assert.match(src,/const WORKER="tigu-staging"/);
+  assert.match(src,/auditD1Export\(sql\)/);
+  assert.match(src,/rmSync\(temp,\{recursive:true,force:true\}\)/);
+  assert.match(src,/cloudflare_restore_verified:false/);
+});
+
 test("Painéis: consultas sensíveis usam cache separado por barbearia", () => {
   const cases = {
     "ServicesPage.tsx": ['"admin-services", siteBase()', '"admin-barbers", siteBase()'],
