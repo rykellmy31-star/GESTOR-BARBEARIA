@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Atualizar instalador npm para série 11
+        run: npm install --global npm@11 --no-audit --no-fund
       - name: Instalar árvore atual antes do upgrade
         run: npm ci --no-audit --no-fund
       - name: Atualizar pacote e lock pela resolução oficial npm
