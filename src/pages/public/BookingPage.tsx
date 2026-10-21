@@ -25,6 +25,7 @@ export function BookingPage() {
   const [slot, setSlot] = useState<{ t: string; label: string } | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "", consent: false });
   const [confirming, setConfirming] = useState(false);
+  const [paymentChoice,setPaymentChoice]=useState<"after_service"|"pix">("after_service");
   const [done, setDone] = useState<any | null>(null);
   const [idk] = useState(wizardKey());
 
@@ -64,7 +65,7 @@ export function BookingPage() {
       const res = await api.post("/bookings", {
         serviceId, barberId, startsAt: slot!.t,
         name: form.name.trim(), phone: form.phone.replace(/\D/g, ""), email: form.email.trim() || "",
-        notes: form.notes.trim(), consent: true, idempotencyKey: idk,
+        notes: form.notes.trim(), consent: true, idempotencyKey: idk, paymentChoice,
       });
       setDone(res);
       localStorage.setItem(`tigu_token_${res.booking.code}`, String(res.cancel_token));
@@ -233,9 +234,26 @@ export function BookingPage() {
                 {cfg?.settings.cancel_policy_text && <p className="pt-1 text-[11.5px] leading-relaxed text-zinc-500">{cfg.settings.cancel_policy_text}</p>}
               </div>
             </div>
+
+            <div className="mt-5 space-y-2" role="radiogroup" aria-label="Forma de pagamento">
+              <p className="text-sm font-semibold text-zinc-100">Como deseja pagar?</p>
+              <label className="flex cursor-pointer gap-3 rounded-xl border border-line bg-panel p-3 text-sm text-zinc-100">
+                <input type="radio" name="paychoice" checked={paymentChoice==="after_service"} onChange={()=>setPaymentChoice("after_service")} />
+                <span><b>Pagar após o serviço</b><span className="block text-xs text-zinc-400">Reserve agora, pague no atendimento.</span></span>
+              </label>
+              <label className={clsx("flex gap-3 rounded-xl border border-line bg-panel p-3 text-sm text-zinc-100",cfg?.payment_options?.pix_enabled?"cursor-pointer":"opacity-60")}>
+                <input type="radio" name="paychoice" checked={paymentChoice==="pix"} disabled={!cfg?.payment_options?.pix_enabled} onChange={()=>setPaymentChoice("pix")} />
+                <span><b>Pagar agora com Pix · {money(service.price_cents)}</b>
+                  <span className="block text-xs text-zinc-400">{cfg?.payment_options?.pix_enabled
+                    ?"O sistema gera o QR Code e o Pix copia e cola."
+                    :"Disponível após configurar a integração de pagamento da barbearia."}</span>
+                </span>
+              </label>
+              {paymentChoice==="pix"&&!form.email.trim()&&<p className="text-xs text-amber-400">Volte e informe um e-mail para gerar o Pix.</p>}
+            </div>
             <div className="mt-5 flex items-center justify-between gap-2">
               <BackBtn onClick={() => setStep(4)} />
-              <Button className="flex-1 justify-center py-3.5" disabled={confirming} onClick={confirm}>
+              <Button className="flex-1 justify-center py-3.5" disabled={confirming || (paymentChoice==="pix" && (!cfg?.payment_options?.pix_enabled || !form.email.trim()))} onClick={confirm}>
                 {confirming ? <><Loader2 size={16} className="animate-spin" /> Reservando…</> : <><CalendarCheck2 size={17} /> Confirmar agendamento</>}
               </Button>
             </div>
@@ -339,18 +357,60 @@ function DateStep({ tz, barberId, serviceId, date, setDate, horizon, onBack }: a
 function SuccessScreen({ done, settings, navigate }: any) {
   const b = done.booking;
   const day = new Date(b.starts_at);
+  const [payment,setPayment]=useState(done.payment);
+  const [checking,setChecking]=useState(false);
+  const [copied,setCopied]=useState(false);
+  const checkPayment=async()=>{
+    setChecking(true);
+    try {
+      const result=await api.post<{payment:any}>("/bookings/pix/status",{
+        code:b.code,phone:b.customer_phone,cancel_token:done.cancel_token
+      });
+      setPayment(result.payment);
+    } catch { setPayment((p:any)=>({...p,message:"Não foi possível consultar o pagamento agora."})); }
+    finally { setChecking(false); }
+  };
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-4 pb-16 pt-24 text-center">
       <div className="animate-scale-in w-full rounded-3xl border border-[color-mix(in_srgb,var(--c-gold)_45%,transparent)] bg-panel p-7 shadow-gold">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400"><CheckCircle2 size={34} /></div>
         <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-[var(--c-gold)]">Reserva confirmada no sistema</p>
-        <h2 className="mt-2 font-display text-[27px] leading-tight text-zinc-50">Seu horário está garantido</h2>
+        <h2 className="mt-2 font-display text-[27px] leading-tight text-zinc-50">Seu horário foi registrado</h2>
         <p className="mt-4 space-y-1 text-sm text-zinc-300">
           <span className="block">Protocolo <b className="text-[var(--c-gold)]">{b.code}</b></span>
           <span className="block">{b.service_name} com <b>{b.barber_name}</b></span>
           <span className="block">{day.toLocaleString("pt-BR", { timeZone: settings?.timezone, weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })}</span>
           <span className="block font-semibold text-[var(--c-gold)]">{money(b.price_cents)}</span>
         </p>
+
+        {done.payment_choice==="pix" && (
+          <div className="mt-5 rounded-xl border border-[var(--c-gold)]/40 bg-ink-soft p-4 text-left text-sm">
+            <p className="font-semibold text-zinc-100">Pagamento Pix · {money(b.price_cents)}</p>
+            <p className="mt-1 text-xs text-zinc-400">
+              {payment?.status==="paid"?"Pagamento confirmado pelo Mercado Pago.":
+               payment?.status==="refund_required"?"Reserva cancelada após o pagamento: contate a barbearia para estorno.":
+               payment?.status==="pending"?"Aguardando confirmação do Mercado Pago. Não pague duas vezes.":
+               payment?.message||"Pix não gerado; consulte a barbearia para pagar no atendimento."}
+            </p>
+            {payment?.status==="pending"&&payment.qr_code_base64&&
+              <img alt="QR Code Pix do agendamento" className="mx-auto my-3 w-48 rounded-lg bg-white p-2"
+                src={"data:image/png;base64,"+payment.qr_code_base64} />}
+            {payment?.status==="pending"&&payment.qr_code_text&&
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-zinc-400">Pix copia e cola</p>
+                <p className="break-all rounded-lg bg-black/30 p-2 text-xs text-zinc-200">{payment.qr_code_text}</p>
+                <Button variant="ghost" onClick={async()=>{await navigator.clipboard.writeText(payment.qr_code_text);setCopied(true);}}>
+                  {copied?"Código copiado":"Copiar código Pix"}
+                </Button>
+              </div>}
+            <div className="mt-3">
+              <Button variant="ghost" disabled={checking} onClick={checkPayment}>
+                {checking?"Consultando…":"Verificar pagamento"}
+              </Button>
+            </div>
+          </div>
+        )}
+        {done.payment_choice!=="pix" && <p className="mt-4 text-xs text-zinc-400">Pagamento previsto após o atendimento.</p>}
         <div className="gold-hr my-5" />
         <p className="text-[12.5px] leading-relaxed text-zinc-400">
           Guarde seu protocolo. Você pode <b className="text-zinc-200">cancelar ou remarcar on-line</b> dentro do prazo
