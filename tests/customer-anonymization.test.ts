@@ -112,7 +112,7 @@ describe("LGPD: anonimização de dados operacionais por empresa",()=>{
     const f=await fixture();
     for(let i=0;i<5;i++)await db.prepare(`INSERT INTO audit_log(company_id,action,entity) VALUES (?1,'teste','cliente')`)
       .bind(f.companyId).run();
-    const get=async limit=>app.request(`/api/c/${f.companySlug}/admin/audit?limit=${limit}`,{
+    const get=async (limit: string)=>app.request(`/api/c/${f.companySlug}/admin/audit?limit=${limit}`,{
       headers:{cookie:f.cookie},
     },e,ctx);
     const small=await get("-1");
