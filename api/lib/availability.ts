@@ -109,7 +109,7 @@ export async function isDayBlocked(db: D1Database, barberId: number, day: string
  */
 export async function computeDaySlots(
   db: D1Database,
-  opts: { barber: BarberRow; service: ServiceRow; day: string; settings: ShopSettings; mode?: "public" | "admin"; now?: Date; excludeBookingId?: number }
+  opts: { barber: BarberRow; service: ServiceRow; day: string; settings: ShopSettings; mode?: "public" | "admin"; now?: Date; excludeBookingId?: number; stepOverrideMin?: number }
 ): Promise<DayResult> {
   const s = opts.settings;
   const tz = s.timezone;
@@ -137,7 +137,7 @@ export async function computeDaySlots(
   const breakA = parseHHMM(opts.barber.break_start);
   const breakB = parseHHMM(opts.barber.break_end);
   const duration = opts.service.duration_min;
-  const step = Math.max(5, s.slot_step_min);
+  const step = opts.stepOverrideMin ?? Math.max(5, s.slot_step_min);
 
   if (workEnd - workStart < duration) return { ...empty, closed_reason: "fora_intervalo" };
 
@@ -204,6 +204,7 @@ export async function assertSlotAllowed(
     settings: ShopSettings;
     origin: "cliente" | "admin" | "barbeiro";
     excludeBookingId?: number;
+    fitInDurationMin?: number;
   }
 ): Promise<{ ok: true; startsAt: string; endsAt: string } | { ok: false; error: string; status: number }> {
   const { settings: s, barber, service } = opts;
@@ -212,26 +213,33 @@ export async function assertSlotAllowed(
   if (!Number.isFinite(startMs)) return { ok: false, error: "Data/hora inválida", status: 400 };
   const { day } = utcToLocal(tz, new Date(startMs));
   const local = utcToLocal(tz, new Date(startMs));
-  const endMs = startMs + service.duration_min * 60000;
+  if(opts.fitInDurationMin!=null && (
+    opts.origin==="cliente" || !Number.isInteger(opts.fitInDurationMin) ||
+    opts.fitInDurationMin<5 || opts.fitInDurationMin>Math.min(service.duration_min,180) ||
+    opts.fitInDurationMin%5!==0 || local.minutes%5!==0
+  ))return {ok:false,error:"Encaixe inválido: duração deve caber no serviço e usar incrementos de 5 minutos.",status:422};
+  const actualService=opts.fitInDurationMin==null?service:{...service,duration_min:opts.fitInDurationMin};
+  const endMs = startMs + actualService.duration_min * 60000;
   const endsAt = new Date(endMs).toISOString().replace(/\.\d{3}Z$/, "Z");
 
   if (!barber.active) return { ok: false, error: "Este barbeiro não está recebendo agendamentos", status: 409 };
 
   const result = await computeDaySlots(db, {
     barber,
-    service,
+    service:actualService,
     day,
-    settings: s,
-    mode: "admin",
-    now: new Date(),
-    excludeBookingId: opts.excludeBookingId,
+    settings:s,
+    mode:"admin",
+    now:new Date(),
+    excludeBookingId:opts.excludeBookingId,
+    stepOverrideMin: opts.fitInDurationMin==null?undefined:5,
   });
   if (!result.ok || !result.slots.length) {
     return { ok: false, error: reasonClosed(result.closed_reason), status: 409 };
   }
 
   if (opts.origin === "cliente") {
-    if (local.minutes + service.duration_min > parseHHMM(barber.work_end)) return { ok: false, error: "O serviço ultrapassaria o fim do expediente", status: 409 };
+    if (local.minutes + actualService.duration_min > parseHHMM(barber.work_end)) return { ok: false, error: "O serviço ultrapassaria o fim do expediente", status: 409 };
   }
 
   const match = result.slots.find((x) => x.t === opts.startsAt);
