@@ -46,7 +46,7 @@ export function CustomersPage() {
               <tr key={c.id} className="cursor-pointer transition-colors hover:bg-gold-soft" onClick={() => setOpenId(c.id)}>
                 <td className="px-4 py-2.5">
                   <p className="font-medium text-zinc-100">{c.name ?? <span className="italic text-zinc-500">anônimo (LGPD)</span>}</p>
-                  <p className="text-[11px] text-zinc-500">{c.phone}</p>
+                  <p className="text-[11px] text-zinc-500">{c.anonymized_at ? "Contato anonimizado" : c.phone}</p>
                 </td>
                 <td className="px-2 py-2.5 text-zinc-300">{c.visits}</td>
                 <td className="hidden px-2 py-2.5 text-zinc-300 sm:table-cell">{c.completed}</td>
@@ -64,7 +64,7 @@ export function CustomersPage() {
         {!detail.data ? <Spinner /> : (
           <div className="space-y-4 text-sm">
             <div className="grid gap-2 sm:grid-cols-3">
-              <div className="rounded-xl border border-line bg-ink-soft p-3"><p className="text-[11px] uppercase text-zinc-500">Contato</p><p className="text-zinc-200">{detail.data.customer.phone}</p>{detail.data.customer.email && <p className="text-xs text-zinc-400">{detail.data.customer.email}</p>}</div>
+              <div className="rounded-xl border border-line bg-ink-soft p-3"><p className="text-[11px] uppercase text-zinc-500">Contato</p><p className="text-zinc-200">{detail.data.customer.anonymized_at ? "Contato anonimizado" : detail.data.customer.phone}</p>{detail.data.customer.email && <p className="text-xs text-zinc-400">{detail.data.customer.email}</p>}</div>
               <div className="rounded-xl border border-line bg-ink-soft p-3"><p className="text-[11px] uppercase text-zinc-500">Cliente desde</p><p className="text-zinc-200">{fmtDateTime(detail.data.customer.created_at)}</p></div>
               <div className="rounded-xl border border-line bg-ink-soft p-3"><p className="text-[11px] uppercase text-zinc-500">Reservas</p><p className="text-zinc-200">{detail.data.bookings.length} no histórico</p></div>
             </div>
@@ -85,14 +85,15 @@ export function CustomersPage() {
             </div>
             <div className="flex items-center justify-between border-t border-line pt-3">
               <p className="max-w-sm text-[11px] leading-relaxed text-zinc-600"><ShieldAlert size={11} className="mr-1 inline text-amber-400" /> Pedido do titular (LGPD art. 18): a anonimização descaracteriza nome/contato mantendo a integridade financeira do histórico.</p>
-              <Button variant="danger" size="sm" onClick={() => setAnon(detail.data.customer)}>Anonimizar dados</Button>
+              {detail.data.customer.anonymized_at ? <Badge tone="gray">Dados anonimizados</Badge> :
+                <Button variant="danger" size="sm" onClick={() => setAnon(detail.data.customer)}>Anonimizar dados</Button>}
             </div>
           </div>
         )}
       </Modal>
 
       <ConfirmDialog open={Boolean(anon)} onCancel={() => setAnon(null)} onConfirm={() => anon && anonymize.mutate(anon.id)} danger
-        title="Anonimizar este cliente?" text="Nome, telefone e e-mail serão substituídos por marcação de anonimizado. Os agendamentos e valores permanecem nos relatórios (dados estatísticos). Ação irreversível." />
+        title="Anonimizar este cliente?" text="O nome, contato, notas, avaliações e mensagens operacionais serão descaracterizados. Os valores financeiros continuam nos relatórios. Havendo reservas, pedidos ou envios pendentes, a operação será recusada até serem resolvidos. Ação irreversível." />
     </div>
   );
 }
