@@ -136,3 +136,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_BOOKING_MIGRATION_APPROVED: YES
         run: node scripts/staging-booking-migrate-ci.mjs
+
+      # Pré-inspeção dos destinos de DR: APENAS requisições GET.
+      # Sem criar D1/R2, sem importar SQL e sem mudar produção.
+      - name: Inventariar destinos D1 R2 para recuperação segura (somente leitura)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_DR_READONLY_INVENTORY_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_DR_INVENTORY_APPROVED: YES
+        run: node scripts/staging-dr-inventory-ci.mjs
