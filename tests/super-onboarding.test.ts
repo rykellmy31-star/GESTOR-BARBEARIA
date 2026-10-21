@@ -21,7 +21,7 @@ async function user(role="user"){
 }
 async function admin(){
   const u=await user("superadmin");
-  return (path:string,body:object,method="POST")=>app.request(`/api/super${path}`,{method,headers:{"content-type":"application/json",cookie:u.cookie},body:JSON.stringify(body)},e,ctx);
+  return (path:string,body:object,method="POST")=>app.request(`/api/super${path}`,{method,headers:{"content-type":"application/json",cookie:u.cookie},...(method==="GET"?{}:{body:JSON.stringify(body)})},e,ctx);
 }
 function input(){
   return {name:"Barbearia assistida",slug:`assisted-${crypto.randomUUID()}`,plan_code:"pro",owner_name:"Novo dono",owner_email:`new-owner-${crypto.randomUUID()}@tigu.test`};
@@ -95,5 +95,37 @@ describe("Superadmin: cadastro assistido seguro",()=>{
     const response=await app.request("/api/super/companies",{method:"POST",headers:{"content-type":"application/json",cookie:actor.cookie},body:JSON.stringify(input())},e,ctx);
     expect(response.status).toBe(403);
     expect(await response.text()).not.toContain("generated_password");
+  });
+});
+
+
+describe("Superadmin: companyId nas rotas financeiras",()=>{
+  it("consulta e atualiza carteira e política sem confundir companyId com id",async()=>{
+    const request=await admin();
+    const created=await request("/companies",input());
+    expect(created.status).toBe(201);
+    const payload=await created.json() as {id:number};
+    const route="/wallets/"+payload.id;
+    const initial=await request(route,{},"GET");
+    expect(initial.status).toBe(200);
+    expect(await initial.json()).toMatchObject({wallet:{company_id:payload.id,balance_cents:0}});
+    const credit=await request(route+"/adjust",{delta_cents:1250,justification:"Crédito fictício testado"});
+    expect(credit.status).toBe(200);
+    const policy=await request(route+"/policy",{allow_negative:true},"PUT");
+    expect(policy.status).toBe(200);
+    const latest=await request(route,{},"GET");
+    expect(latest.status).toBe(200);
+    const body=await latest.json() as {wallet:{company_id:number;balance_cents:number;allow_negative:number};transactions:{amount_cents:number}[]};
+    expect(body.wallet).toMatchObject({company_id:payload.id,balance_cents:1250,allow_negative:1});
+    expect(body.transactions.filter(row=>row.amount_cents===1250)).toHaveLength(1);
+  });
+  it("não modifica nem consulta carteira com id inválido ou empresa inexistente",async()=>{
+    const request=await admin();
+    expect((await request("/wallets/abc",{},"GET")).status).toBe(400);
+    expect((await request("/wallets/0/adjust",{delta_cents:1250,justification:"Motivo válido de teste"})).status).toBe(400);
+    expect((await request("/wallets/12x/policy",{allow_negative:true},"PUT")).status).toBe(400);
+    expect((await request("/wallets/999999999",{},"GET")).status).toBe(404);
+    expect((await request("/wallets/999999999/adjust",{delta_cents:1250,justification:"Motivo válido de teste"})).status).toBe(404);
+    expect((await request("/wallets/999999999/policy",{allow_negative:true},"PUT")).status).toBe(404);
   });
 });
