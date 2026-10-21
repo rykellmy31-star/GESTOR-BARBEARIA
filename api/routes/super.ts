@@ -18,6 +18,7 @@ import { loadSalesContact, saveSalesContact, salesContactSchema } from "../lib/m
 import { changePlan, listPublicPlans, planCodeSchema, planEditSchema } from "../lib/plans";
 import { leadUpdateSchema, listSalesLeads, updateSalesLead, salesRetentionSchema, getSalesRetentionDays, setSalesRetentionDays, deleteSalesLead, purgeExpiredSalesLeads, purgeOldSalesRateLimits } from "../lib/sales-leads";
 import { processDueJobs } from "../lib/messaging/jobs";
+import { globalMessageListFilter, parseGlobalMessageCursor, parseOptionalMessageCompanyId } from "../lib/messaging/super-message-filter";
 import { randomHex } from "../lib/utils";
 
 export const superRouter = new Hono<{ Bindings: Env }>();
@@ -502,8 +503,9 @@ superRouter.put("/marketing/contact", async (c) => {
 
 // ── fila de mensagens global (ops) ──────────────────────────────────────────
 superRouter.get("/messages", async (c) => {
-  const status = c.req.query("status") || "";
-  const where = status ? "WHERE j.status = ?1" : "";
+  const beforeId = parseGlobalMessageCursor(c.req.query("beforeId"));
+  if (beforeId === undefined) return err(c, "Cursor de mensagem inválido", 400);
+  const { where, binds } = globalMessageListFilter(c.req.query("status"), beforeId);
   const { results } = await c.env.DB
     .prepare(`SELECT j.id, j.company_id, c.slug, j.kind, j.status, j.attempts, j.scheduled_at, j.sent_at, j.last_error, j.price_cents, j.cost_cents, j.captured_at, j.demo,
                CASE WHEN j.status='sending' AND j.provider_msg_id=''
@@ -511,10 +513,11 @@ superRouter.get("/messages", async (c) => {
                   OR j.last_error LIKE 'Pendente de conferência%'
                   OR j.last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes'))
                  THEN 1 ELSE 0 END AS requires_review
-               FROM message_jobs j JOIN companies c ON c.id=j.company_id ${where} ORDER BY j.id DESC LIMIT 200`)
-    .bind(...(status ? [status] : []))
+               FROM message_jobs j JOIN companies c ON c.id=j.company_id ${where} ORDER BY j.id DESC LIMIT 101`)
+    .bind(...binds)
     .all();
-  return json(c, { jobs: results });
+  const visible = results.slice(0, 100);
+  return json(c, { jobs: visible, next_before_id: results.length > 100 ? visible[visible.length - 1].id : null });
 });
 
 /** Somente superadmin, com verificação humana de NÃO envio na Meta. */
@@ -540,7 +543,8 @@ superRouter.post("/messages/:id/resolve-not-sent", async (c) => {
 });
 
 superRouter.post("/messages/run-cron", async (c) => {
-  const companyId = c.req.query("companyId") ? Number(c.req.query("companyId")) : undefined;
+  const companyId = parseOptionalMessageCompanyId(c.req.query("companyId"));
+  if (companyId === null) return err(c, "Identificador de barbearia inválido", 400);
   const out = await processDueJobs(c.env, { companyId, limit: 60 });
   await audit(c.env.DB, c.get("user"), "ops.run_cron", "message_jobs", "manual", out, { companyId: null, scope: "platform" });
   return json(c, out);

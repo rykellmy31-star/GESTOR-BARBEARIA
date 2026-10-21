@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PlayCircle } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Badge, Button, Select, Spinner, Modal, Field, Input, useToast } from "@/components/ui";
 import { H, Money, Table, Td, Tr } from "./shared";
@@ -15,7 +15,20 @@ export function SuperMessages() {
   const [justification, setJustification] = useState("");
   const [providerId, setProviderId] = useState("");
   const closeReview = () => { setReviewJob(null); setJustification(""); setProviderId(""); };
-  const q = useQuery({ queryKey: ["super-messages", status], queryFn: () => api.get<any>(`/super/messages${status ? `?status=${status}` : ""}`).then((d) => d.jobs as any[]), refetchInterval: 20_000 });
+  const q = useInfiniteQuery({
+    queryKey: ["super-messages", status],
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      if (pageParam !== null) params.set("beforeId", String(pageParam));
+      const query = params.toString();
+      return api.get<{ jobs: any[]; next_before_id: number | null }>(`/super/messages${query ? `?${query}` : ""}`);
+    },
+    getNextPageParam: (page) => page.next_before_id ?? undefined,
+    refetchInterval: (query) => (query.state.data?.pages.length ?? 0) > 1 ? false : 20_000,
+  });
+  const jobs = q.data?.pages.flatMap((page) => page.jobs) ?? [];
   const run = useMutation({
     mutationFn: () => api.post<any>("/super/messages/run-cron", {}),
     onSuccess: (r: any) => { toast.push("ok", `Lote executado: ${r.processed ?? 0} processados, ${r.failed ?? 0} falhas.`); qc.invalidateQueries({ queryKey: ["super-messages"] }); },
@@ -37,12 +50,14 @@ export function SuperMessages() {
     <div>
       <H title="Fila global de mensagens" sub="Visão de operação: jobs de todas as barbearias. O cron roda sozinho — aqui você força um lote em incidentes." action={
         <div className="flex items-center gap-2">
-          <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-36"><option value="">todos</option><option value="scheduled">scheduled</option><option value="failed">failed</option><option value="sending">sending</option><option value="sent">sent</option></Select>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-36"><option value="">todos</option><option value="conflict">conflitos Meta</option><option value="scheduled">scheduled</option><option value="failed">failed</option><option value="sending">sending</option><option value="sent">sent</option></Select>
           <Button className="btn-gold py-2 text-sm" onClick={() => run.mutate()} disabled={run.isPending}><PlayCircle size={14} /> {run.isPending ? "rodando…" : "rodar agora"}</Button>
         </div>} />
-      {q.isLoading ? <Spinner /> : (
+      {q.isLoading ? <Spinner /> : q.isError && !q.data ? (
+        <p role="alert" className="text-sm text-red-300">Falha ao consultar a fila. Atualize a página para tentar novamente.</p>
+      ) : (
         <Table head={["#", "Barbearia", "Tipo", "Status", "Tentativas", "Agendado", "Preço", "Custo", "Erro"]}>
-          {(q.data ?? []).map((j: any) => (
+          {jobs.map((j: any) => (
             <Tr key={j.id}>
               <Td>{j.id}</Td><Td className="font-medium text-zinc-100">{j.slug}{j.demo === 1 && <Badge tone="blue">demo</Badge>}</Td>
               <Td className="text-xs">{j.kind}</Td>
@@ -56,9 +71,13 @@ export function SuperMessages() {
               </Td>
             </Tr>
           ))}
-          {(q.data ?? []).length === 0 && <Tr><Td className="py-6 text-zinc-500">Fila vazia neste filtro.</Td><Td /><Td /><Td /><Td /><Td /><Td /><Td /><Td /></Tr>}
+          {jobs.length === 0 && <Tr><Td className="py-6 text-zinc-500">Fila vazia neste filtro.</Td><Td /><Td /><Td /><Td /><Td /><Td /><Td /><Td /></Tr>}
         </Table>
       )}
+      {q.hasNextPage && <Button className="mt-3" onClick={() => q.fetchNextPage()} disabled={q.isFetchingNextPage}>
+        {q.isFetchingNextPage ? "Carregando mensagens…" : "Carregar mensagens anteriores"}
+      </Button>}
+      {q.isFetchNextPageError && <p role="alert" className="mt-2 text-sm text-red-300">Não foi possível carregar mensagens anteriores. Tente novamente.</p>}
       <Modal open={!!reviewJob} onClose={closeReview} title={`Conferir mensagem #${reviewJob?.id ?? ""}`}>
         <div className="space-y-3">
           <p className="text-sm text-amber-200">Resultado indeterminado: verifique o histórico do número da barbearia no provedor antes de tomar uma decisão. Nunca reenvie às cegas.</p>
