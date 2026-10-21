@@ -15,10 +15,12 @@ export function BarbersPage() {
   const toast = useToast();
   const list = useQuery({ queryKey: ["admin-barbers", siteBase()], queryFn: () => api.get<any>("/admin/barbers").then((d) => d.barbers) });
   const services = useQuery({ queryKey: ["admin-services", siteBase()], queryFn: () => api.get<any>("/admin/services").then((d) => d.services) });
+  const team = useQuery({ queryKey: ["team", siteBase()], queryFn: () => api.get<any>("/admin/team").then((d) => d.team) });
   const [edit, setEdit] = useState<BarberForm | null>(null);
   const [del, setDel] = useState<any | null>(null);
   const [cred, setCred] = useState<any | null>(null);
   const [credF, setCredF] = useState({ email: "", password: "" });
+  const [credResult, setCredResult] = useState<{ email: string; password?: string; message: string } | null>(null);
 
   const save = useMutation({
     mutationFn: (f: BarberForm) => (f.id ? api.put(`/admin/barbers/${f.id}`, f) : api.post("/admin/barbers", f)),
@@ -31,8 +33,8 @@ export function BarbersPage() {
     onError: (e: any) => toast.push("err", e.message),
   });
   const creds = useMutation({
-    mutationFn: (v: { id: number; email: string; password: string }) => api.post<any>(`/admin/barbers/${v.id}/credentials`, { email: v.email || undefined, password: v.password }),
-    onSuccess: (r: any) => { setCred(null); toast.push("ok", `${r.message} E-mail de acesso: ${r.email}`); },
+    mutationFn: (v: { id: number; email: string; password: string }) => api.post<any>(`/admin/barbers/${v.id}/credentials`, { email: v.email.trim(), ...(v.password ? { password: v.password } : {}) }),
+    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["team", siteBase()] }); setCredResult({ email: r.email, password: r.password, message: r.message }); toast.push("ok", "Credenciais atualizadas."); },
     onError: (e: any) => toast.push("err", e.message),
   });
 
@@ -71,7 +73,10 @@ export function BarbersPage() {
               </p>
               <div className="mt-3 flex gap-1.5 border-t border-line pt-3">
                 <Button size="sm" variant="dark" onClick={() => setEdit({ id: b.id, name: b.name, specialty: b.specialty, bio: b.bio, photo: b.photo, work_days: days, work_start: b.work_start, work_end: b.work_end, break_start: b.break_start, break_end: b.break_end, active: !!b.active, service_ids: b.service_ids ?? [] })}><Pencil size={13} /> Editar</Button>
-                <Button size="sm" variant="ghost" onClick={() => { setCred(b); setCredF({ email: "", password: "" }); }}><KeyRound size={13} /> Senha do painel</Button>
+                <Button size="sm" variant="ghost" onClick={() => {
+                  const member = (team.data ?? []).find((m: any) => m.role === "barber" && m.barber_id === b.id && m.active === 1);
+                  setCred(b); setCredResult(null); setCredF({ email: member?.email ?? "", password: "" });
+                }}><KeyRound size={13} /> Senha do painel</Button>
                 <Button size="sm" variant="danger" className="ml-auto" onClick={() => setDel(b)}><Trash2 size={13} /></Button>
               </div>
             </article>
@@ -125,13 +130,30 @@ export function BarbersPage() {
       )}
 
       {cred && (
-        <Modal open onClose={() => setCred(null)} title={`Acesso ao painel — ${cred.name}`}>
-          <p className="mb-3 text-xs leading-relaxed text-zinc-500">Define/renova o usuário <b className="text-zinc-300">barber</b> vinculado a este profissional. Ele entra em <code className="text-[var(--c-gold)]">/admin</code> com este e-mail e vai direto para o painel individual (agenda própria, concluir atendimentos, pedir bloqueios).</p>
-          <div className="space-y-3">
-            <Field label="E-mail de acesso" hint="em branco = gerado do slug"><Input type="email" value={credF.email} onChange={(e) => setCredF({ ...credF, email: e.target.value })} placeholder={`${cred.slug}@painel.barbearia.local`} /></Field>
-            <Field label="Senha temporária" required hint="mín. 10 caracteres — oriente a trocar depois"><Input value={credF.password} onChange={(e) => setCredF({ ...credF, password: e.target.value })} placeholder="ex.: Navalha#DeOuro1" /></Field>
-            <Button className="w-full justify-center" disabled={credF.password.length < 10 || creds.isPending} onClick={() => creds.mutate({ id: cred.id, ...credF })}>{creds.isPending ? "Definindo…" : "Definir credenciais"}</Button>
-          </div>
+        <Modal open onClose={() => { setCred(null); setCredResult(null); }} title={`Acesso ao painel — ${cred.name}`}>
+          <p className="mb-3 text-xs leading-relaxed text-zinc-500">Crie um acesso ou redefina a senha da conta já vinculada a este profissional. A redefinição encerra sessões anteriores e exige troca da senha no próximo login.</p>
+          {credResult ? (
+            <div className="space-y-3">
+              <p role="status" className="text-sm text-green-300">{credResult.message}</p>
+              <Field label="E-mail de acesso"><Input readOnly value={credResult.email} /></Field>
+              {credResult.password && (
+                <Field label="Senha temporária — copie agora">
+                  <Input readOnly value={credResult.password} className="font-mono" onFocus={(e) => e.target.select()} />
+                </Field>
+              )}
+              <p className="text-xs text-zinc-400">Por segurança, a senha gerada só é exibida nesta confirmação.</p>
+              <Button className="w-full justify-center" onClick={() => { setCred(null); setCredResult(null); }}>Concluir</Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Field label="E-mail de acesso" required hint="Informe o e-mail da conta vinculada ao profissional"><Input type="email" value={credF.email} onChange={(e) => setCredF({ ...credF, email: e.target.value })} placeholder="profissional@barbearia.com" /></Field>
+              <Field label="Senha temporária" hint="Deixe em branco para gerar senha forte; ou informe no mínimo 10 caracteres">
+                <Input type="password" value={credF.password} onChange={(e) => setCredF({ ...credF, password: e.target.value })} placeholder="Gerada automaticamente se vazio" />
+              </Field>
+              <Button className="w-full justify-center" disabled={!/\S+@\S+\.\S+/.test(credF.email) || (credF.password.length > 0 && credF.password.length < 10) || creds.isPending}
+                onClick={() => creds.mutate({ id: cred.id, ...credF })}>{creds.isPending ? "Salvando…" : "Criar / redefinir credenciais"}</Button>
+            </div>
+          )}
         </Modal>
       )}
 

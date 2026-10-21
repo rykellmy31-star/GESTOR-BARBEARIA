@@ -90,6 +90,25 @@ try {
   const barberAfterEdit=(await owner("GET",c+"/admin/barbers")).data.barbers.find(item=>item.id===bid);
   check("Editar profissional não apaga serviços da agenda",
     editBarber.status===200&&barberAfterEdit.service_ids.includes(service.data.id));
+  const professionalEmail="barber@local-e2e.test",professionalPassword="BarberInicial#123456";
+  const newAccess=await owner("POST",c+"/admin/barbers/"+bid+"/credentials",
+    {email:professionalEmail,password:professionalPassword});
+  check("Dono cria acesso exclusivo para o barbeiro",newAccess.status===201&&newAccess.data.created===true);
+  const professional=client(),professionalLogin=await professional("POST","/api/auth/login",
+    {email:professionalEmail,password:professionalPassword});
+  check("Barbeiro pode fazer login e precisa trocar senha provisória",
+    professionalLogin.status===200&&professionalLogin.data.user.must_change_password===true);
+  const renewed=await owner("POST",c+"/admin/barbers/"+bid+"/credentials",
+    {email:professionalEmail,password:"BarberRedefinida#123456"});
+  check("Dono redefine credencial existente sem criar conta duplicada",
+    renewed.status===200&&renewed.data.created===false);
+  check("Redefinição encerra sessão anterior do profissional",
+    (await professional("GET","/api/auth/me")).status===401);
+  const currentProfessional=client();
+  const professionalRenewLogin=await currentProfessional("POST","/api/auth/login",
+    {email:professionalEmail,password:"BarberRedefinida#123456"});
+  check("Nova senha do barbeiro exige troca no primeiro acesso",
+    professionalRenewLogin.status===200&&professionalRenewLogin.data.user.must_change_password===true);
   const publicServices=await visitor("GET",c+"/services");
   check("Agendamento lista profissionais associados ao serviço público",
     publicServices.status===200&&publicServices.data.services.some(item=>

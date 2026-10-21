@@ -1063,7 +1063,7 @@ async function resolveBlockReq(c: import("hono").Context<{ Bindings: Env }>, app
   return json(c,result);
 }
 
-/** cria acesso ao painel do barbeiro (usuário global + membership barber) */
+/** Cria ou redefine acesso de uma conta exclusiva do mesmo profissional e empresa. */
 adminRouter.post("/barbers/:id/credentials", async (c) => {
   const parsed = z.object({ email: z.string().email(), name: z.string().min(2).max(90).optional(), password: z.string().min(10).max(128).optional() }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "e-mail obrigatório (senha mín. 10)", 400, parsed.error.flatten().fieldErrors);
@@ -1074,13 +1074,35 @@ adminRouter.post("/barbers/:id/credentials", async (c) => {
   const email = parsed.data.email.trim().toLowerCase();
   const generated = parsed.data.password ? "" : `Tigu!${crypto.randomUUID().replace(/-/g,"" )}`;
   const pw = parsed.data.password || generated;
-  const result = await createTeamAccount(db, {
-    companyId: id, name: parsed.data.name || barber.name, email,
-    passwordHash: await hashPassword(pw), role: "barber", barberId: barber.id,
+  const member=await db.prepare(`SELECT m.id,m.user_id,m.role,m.barber_id,m.active,u.password_hash,u.platform_role
+    FROM company_memberships m JOIN users u ON u.id=m.user_id
+    WHERE m.company_id=?1 AND lower(u.email)=?2`)
+    .bind(id,email).first<TeamMemberSnapshot & {platform_role:string}>();
+  if (member) {
+    // Nunca transformar conta de dono/gerente, outro barbeiro ou usuário global
+    // em acesso deste profissional. updateTeamAccess protege a transação contra
+    // troca de papéis, outras empresas e redefinições concorrentes.
+    if(member.role!=="barber" || member.barber_id!==barberId || member.active!==1 || member.platform_role!=="user")
+      return err(c,"Este e-mail pertence a outro acesso. Use a gestão de equipe.",409);
+    const changed=await updateTeamAccess(db,id,member,{
+      role:"barber",barberId,active:1,validateBarber:true,validateUser:true,
+      passwordHash:await hashPassword(pw),
+    });
+    if(!changed) return err(c,"Este acesso foi alterado ou pertence a outra empresa. Atualize e tente novamente.",409);
+    await audit(db,c.get("user"),"barber.credentials.reset","user",member.user_id,
+      {email,barber_id:barberId},{companyId:id});
+    return json(c,{ok:true,created:false,email,password:parsed.data.password?undefined:generated,
+      message:"Senha redefinida. Sessões anteriores revogadas e nova troca obrigatória."});
+  }
+  const result=await createTeamAccount(db,{
+    companyId:id,name:parsed.data.name || barber.name,email,
+    passwordHash:await hashPassword(pw),role:"barber",barberId:barber.id,
   });
-  if (!result.ok) return err(c, result.message, 409);
-  await audit(db, c.get("user"), "barber.credentials.create", "user", result.userId, { email, barber_id: barber.id }, { companyId: id });
-  return json(c, { ok: true, email, password: parsed.data.password ? undefined : generated, note: "Guarde esta senha — ela não será exibida novamente." }, 201);
+  if(!result.ok) return err(c,result.message,409);
+  await audit(db,c.get("user"),"barber.credentials.create","user",result.userId,
+    {email,barber_id:barber.id},{companyId:id});
+  return json(c,{ok:true,created:true,email,password:parsed.data.password?undefined:generated,
+    message:"Acesso criado. O profissional deverá trocar a senha no primeiro login."},201);
 });
 
 // ── demonstração (empresas com demo=1) ──────────────────────────────────────

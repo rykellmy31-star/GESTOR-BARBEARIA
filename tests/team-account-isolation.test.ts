@@ -100,3 +100,52 @@ describe("equipe: reativação e vínculo obrigatório", () => {
     expect(await db.prepare("SELECT active,barber_id FROM company_memberships WHERE id=?1").bind(membership.meta.last_row_id).first()).toEqual({active:0,barber_id:a.barberId});
   });
 });
+
+describe("painel profissional: criação e redefinição de credenciais",()=>{
+  it("redefine senha da própria conta, revoga sessões e exige nova troca",async()=>{
+    const a=await company(),email=`barber-reset-${crypto.randomUUID()}@tigu.test`;
+    const path=`/barbers/${a.barberId}/credentials`;
+    const created=await a.request(path,{email,password:"Inicial#123456"});
+    expect(created.status).toBe(201);
+    const account=await db.prepare("SELECT id,password_hash FROM users WHERE email=?1").bind(email).first<{id:number;password_hash:string}>();
+    expect(account?.id).toBeGreaterThan(0);
+    await db.batch([
+      db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES (?1,?2,?3)").bind(crypto.randomUUID(),account!.id,"2099-01-01T00:00:00Z"),
+      db.prepare("INSERT INTO password_resets(user_id,code_hash,expires_at) VALUES (?1,?2,?3)").bind(account!.id,crypto.randomUUID(),"2099-01-01T00:00:00Z"),
+    ]);
+    const reset=await a.request(path,{email,password:"Nova#65432109"});
+    expect(reset.status).toBe(200);
+    expect(await reset.json()).toMatchObject({ok:true,created:false,email});
+    const after=await db.prepare("SELECT id,password_hash,must_change_password FROM users WHERE email=?1").bind(email).first<{id:number;password_hash:string;must_change_password:number}>();
+    expect(after?.id).toBe(account?.id);
+    expect(after?.password_hash).not.toBe(account?.password_hash);
+    expect(after?.must_change_password).toBe(1);
+    expect(await db.prepare("SELECT COUNT(*) n FROM sessions WHERE user_id=?1").bind(account!.id).first("n")).toBe(0);
+    expect(await db.prepare("SELECT COUNT(*) n FROM password_resets WHERE user_id=?1 AND used_at IS NULL").bind(account!.id).first("n")).toBe(0);
+  });
+  it("geração automática de senha também funciona para conta existente",async()=>{
+    const a=await company(),email=`reset-generated-${crypto.randomUUID()}@tigu.test`;
+    const path=`/barbers/${a.barberId}/credentials`;
+    expect((await a.request(path,{email})).status).toBe(201);
+    const response=await a.request(path,{email});
+    expect(response.status).toBe(200);
+    const body=await response.json() as {password:string;created:boolean};
+    expect(body.password).toMatch(/^Tigu![a-f0-9]{32}$/);
+    expect(body.created).toBe(false);
+    expect(await db.prepare("SELECT COUNT(*) n FROM users WHERE email=?1").bind(email).first("n")).toBe(1);
+  });
+  it("nega redefinição de outra profissional, de dono e de conta global com múltiplas empresas",async()=>{
+    const a=await company(),other=await company(),email=`linked-${crypto.randomUUID()}@tigu.test`;
+    const extra=await db.prepare("INSERT INTO barbers(company_id,slug,name) VALUES (?1,'extra','Outra')").bind(a.id).run();
+    const path=`/barbers/${a.barberId}/credentials`;
+    const init=await a.request(`/barbers/${extra.meta.last_row_id}/credentials`,{email,password:"Inicial#123456"});
+    expect(init.status).toBe(201);
+    const user=await db.prepare("SELECT id,password_hash FROM users WHERE email=?1").bind(email).first<{id:number;password_hash:string}>();
+    expect((await a.request(path,{email,password:"Ataque#123456"})).status).toBe(409);
+    expect((await a.request(path,{email:a.owner.email,password:"Ataque#123456"})).status).toBe(409);
+    const ownBarberPath=`/barbers/${extra.meta.last_row_id}/credentials`;
+    await db.prepare("INSERT INTO company_memberships(company_id,user_id,role) VALUES (?1,?2,'manager')").bind(other.id,user!.id).run();
+    expect((await a.request(ownBarberPath,{email,password:"Ataque#123456"})).status).toBe(409);
+    expect(await db.prepare("SELECT password_hash FROM users WHERE id=?1").bind(user!.id).first("password_hash")).toBe(user?.password_hash);
+  });
+});
