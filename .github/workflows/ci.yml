@@ -87,3 +87,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_D1_EXPORT_APPROVED: YES
         run: node scripts/staging-d1-export-verify.mjs
+
+      # UM push específico permite criar somente 2 contas fictícias no
+      # tigu-staging após verificar isolamento e segredos; nenhuma cobrança.
+      - name: Exercitar jornadas autenticadas remotas fictícias (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_AUTH_STAGING_E2E_ONCE' }}
+        env:
+          STAGING_URL: https://tigu-staging.netssh3-0.workers.dev/
+          TIGU_AUTH_E2E_APPROVED: YES
+        run: node scripts/staging-auth-e2e.mjs
