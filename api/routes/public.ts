@@ -5,6 +5,7 @@
 // ============================================================================
 import { Hono } from "hono";
 import { z } from "zod";
+import { bookingPixEnabled, generateBookingPix, lookupBookingPix } from "../lib/booking-payments";
 import type { Env } from "../types";
 import { err, json, normalizePhone, nowIso, brl } from "../lib/utils";
 import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
@@ -34,7 +35,7 @@ publicRouter.use("*", tenantMiddleware({ auth: "none" }));
 publicRouter.get("/config", async (c) => {
   const company = c.get("company") as { id: number };
   const co = await c.env.DB.prepare(`SELECT demo FROM companies WHERE id=?1`).bind(company.id).first<{ demo: number }>();
-  return json(c, { settings: { ...ctxSettings(c) }, demo_active: co?.demo === 1 });
+  return json(c, { settings: { ...ctxSettings(c) }, demo_active: co?.demo === 1, payment_options: { after_service: true, pix_enabled: bookingPixEnabled(c.env) } });
 });
 publicRouter.get("/barbers", async (c) => {
   const { results } = await c.env.DB.prepare(`SELECT id, slug, name, specialty, bio, photo, rating, reviews_count, work_days, work_start, work_end, active FROM barbers WHERE company_id=?1 AND active=1 ORDER BY sort, name`).bind(cid(c)).all();
@@ -142,6 +143,10 @@ publicRouter.post("/bookings", async (c) => {
   const parsed = createBookingSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
   const s = ctxSettings(c);
+  if (parsed.data.paymentChoice === "pix" && !bookingPixEnabled(c.env))
+    return err(c,"Pix indisponível nesta barbearia. Escolha pagar após o serviço.",503);
+  if (parsed.data.paymentChoice === "pix" && !parsed.data.email)
+    return err(c,"Informe um e-mail para gerar o Pix.",422);
   const company = c.get("company") as { id: number };
   const res = await createBooking(
     { env: c.env, db: c.env.DB, companyId: company.id, settings: s, origin: "cliente", user: null, demo: await demoFlag(c) },
@@ -150,7 +155,10 @@ publicRouter.post("/bookings", async (c) => {
   if (!res.ok) return err(c, res.message, res.status, res.issues);
   const db = c.env.DB;
   const b = await db.prepare(`SELECT b.*, s.name AS service_name, br.name AS barber_name FROM bookings b JOIN services s ON s.id=b.service_id JOIN barbers br ON br.id=b.barber_id WHERE b.id = ?1`).bind(res.bookingId).first<Record<string, unknown>>();
+  const payment = parsed.data.paymentChoice === "pix"
+    ? await generateBookingPix(c.env,company.id,res.bookingId) : null;
   return json(c, {
+    payment, payment_choice: String(b?.payment_choice ?? "after_service"),
     booking: { ...(b ?? {}), starts_local: fmtLocal(String(res.startsAt), s.timezone), price: Number(b?.price_cents ?? 0) / 100 },
     cancel_token: res.cancelToken,
     allowed_cancel_until: res.allowedCancelUntil,
@@ -158,6 +166,24 @@ publicRouter.post("/bookings", async (c) => {
     messaging: { reminder: summarizeMsg(res.messaging), confirmation: summarizeMsg(res.confirmMessaging) },
     whatsapp_link: s.whatsapp ? waConfirmLink(s.whatsapp, b, s.timezone) : null,
   }, 201);
+});
+
+const pixLookupSchema = z.object({
+  code: z.string().min(4).max(32),
+  phone: z.string().min(8).max(20),
+  cancel_token: z.string().uuid(),
+});
+publicRouter.post("/bookings/pix/status", async (c) => {
+  const parsed = pixLookupSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return err(c,"Dados inválidos",422);
+  const ip = c.req.header("cf-connecting-ip") || "local";
+  const { rateLimit } = await import("../lib/auth");
+  if (!(await rateLimit(c.env,"booking-pix-status:"+ip,15,300000)))
+    return err(c,"Muitas consultas. Aguarde alguns minutos.",429);
+  const payment = await lookupBookingPix(c.env,cid(c),
+    parsed.data.code,parsed.data.phone,parsed.data.cancel_token);
+  if (!payment) return err(c,"Pagamento não encontrado",404);
+  return json(c,{payment});
 });
 
 async function demoFlag(c: { get: (k: string) => unknown; env: Env }): Promise<number> {
