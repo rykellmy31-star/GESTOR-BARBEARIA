@@ -5,10 +5,12 @@ type Result = {ok:true;status:OrderStatus;changed:boolean} | {ok:false;status:nu
 
 /** Transição e devolução de estoque na mesma transação, com consumo único. */
 export async function changeOrderStatus(db:D1Database,companyId:number,orderId:number,next:OrderStatus):Promise<Result> {
-  const order=await db.prepare("SELECT id,code,status FROM orders WHERE id=?1 AND company_id=?2")
-    .bind(orderId,companyId).first<{id:number;code:string;status:OrderStatus}>();
+  const order=await db.prepare("SELECT id,code,status,payment_choice FROM orders WHERE id=?1 AND company_id=?2")
+    .bind(orderId,companyId).first<{id:number;code:string;status:OrderStatus;payment_choice:string}>();
   if(!order) return {ok:false,status:404,message:"Pedido não encontrado"};
   if(order.status===next) return {ok:true,status:next,changed:false};
+  if(order.payment_choice==="pix"&&next==="pago")
+    return {ok:false,status:409,message:"Pagamento Pix só pode ser confirmado pelo próprio Mercado Pago. Não marque como recebido manualmente."};
   const flow:Record<OrderStatus,OrderStatus[]>={novo:["pago","cancelado"],pago:["entregue","cancelado"],entregue:[],cancelado:[]};
   if(!flow[order.status].includes(next)) return {ok:false,status:409,message:`Transição ${order.status} → ${next} não permitida`};
   const at=nowIso();
