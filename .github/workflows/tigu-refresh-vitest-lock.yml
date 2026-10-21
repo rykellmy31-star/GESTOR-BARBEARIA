@@ -1,0 +1,30 @@
+name: TIGU - atualizar Vitest lockfile com auditoria
+on:
+  push:
+    branches: [audit/tigu-primeira-validacao]
+permissions:
+  contents: write
+jobs:
+  refresh:
+    if: ${{ github.event.head_commit.message == 'TIGU_REFRESH_VITEST_LOCK_ONCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Atualizar pacote e lock pela resolução oficial npm
+        run: npm install --save-dev --save-exact vitest@4.1.12 --no-audit --no-fund
+      - name: Revalidar advisories moderados
+        run: npm audit --audit-level=moderate
+      - name: Registrar atualização exclusivamente no branch de auditoria
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git diff --cached --quiet && exit 1
+          git commit -m "fix(deps): atualizar Vitest e mocker contra advisories de segurança"
+          git push origin HEAD:refs/heads/audit/tigu-primeira-validacao
