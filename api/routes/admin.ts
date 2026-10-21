@@ -479,6 +479,8 @@ adminRouter.put("/services/:id", async (c) => {
 adminRouter.delete("/services/:id", async (c) => {
   const db = P(c); const id = cid(c);
   const sid = await bookingIdParam(c);
+  const exists = await db.prepare("SELECT id FROM services WHERE id=?1 AND company_id=?2").bind(sid,id).first();
+  if (!exists) return err(c, "Serviço não encontrado", 404);
   const used = await db.prepare(`SELECT COUNT(*) n FROM bookings WHERE service_id=?1 AND company_id=?2 AND status IN ('pendente','confirmado')`).bind(sid, id).first<{ n: number }>();
   if ((used?.n ?? 0) > 0) return err(c, "Serviço tem agendamentos ativos — cancele/remarque antes.", 409);
   await db.prepare(`UPDATE services SET active=0 WHERE id=?1 AND company_id=?2`).bind(sid, id).run();
