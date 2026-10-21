@@ -107,6 +107,22 @@ test("Actions: exportação real D1 homologação só no commit e sem publicaç�
   assert.match(src,/cloudflare_restore_verified:false/);
 });
 
+test("Actions: jornadas autenticadas só no worker staging após CI e com commit único",()=>{
+  const gate=content.match(/      - name: Exercitar jornadas autenticadas remotas fictícias \(commit único\)[\s\S]*?run: node scripts\/staging-auth-e2e\.mjs/);
+  assert.ok(gate,"Homologação remota autenticada sem gate");
+  assert.match(gate[0],/github\.event_name == 'push'/);
+  assert.match(gate[0],/github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
+  assert.match(gate[0],/github\.event\.head_commit\.message == 'TIGU_AUTH_STAGING_E2E_ONCE'/);
+  assert.match(gate[0],/STAGING_URL: https:\/\/tigu-staging\.netssh3-0\.workers\.dev\//);
+  assert.match(gate[0],/TIGU_AUTH_E2E_APPROVED: YES/);
+  assert.doesNotMatch(gate[0],/CLOUDFLARE_STAGING_TOKEN|wrangler deploy|production/);
+  const script=readFileSync(new URL("./staging-auth-e2e.mjs",import.meta.url),"utf8");
+  assert.match(script,/isIsolatedHealth\(health\.data\)/);
+  assert.match(script,/TIGU_AUTH_E2E_APPROVED !== "YES"/);
+  assert.match(script,/tigu-staging\\\./);
+  assert.doesNotMatch(script,/mercadopago\.com|graph\.facebook\.com|api\.whatsapp\.com/);
+});
+
 test("Painéis: consultas sensíveis usam cache separado por barbearia", () => {
   const cases = {
     "ServicesPage.tsx": ['"admin-services", siteBase()', '"admin-barbers", siteBase()'],
