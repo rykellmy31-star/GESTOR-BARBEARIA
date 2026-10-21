@@ -12,7 +12,7 @@ CREATE TABLE company_payment_integrations (
 -- Checkout de produtos independente das mensalidades, créditos e reservas.
 ALTER TABLE orders ADD COLUMN customer_email TEXT;
 ALTER TABLE orders ADD COLUMN checkout_key TEXT;
-CREATE UNIQUE INDEX idx_orders_checkout_key ON orders(checkout_key) WHERE checkout_key IS NOT NULL;
+CREATE UNIQUE INDEX idx_orders_checkout_key ON orders(company_id,checkout_key) WHERE checkout_key IS NOT NULL;
 ALTER TABLE orders ADD COLUMN payment_choice TEXT NOT NULL DEFAULT 'after_service'
  CHECK(payment_choice IN ('after_service','pix'));
 CREATE TABLE order_payments (
@@ -49,3 +49,18 @@ BEGIN
  UPDATE order_payments SET status='refund_required',updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
  WHERE order_id=NEW.id AND company_id=NEW.company_id AND status='paid';
 END;
+
+-- A proteção de credenciais é reforçada no banco para disputas concorrentes.
+CREATE TRIGGER merchant_payment_change_guard BEFORE UPDATE OF access_token_enc,webhook_secret_enc,account_id
+ON company_payment_integrations
+WHEN EXISTS(SELECT 1 FROM booking_payments WHERE company_id=OLD.company_id
+ AND status IN ('creating','pending','refund_required'))
+ OR EXISTS(SELECT 1 FROM order_payments WHERE company_id=OLD.company_id
+ AND status IN ('creating','pending','refund_required'))
+BEGIN SELECT RAISE(ABORT,'merchant account has unresolved payments'); END;
+CREATE TRIGGER merchant_payment_delete_guard BEFORE DELETE ON company_payment_integrations
+WHEN EXISTS(SELECT 1 FROM booking_payments WHERE company_id=OLD.company_id
+ AND status IN ('creating','pending','refund_required'))
+ OR EXISTS(SELECT 1 FROM order_payments WHERE company_id=OLD.company_id
+ AND status IN ('creating','pending','refund_required'))
+BEGIN SELECT RAISE(ABORT,'merchant account has unresolved payments'); END;
