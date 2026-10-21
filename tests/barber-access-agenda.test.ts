@@ -35,7 +35,7 @@ async function fixture(){
   },e,ctx);
   const pending=()=>db.prepare("SELECT id FROM block_requests WHERE company_id=?1 ORDER BY id DESC LIMIT 1").bind(companyId).first<number>("id");
   const get=(path:string)=>app.request(`/api/c/${slug}/painel${path}`,{headers:{cookie:staff}},e,ctx);
-  return {companyId,barberId,settings,request,pending,get};
+  return {companyId,barberId,settings,slug,staff,request,pending,get};
 }
 describe("painel do profissional: acesso e dia local",()=>{
   it("desativação do profissional impede consulta e mutações com sessão já existente",async()=>{
@@ -83,5 +83,59 @@ describe("painel do profissional: acesso e dia local",()=>{
     const result=await response.json() as {days:Record<string,{customer_name:string}[]>;bookings:{customer_name:string}[]};
     expect(result.bookings.map(b=>b.customer_name)).toEqual(["Começo local","Fim local"]);
     expect(Object.keys(result.days)).toEqual([day]);
+  });
+});
+
+
+describe("painel profissional: dados exibidos e notificações",()=>{
+  async function bookingFor(f:Awaited<ReturnType<typeof fixture>>,name:string,duration=45){
+    const service=Number((await db.prepare("INSERT INTO services(company_id,slug,name,price_cents,duration_min) VALUES (?1,?2,?3,3000,?4)")
+      .bind(f.companyId,crypto.randomUUID(),name,duration).run()).meta.last_row_id);
+    const start=localToUtc("America/Bahia",day,14*60);
+    const iso=(dt:Date)=>dt.toISOString().replace(/\.\d{3}Z$/,"Z");
+    const row=await db.prepare("INSERT INTO bookings(company_id,barber_id,service_id,code,starts_at,ends_at,price_cents,status,customer_name,customer_phone,cancel_token) VALUES (?1,?2,?3,?4,?5,?6,3000,'confirmado','Cliente','5573999990000','token')")
+      .bind(f.companyId,f.barberId,service,crypto.randomUUID(),iso(start),iso(new Date(start.getTime()+duration*60000))).run();
+    return Number(row.meta.last_row_id);
+  }
+  it("fornece hora local, serviço e duração para cada card da agenda",async()=>{
+    const f=await fixture();
+    const id=await bookingFor(f,"Corte teste",45);
+    const res=await f.get("/agenda?from="+day+"&days=1");
+    expect(res.status).toBe(200);
+    const body=await res.json() as {days:Record<string,{id:number;label:string;duration_min:number;service_name:string}[]>};
+    expect(body.days[day]).toEqual(expect.arrayContaining([
+      expect.objectContaining({id,label:"14:00",duration_min:45,service_name:"Corte teste"})
+    ]));
+  });
+  it("mantém avisos não lidos até confirmação explícita, isolados por profissional e barbearia",async()=>{
+    const a=await fixture(),b=await fixture();
+    const userId=Number(await db.prepare("SELECT user_id FROM company_memberships WHERE company_id=?1 AND role='barber'").bind(a.companyId).first("user_id"));
+    await db.batch([
+      db.prepare("INSERT INTO notifications(company_id,audience,user_id,title,kind) VALUES (?1,'barber',?2,'Seu aviso','booking')").bind(a.companyId,userId),
+      db.prepare("INSERT INTO notifications(company_id,audience,title,kind) VALUES (?1,'admin','Gestão','system')").bind(a.companyId),
+    ]);
+    const first=await a.get("/notifications");
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({unread:1,notifications:[{title:"Seu aviso",read_at:null}]});
+    expect(await (await a.get("/notifications")).json()).toMatchObject({unread:1});
+    expect(await (await b.get("/notifications")).json()).toMatchObject({unread:0});
+    expect((await a.request("/notifications/read",{})).status).toBe(200);
+    expect(await (await a.get("/notifications")).json()).toMatchObject({unread:0});
+    expect(await db.prepare("SELECT read_at FROM notifications WHERE company_id=?1 AND audience='admin'").bind(a.companyId).first("read_at")).toBeNull();
+  });
+  it("permissão de concluir também bloqueia no-show via PUT e PATCH",async()=>{
+    const f=await fixture();
+    const id=await bookingFor(f,"Corte restrito",30);
+    await db.prepare("UPDATE company_settings SET data=?1 WHERE company_id=?2")
+      .bind(JSON.stringify({...f.settings,barber_can_conclude:false}),f.companyId).run();
+    for(const method of ["PUT","PATCH"]){
+      const res=await app.request("/api/c/"+f.slug+"/barber/bookings/"+id+"/status",{
+        method,headers:{"content-type":"application/json",cookie:f.staff},
+        body:JSON.stringify({status:"no_show"}),
+      },e,ctx);
+      expect(res.status).toBe(403);
+      expect(await db.prepare("SELECT status FROM bookings WHERE id=?1").bind(id).first("status")).toBe("confirmado");
+    }
+    expect(await (await f.get("/me")).json()).toMatchObject({permissions:{can_conclude:false}});
   });
 });
