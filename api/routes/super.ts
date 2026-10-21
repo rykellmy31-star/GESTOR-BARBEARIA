@@ -391,7 +391,7 @@ superRouter.get("/leads", async (c) => {
   if (status && !["new","contacted","negotiating","closed"].includes(status))
     return err(c, "Status inválido", 422);
   const cursor = c.req.query("beforeId");
-  if (cursor !== undefined && (!/^[1-9]\\d*$/.test(cursor) || !Number.isSafeInteger(Number(cursor))))
+  if (cursor !== undefined && (!/^[1-9]\d*$/.test(cursor) || !Number.isSafeInteger(Number(cursor))))
     return err(c, "Cursor de interessados inválido.", 400);
   return json(c, await listSalesLeads(c.env.DB, status, query, cursor ? Number(cursor) : null));
 });
