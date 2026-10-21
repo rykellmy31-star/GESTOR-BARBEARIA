@@ -216,8 +216,9 @@ adminRouter.get("/bookings", async (c) => {
   const to = c.req.query("to") || addDays(from, 6);
   const { results } = await P(c)
     .prepare(
-      `SELECT b.*, s.name AS service_name, br.name AS barber_name FROM bookings b
+      `SELECT b.*, s.name AS service_name, br.name AS barber_name, bp.status AS payment_status FROM bookings b
        LEFT JOIN services s ON s.id=b.service_id JOIN barbers br ON br.id=b.barber_id
+       LEFT JOIN booking_payments bp ON bp.booking_id=b.id AND bp.company_id=b.company_id
        WHERE b.company_id=?1 AND b.starts_at>=?2 AND b.starts_at<?3 AND b.status!='bloqueio' ORDER BY b.starts_at`
     )
     .bind(cid(c), new Date(`${from}T00:00:00Z`).toISOString(), new Date(`${addDays(to, 1)}T00:00:00Z`).toISOString())
@@ -228,7 +229,7 @@ adminRouter.get("/bookings", async (c) => {
 adminRouter.post("/bookings", async (c) => {
   const parsed = createBookingSchema.omit({ consent: true }).partial({ idempotencyKey: true }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
-  const input = { consent: true, idempotencyKey: `admin-${crypto.randomUUID()}`, ...parsed.data } as z.infer<typeof createBookingSchema>;
+  const input = { consent: true, idempotencyKey: `admin-${crypto.randomUUID()}`, ...parsed.data, paymentChoice: "after_service" } as z.infer<typeof createBookingSchema>;
   const res = await createBooking(
     { env: c.env, db: P(c), companyId: cid(c), settings: ctxSettings(c), origin: "admin", user: c.get("user"), demo: 0 },
     input
