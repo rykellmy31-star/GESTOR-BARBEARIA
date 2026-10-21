@@ -775,7 +775,7 @@ adminRouter.post("/customers/:id/anonymize", async (c) => {
         (SELECT id FROM bookings WHERE company_id=?1 AND customer_phone=?2)
       AND EXISTS(SELECT 1 FROM customers WHERE id=?3 AND company_id=?1 AND phone=?2 AND anonymized_at=?4)`)
       .bind(id, anonPhone, cust.id, at),
-    db.prepare(`UPDATE notifications SET body='' WHERE company_id=?1 AND
+    db.prepare(`UPDATE notifications SET title='Registro anonimizado',body='' WHERE company_id=?1 AND
       (booking_id IN (SELECT id FROM bookings WHERE company_id=?1 AND customer_phone=?2)
        OR (kind='order' AND EXISTS(SELECT 1 FROM orders o WHERE o.company_id=?1
           AND o.customer_phone=?2 AND instr(notifications.body,o.code)>0)))
