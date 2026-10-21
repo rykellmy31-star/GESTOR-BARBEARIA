@@ -285,8 +285,8 @@ try {
       FROM companies WHERE slug=${q(slug)}`]);
   const localCancelReal=await owner("POST",c+"/admin/wallet/topup/E2E-PIX-REAL/cancel",{});
   const localUncancelled=await owner("GET",c+"/admin/wallet/topup/E2E-PIX-REAL");
-  check("Pix real não pode ser cancelado só no banco; mantém conciliação possível",
-    localCancelReal.status===409&&localUncancelled.status===200&&localUncancelled.data.topup.status==="pending");
+  check(`Pix real não pode ser cancelado só no banco; mantém conciliação possível (cancel=${localCancelReal.status}, consulta=${localUncancelled.status}, estado=${localUncancelled.data?.topup?.status??"ausente"})`,
+    localCancelReal.status===409&&localUncancelled.status===200&&localUncancelled.data.topup?.status==="pending");
   check("Outra empresa não pode cancelar Pix alheio",
     (await other("POST",c+"/admin/wallet/topup/E2E-PIX-REAL/cancel",{})).status===403);
   const walletBefore=await owner("GET",c+"/admin/wallet");
