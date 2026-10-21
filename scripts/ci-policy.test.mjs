@@ -118,7 +118,7 @@ test("Actions: jornadas autenticadas só no worker staging após CI e com commit
   assert.doesNotMatch(gate[0],/CLOUDFLARE_STAGING_TOKEN|wrangler deploy|production/);
   const script=readFileSync(new URL("./staging-auth-e2e.mjs",import.meta.url),"utf8");
   assert.match(script,/isIsolatedHealth\(health\.data\)/);
-  assert.match(script,/TIGU_AUTH_E2E_APPROVED !== "YES"/);
+  assert.match(script,/TIGU_AUTH_E2E_APPROVED\s*!==\s*"YES"/);
   assert.match(script,/tigu-staging\\\./);
   assert.doesNotMatch(script,/mercadopago\.com|graph\.facebook\.com|api\.whatsapp\.com/);
 });
