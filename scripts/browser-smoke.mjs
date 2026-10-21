@@ -54,6 +54,16 @@ async function fill(selector,value){const found=await js('(()=>{const e=document
   JSON.stringify(value)+');e.dispatchEvent(new Event("input",{bubbles:true}));'+
   'e.dispatchEvent(new Event("change",{bubbles:true}));return true})()');
   assert.ok(found,"Campo não encontrado: "+selector);}
+async function fillField(label,value,scope=".modal-backdrop"){
+  const found=await js('(()=>{const root=document.querySelector('+JSON.stringify(scope)+');'+
+    'if(!root)return false;const f=[...root.querySelectorAll("label.block")]'+
+    '.find(x=>x.firstElementChild?.textContent?.trim().startsWith('+JSON.stringify(label)+'));'+
+    'const el=f?.querySelector("input");if(!el)return false;'+
+    'Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(el,'+JSON.stringify(value)+');'+
+    'el.dispatchEvent(new Event("input",{bubbles:true}));'+
+    'el.dispatchEvent(new Event("change",{bubbles:true}));return true})()');
+  assert.ok(found,"Campo não encontrado no formulário: "+label);
+}
 function pass(name,success=true){assert.ok(success,name);console.log("✔ Chromium: "+name);}
 async function api(base,path,method="GET",body,cookie=""){const res=await fetch(base+path,{method,
   headers:{...(body?{"content-type":"application/json"}:{}),...(cookie?{cookie}:{})},
@@ -172,6 +182,104 @@ try{
   await go(base+"/c/"+slug+"/admin/produtos");
   await until("produto no painel",'document.body.innerText.includes("Pomada Navegador")');
   pass("estoque aparece no painel");
+  // CRUD completo via React: criar, editar/movimentar e desativar produto.
+  await click("Novo produto");
+  await until("modal de cadastro de produto",'document.querySelector(".modal-backdrop")!==null');
+  await fillField("Nome","Gel Chromium");
+  await fillField("Preço (R$)","18,90");
+  await fillField("Estoque","7");
+  await click("Salvar produto");
+  await until("produto criado no painel",'document.body.innerText.includes("Gel Chromium")&&document.querySelector(".modal-backdrop")===null');
+  const productCreated=await api(base,"/api/c/"+slug+"/admin/products","GET",undefined,signup.cookie);
+  const gel=productCreated.data.products.find(x=>x.name==="Gel Chromium");
+  assert.ok(gel&&gel.price_cents===1890&&gel.stock===7,"Cadastro deve salvar preço e estoque exatos no D1");
+  pass("dono cadastra produto, preço e estoque no painel real");
+  const productEdit=await js('(()=>{const a=[...document.querySelectorAll("article")]'+
+    '.find(x=>x.textContent.includes("Gel Chromium"));const b=[...a?.querySelectorAll("button")||[]]'+
+    '.find(x=>x.textContent.includes("Editar / movimentar"));if(!b)return false;b.click();return true})()');
+  assert.ok(productEdit,"Editar produto deve abrir modal");
+  await fillField("Preço (R$)","21,90");
+  await fillField("Δ entradas/saídas","-2");
+  await fillField("Motivo","Ajuste de inventário fictício");
+  await click("Salvar produto");
+  await until("modal de produto editado fechar",'document.querySelector(".modal-backdrop")===null');
+  const productEdited=await api(base,"/api/c/"+slug+"/admin/products","GET",undefined,signup.cookie);
+  assert.ok(productEdited.data.products.some(x=>x.id===gel.id&&x.stock===5&&x.price_cents===2190),
+    "Preço e movimentação de estoque devem ser atômicos no D1");
+  const badStock=await api(base,"/api/c/"+slug+"/admin/products/"+gel.id,"PUT",
+    {adjust_stock_by:-100,stock_reason:"Teste de estoque insuficiente"},signup.cookie);
+  assert.equal(badStock.status,409,"API deve rejeitar saída superior ao estoque");
+  const stockUnchanged=await api(base,"/api/c/"+slug+"/admin/products","GET",undefined,signup.cookie);
+  assert.equal(stockUnchanged.data.products.find(x=>x.id===gel.id).stock,5,
+    "Movimentação recusada não altera o estoque");
+  pass("dono edita preço e estoque; saída negativa é bloqueada sem efeito colateral");
+  const productRemove=await js('(()=>{const a=[...document.querySelectorAll("article")]'+
+    '.find(x=>x.textContent.includes("Gel Chromium"));const b=[...a?.querySelectorAll("button")||[]]'+
+    '.find(x=>x.getAttribute("class")?.includes("bg-red-950"));if(!b)return false;b.click();return true})()');
+  assert.ok(productRemove,"Excluir produto deve pedir confirmação");
+  await until("confirmação de desativação do produto",
+    'document.querySelector(".modal-backdrop")?.innerText.includes("Gel Chromium")');
+  await click("Confirmar");
+  await until("produto desativado no painel",'document.querySelector(".modal-backdrop")===null');
+  const productRemoved=await api(base,"/api/c/"+slug+"/admin/products","GET",undefined,signup.cookie);
+  assert.equal(productRemoved.data.products.find(x=>x.id===gel.id).active,0,
+    "Desativação deve manter registro histórico mas retirar da vitrine");
+  pass("dono desativa produto pela confirmação e preserva histórico");
+  // Catálogo de serviços: criar, editar e desativar sem mexer nas reservas já testadas.
+  await go(base+"/c/"+slug+"/admin/servicos");
+  await until("tela serviços do dono",'document.body.innerText.includes("Serviços & Preços")');
+  await click("Novo serviço");
+  await until("cadastro de serviço",'document.querySelector(".modal-backdrop")!==null');
+  await fillField("Nome","Hidratação Chromium");
+  await fillField("Preço (R$)","25,00");
+  await fillField("Duração (min)","45");
+  await click("Salvar serviço");
+  await until("serviço criado",'document.body.innerText.includes("Hidratação Chromium")&&document.querySelector(".modal-backdrop")===null');
+  const serviceCreated=await api(base,"/api/c/"+slug+"/admin/services","GET",undefined,signup.cookie);
+  const hydration=serviceCreated.data.services.find(x=>x.name==="Hidratação Chromium");
+  assert.ok(hydration&&hydration.price_cents===2500&&hydration.duration_min===45,
+    "Cadastro de serviço deve registrar preço e duração no D1");
+  pass("dono cadastra serviço real com preço e duração");
+  const serviceEdit=await js('(()=>{const r=[...document.querySelectorAll("tbody tr")]'+
+    '.find(x=>x.textContent.includes("Hidratação Chromium"));const b=r?.querySelector("td:last-child button");'+
+    'if(!b)return false;b.click();return true})()');
+  assert.ok(serviceEdit,"Editar serviço deve abrir modal");
+  await fillField("Preço (R$)","32,00");
+  await fillField("Duração (min)","60");
+  await click("Salvar serviço");
+  await until("edição de serviço concluir",'document.querySelector(".modal-backdrop")===null');
+  const serviceEdited=await api(base,"/api/c/"+slug+"/admin/services","GET",undefined,signup.cookie);
+  assert.ok(serviceEdited.data.services.some(x=>x.id===hydration.id&&x.price_cents===3200&&x.duration_min===60),
+    "Edição de serviço deve atualizar duração e valor no banco");
+  pass("dono edita duração e preço do serviço pela interface");
+  const serviceRemove=await js('(()=>{const r=[...document.querySelectorAll("tbody tr")]'+
+    '.find(x=>x.textContent.includes("Hidratação Chromium"));const b=r?.querySelectorAll("td:last-child button")[1];'+
+    'if(!b)return false;b.click();return true})()');
+  assert.ok(serviceRemove,"Excluir serviço deve pedir confirmação");
+  await until("confirmação da remoção de serviço",
+    'document.querySelector(".modal-backdrop")?.innerText.includes("Hidratação Chromium")');
+  await click("Confirmar");
+  await until("desativação de serviço concluída",'document.querySelector(".modal-backdrop")===null');
+  const serviceRemoved=await api(base,"/api/c/"+slug+"/admin/services","GET",undefined,signup.cookie);
+  assert.equal(serviceRemoved.data.services.find(x=>x.id===hydration.id).active,0,
+    "Serviço desativado deve preservar registro e não permitir novas reservas");
+  pass("dono desativa serviço sem apagar histórico");
+  // Configurações editáveis refletidas na API e mantidas após recarregar a tela.
+  await go(base+"/c/"+slug+"/admin/configuracoes");
+  await until("configurações carregadas",'document.body.innerText.includes("Identidade da barbearia")');
+  await fillField("Slogan","Barbearia Chromium - configuração validada","body");
+  await click("Champanhe");
+  await click("Salvar alterações");
+  await until("configuração salva pelo painel",
+    'document.body.innerText.includes("Configurações salvas")');
+  const configSaved=await api(base,"/api/c/"+slug+"/admin/settings","GET",undefined,signup.cookie);
+  assert.equal(configSaved.data.settings.tagline,"Barbearia Chromium - configuração validada");
+  assert.equal(configSaved.data.settings.brand.gold,"#e8c56a");
+  pass("dono salva identidade e paleta de marca via painel e D1");
+  await go(base+"/c/"+slug+"/admin/configuracoes");
+  await until("slogan persistido após recarregar",
+    '[...document.querySelectorAll("label.block")].some(x=>x.firstElementChild?.textContent?.trim()==="Slogan"&&x.querySelector("input")?.value==="Barbearia Chromium - configuração validada")');
+  pass("configurações persistem após nova abertura do painel");
   await go(base+"/c/"+slug+"/admin/carteira");
   await until("carteira",'document.body.innerText.includes("Carteira de créditos")');
   await until("Pix real bloqueado no ambiente local",
@@ -463,7 +571,7 @@ try{
   await until("tabela de precificação",
     'document.body.innerText.includes("Precificação de mensagens")');
   pass("Superadmin consulta precificação vigente");
-  console.log("29 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
+  console.log("37 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){
