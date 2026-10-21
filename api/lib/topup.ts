@@ -26,12 +26,15 @@ export interface TopupRow {
   created_at: string;
 }
 
+/** Limites compartilhados entre o gateway e o painel de recargas. */
+export async function getTopupLimits(db: D1Database): Promise<{min_cents:number;max_cents:number}> {
+  const limits = await db.prepare("SELECT key,value FROM platform_settings WHERE key IN ('topup_min_cents','topup_max_cents')").all<{key:string;value:string}>();
+  const values=Object.fromEntries(limits.results.map(row=>[row.key,Number(row.value)]));
+  return {min_cents:values.topup_min_cents??1000,max_cents:values.topup_max_cents??500_000};
+}
 export async function createTopup(env: Env, companyId: number, amountCents: number, payerEmail: string, user: SessionUser | null) {
   const db = env.DB;
-  const limits = await db.prepare(`SELECT key, value FROM platform_settings WHERE key IN ('topup_min_cents','topup_max_cents')`).all<{ key: string; value: string }>();
-  const l = Object.fromEntries(limits.results.map((r) => [r.key, Number(r.value)]));
-  const min = l.topup_min_cents ?? 1000;
-  const max = l.topup_max_cents ?? 500_000;
+  const {min_cents:min,max_cents:max} = await getTopupLimits(db);
   if (!Number.isInteger(amountCents) || amountCents < min || amountCents > max) {
     return { ok: false as const, status: 422, message: `Valor fora dos limites (mín R$ ${(min / 100).toFixed(2)}, máx R$ ${(max / 100).toFixed(2)}).` };
   }
