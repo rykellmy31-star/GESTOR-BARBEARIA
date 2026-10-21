@@ -51,3 +51,24 @@ test("busca de conflitos históricos usa o índice parcial",()=>{
     assert.ok(plans.some(x=>x.detail.includes("idx_message_jobs_meta_conflict_page")),JSON.stringify(plans));
   }finally{db.close();}
 });
+
+
+test('upgrade de base existente preserva pagamentos e somente recargas pagas ganham marcador histórico',()=>{
+  const db=new DatabaseSync(":memory:");
+  try{
+    db.exec("PRAGMA foreign_keys=ON;");
+    for(const name of files.slice(0,10)) db.exec(readFileSync(join(directory,name),"utf8"));
+    db.exec("INSERT INTO companies(id,slug,name) VALUES (91,'loja-antiga','Loja Antiga'),(92,'outra-loja','Outra Loja')");
+    db.exec("INSERT INTO topup_orders(id,company_id,code,amount_cents,status,paid_at,credited_at) VALUES (101,91,'TOPUP-HIST-1',1000,'paid','2026-09-01T10:00:00Z','2026-09-01T10:01:00Z'),(102,92,'TOPUP-PEND-2',2000,'pending',NULL,NULL)");
+    db.exec("INSERT INTO orders(id,company_id,code,customer_name,customer_phone,status,total_cents) VALUES (201,91,'PED-HIST-1','Cliente','5599999999999','pago',5000)");
+    db.exec("INSERT INTO payment_webhook_events(id,provider,event_uid,payload,processed) VALUES (301,'mercadopago','webhook-historico-1','{}',1)");
+    for(const name of files.slice(10)) db.exec(readFileSync(join(directory,name),"utf8"));
+    const paid=db.prepare("SELECT company_id,amount_cents,status,paid_at,credited_at,notification_sent_at FROM topup_orders WHERE id=101").get();
+    assert.deepEqual({...paid},{company_id:91,amount_cents:1000,status:'paid',paid_at:'2026-09-01T10:00:00Z',credited_at:'2026-09-01T10:01:00Z',notification_sent_at:'2026-09-01T10:01:00Z'});
+    const pending=db.prepare("SELECT company_id,status,notification_sent_at FROM topup_orders WHERE id=102").get();
+    assert.deepEqual({...pending},{company_id:92,status:'pending',notification_sent_at:null});
+    assert.deepEqual({...db.prepare("SELECT status,total_cents,paid_at FROM orders WHERE id=201").get()},{status:'pago',total_cents:5000,paid_at:null});
+    assert.deepEqual({...db.prepare("SELECT processed,attempt_count,last_attempt_at FROM payment_webhook_events WHERE id=301").get()},{processed:1,attempt_count:0,last_attempt_at:null});
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(),[]);
+  }finally{db.close();}
+});
