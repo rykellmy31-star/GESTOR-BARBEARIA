@@ -99,3 +99,7 @@ A execução remota por GitHub Actions exige um `push` na branch `audit/tigu-pri
 ## Disparo único da exportação real D1 de staging
 
 Aprovada a validação do script no CI do PR, o proprietário autorizou prosseguir com os testes de homologação e backup. Este commit habilita somente a exportação SQL do D1 `tigu-staging-db` para arquivo efêmero de GitHub Actions, com importação local para conferência. Nenhum SQL será enviado ao chat, artifact ou repositório. O resultado remoto precisa ser conferido nos logs; R2 e restore dentro da Cloudflare continuam independentes.
+
+## Próxima fase: jornadas autenticadas remotas com dados fictícios
+
+O script `scripts/staging-auth-e2e.mjs` exige o domínio `tigu-staging.*.workers.dev`, `/api/health` com bindings de staging, chaves fortes e Meta/Pix desabilitados **antes de qualquer POST**. Ele cria duas contas com e-mails exclusivos `example.test`, valida separação entre empresas, cadastro, login, profissional, serviço, agendamento, cancelamento, produto, pedido, estoque e R2 (PNG fictício). Não envia WhatsApp, não cobra Pix nem utiliza telefone de pessoa real. O script só é acionado via commit `TIGU_AUTH_STAGING_E2E_ONCE` no push da branch de auditoria. Reservas e pedidos são cancelados, mas contas, barbearias e fotos de teste permanecem no D1/R2 de homologação para permitir verificar posteriormente a restauração dos dados fictícios. O teste requer sucesso real do Actions; testes de CI com respostas simuladas não o substituem.
