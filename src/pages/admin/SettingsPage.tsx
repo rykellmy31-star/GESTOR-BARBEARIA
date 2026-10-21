@@ -6,6 +6,7 @@ import { Badge, Button, Field, Input, Select, Spinner, Textarea, useToast } from
 import { ImageUpload } from "@/components/ui/Upload";
 import { fmtDateTime } from "@/lib/format";
 import type { ShopSettings } from "@/lib/types";
+import { MerchantPaymentSettings } from "./MerchantPaymentSettings";
 
 const DAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const PRESETS = [
@@ -141,6 +142,8 @@ export function SettingsPage() {
           <Toggle label="Botões de WhatsApp" v={s.whatsapp_buttons_enabled} set={(v) => set({ whatsapp_buttons_enabled: v })} />
         </div>
       </Card>
+
+      <MerchantPaymentSettings />
 
       <Card title="Registro de auditoria" subtitle="Quem mudou o quê, quando (últimas 25 ações)." icon={<ShieldCheck size={15} />}>
         <ul className="max-h-72 space-y-1 overflow-y-auto font-mono text-[11px]">
