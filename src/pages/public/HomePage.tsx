@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Clock, MapPin, Star, Scissors, ShoppingBag, Trash2, Minus, Plus, MessageCircle, BadgeCheck, Send } from "lucide-react";
 import { clsx } from "clsx";
-import { siteBase, api, cartKey, cartEvent } from "@/lib/api";
+import { siteBase, api } from "@/lib/api";
+import { MAX_CART_LINES, MAX_CART_QTY, readCart, writeCart } from "@/lib/cart";
 import { useConfig, useReveal } from "@/lib/hooks";
 import { Badge, Button, EmptyState, Modal, SectionTitle, Spinner, useToast } from "@/components/ui";
 import { money, maskPhone } from "@/lib/format";
@@ -203,21 +204,27 @@ function useQuerySafe<T>(key: string): { data?: T } {
 function ProductCard({ p }: { p: Product }) {
   const toast = useToast();
   const [adding, setAdding] = useState(false);
+  const soldOut = p.stock <= 0 || p.out_of_stock === true;
   const add = () => {
-    const cart = JSON.parse(localStorage.getItem(cartKey()) || "{}") as Record<string, number>;
-    cart[String(p.id)] = Math.min((cart[String(p.id)] || 0) + 1, Math.max(p.stock, 1));
-    localStorage.setItem(cartKey(), JSON.stringify(cart));
-    window.dispatchEvent(new Event(cartEvent()));
+    if (soldOut) return toast.push("err", "Produto esgotado.");
+    const cart = readCart();
+    const id = String(p.id);
+    if (!cart[id] && Object.keys(cart).length >= MAX_CART_LINES)
+      return toast.push("err", "O carrinho já atingiu o limite de 20 produtos diferentes.");
+    if ((cart[id] || 0) >= Math.min(p.stock, MAX_CART_QTY))
+      return toast.push("err", "Quantidade máxima disponível no carrinho.");
+    cart[id] = (cart[id] || 0) + 1;
+    writeCart(cart);
     setAdding(true);
     toast.push("ok", `${p.name} adicionado ao carrinho.`);
     setTimeout(() => setAdding(false), 900);
   };
   return (
-    <article className={clsx("card-luxe reveal flex flex-col overflow-hidden rounded-2xl border bg-panel", p.out_of_stock ? "border-line opacity-75" : "border-line")}>
+    <article className={clsx("card-luxe reveal flex flex-col overflow-hidden rounded-2xl border bg-panel", soldOut ? "border-line opacity-75" : "border-line")}>
       <div className="relative h-40 overflow-hidden">
         <img src={p.photo} alt={p.name} loading="lazy" className="h-full w-full object-cover" />
         {p.featured ? <div className="absolute left-2 top-2"><Badge tone="gold">Exclusivo</Badge></div> : null}
-        {p.out_of_stock && <div className="absolute right-2 top-2"><Badge tone="red">Esgotado</Badge></div>}
+        {soldOut && <div className="absolute right-2 top-2"><Badge tone="red">Esgotado</Badge></div>}
       </div>
       <div className="flex flex-1 flex-col p-4">
         <h3 className="text-sm font-semibold leading-snug text-zinc-100">{p.name}</h3>
@@ -226,8 +233,8 @@ function ProductCard({ p }: { p: Product }) {
           <p className="font-display text-lg font-semibold text-[var(--c-gold)]">{money(p.price_cents)}</p>
           <span className="text-[11px] text-zinc-500">{p.stock > 0 ? `${p.stock} em estoque` : "—"}</span>
         </div>
-        <button onClick={add} disabled={p.out_of_stock} className={clsx("mt-3 rounded-lg py-2 text-[13px] font-semibold transition-all", adding ? "bg-emerald-600 text-white" : p.out_of_stock ? "cursor-not-allowed bg-zinc-800 text-zinc-500" : "btn-gold")}>
-          {adding ? "✓ Adicionado" : p.out_of_stock ? "Indisponível" : "Adicionar ao carrinho"}
+        <button onClick={add} disabled={soldOut} className={clsx("mt-3 rounded-lg py-2 text-[13px] font-semibold transition-all", adding ? "bg-emerald-600 text-white" : soldOut ? "cursor-not-allowed bg-zinc-800 text-zinc-500" : "btn-gold")}>
+          {adding ? "✓ Adicionado" : soldOut ? "Indisponível" : "Adicionar ao carrinho"}
         </button>
       </div>
     </article>
