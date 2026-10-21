@@ -453,7 +453,11 @@ describe("Pix: recuperar confirmação sem webhook", () => {
       };
       return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
     });
-    const paymentEnv = { ...env, DB: db, MP_ACCESS_TOKEN: "testing-only", APP_ENV: "development" } as Env;
+    const paymentEnv = {
+      ...env, DB: db, MP_ACCESS_TOKEN: "testing-only",
+      MP_WEBHOOK_SECRET: "testing-only-webhook-secret",
+      PUBLIC_URL: "https://tigu.example.com", APP_ENV: "development",
+    } as Env;
     try {
       const first = await reconcilePendingTopups(paymentEnv, 20);
       expect(first.credited).toBe(2);
