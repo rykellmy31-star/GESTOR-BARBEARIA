@@ -120,13 +120,20 @@ export async function confirmBookingPix(env:Env,paymentId:string):Promise<{ok:bo
 
 export async function lookupBookingPix(env:Env,companyId:number,code:string,phone:string,token:string):Promise<BookingPix|null> {
   if(!/^[A-Za-z0-9-]{4,32}$/.test(code)||!/^[a-f0-9-]{36}$/i.test(token))return null;
-  const row=await env.DB.prepare("SELECT p.* FROM booking_payments p JOIN bookings b ON b.id=p.booking_id AND b.company_id=p.company_id WHERE b.company_id=?1 AND b.code=?2 AND b.customer_phone=?3 AND b.cancel_token=?4")
+  const row=await env.DB.prepare("SELECT p.*,b.status AS booking_status FROM booking_payments p JOIN bookings b ON b.id=p.booking_id AND b.company_id=p.company_id WHERE b.company_id=?1 AND b.code=?2 AND b.customer_phone=?3 AND b.cancel_token=?4")
     .bind(companyId,code.toUpperCase(),normalizePhone(phone),token).first<PaymentRow>();
   if(!row)return null;
   if(row.provider_payment_id && row.status==="pending" && bookingPixEnabled(env)){
     await confirmBookingPix(env,row.provider_payment_id);
     const updated=await env.DB.prepare("SELECT * FROM booking_payments WHERE id=?1").bind(row.id).first<PaymentRow>();
-    return publicPayment(updated??row);
+    const latest=updated??row;
+    if((row as PaymentRow&{booking_status:string}).booking_status==="cancelado" && latest.status==="pending")
+      return {...publicPayment(latest),status:"cancelled",qr_code_text:"",qr_code_base64:"",
+        message:"Reserva cancelada; não utilize o Pix gerado."};
+    return publicPayment(latest);
   }
+  if((row as PaymentRow&{booking_status:string}).booking_status==="cancelado" && row.status==="pending")
+    return {...publicPayment(row),status:"cancelled",qr_code_text:"",qr_code_base64:"",
+      message:"Reserva cancelada; não utilize o Pix gerado."};
   return publicPayment(row);
 }
