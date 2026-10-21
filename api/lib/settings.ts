@@ -173,7 +173,7 @@ export async function setPlatformSetting(db: D1Database, key: PlatformKey, value
     )
     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`)
     .bind(key, String(value), otherKey, defaultOther).run();
-  if (result.success === false || result.meta?.changes !== 1) return false;
+  if (!result.meta || result.meta.changes !== 1) return false;
   platformCache.at = 0;
   return true;
 }
