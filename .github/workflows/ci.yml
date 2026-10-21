@@ -65,3 +65,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_STAGING_CREATE_APPROVED: YES
         run: node scripts/staging-provision.mjs create
+
+      # Gatilho separado, unico e explicito: publica apenas tigu-staging,
+      # aplica migrations so em tigu-staging-db e usa tigu-staging-media.
+      # Exige os testes anteriores aprovados e nunca roda em PR ou em main.
+      - name: Publicar Worker TIGU staging isolado (commit unico)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_DEPLOY_STAGING_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_STAGING_DEPLOY_APPROVED: YES
+        run: node scripts/staging-deploy-ci.mjs
