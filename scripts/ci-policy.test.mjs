@@ -39,3 +39,34 @@ test("Actions: verificacao online opcional, somente leitura e limitada a staging
   assert.match(diagnostic, /tigu-staging/);
   assert.doesNotMatch(diagnostic, /method: "POST"|method: "DELETE"|method: "PUT"|method: "PATCH"/);
 });
+
+
+test("Painéis: consultas sensíveis usam cache separado por barbearia", () => {
+  const cases = {
+    "ServicesPage.tsx": ['"admin-services", siteBase()', '"admin-barbers", siteBase()'],
+    "BarbersPage.tsx": ['"admin-barbers", siteBase()', '"admin-services", siteBase()'],
+    "TeamPage.tsx": ['"team", siteBase()', '"admin-barbers", siteBase()'],
+    "AgendaPage.tsx": ['"agenda", siteBase()', '"blocked-days", siteBase()', '"block-requests", siteBase()'],
+    "OrdersPage.tsx": ['"orders", siteBase()'],
+    "CustomersPage.tsx": ['"customers", siteBase()', '"customer", siteBase()'],
+    "DashboardPage.tsx": ['"dashboard", siteBase()'],
+    "SettingsPage.tsx": ['"admin-settings", siteBase()', '"audit", siteBase()'],
+  };
+  for (const [file, expected] of Object.entries(cases)) {
+    const src = readFileSync(new URL("../src/pages/admin/" + file, import.meta.url), "utf8");
+    for (const key of expected) assert.ok(src.includes(key), file + " sem isolamento: " + key);
+  }
+  for (const file of ["ServicesPage.tsx", "BarbersPage.tsx"]) {
+    const src = readFileSync(new URL("../src/pages/admin/" + file, import.meta.url), "utf8");
+    assert.match(src, /invalidateQueries\(\{ queryKey: \["tenant", siteBase\(\), "services"\] \}\)/);
+  }
+});
+
+test("Cliente: remarcação seleciona dia e pesquisa protocolo sem expor telefone na URL", () => {
+  const src = readFileSync(new URL("../src/pages/public/MyBookingsPage.tsx", import.meta.url), "utf8");
+  assert.match(src, /api\.post<\{bookings: any\[\]\}>\("\/bookings\/lookup"/);
+  assert.doesNotMatch(src, /\/bookings\/lookup\?code=/);
+  assert.match(src, /type="date" value=\{reschedDate\} min=\{today\} max=\{maxReschedDay\}/);
+  assert.match(src, /slotsLoading \? <Spinner/);
+  assert.match(src, /Sem horários disponíveis nessa data/);
+});
