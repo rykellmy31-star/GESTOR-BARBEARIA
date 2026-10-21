@@ -37,7 +37,7 @@ export async function authenticatedStagingChecks({ url,fetcher=fetch,makeBytes=n
     const multipart=body instanceof FormData;
     const r=await fetcher(base+path,{
       method,redirect:"manual",signal:AbortSignal.timeout(18000),
-      headers:{"cache-control":"no-store",...(body&&!multipart?{"content-type":"application/json"}:{}),...(cookie?{cookie}:{})},
+      headers:{"cache-control":"no-store",origin:base,...(body&&!multipart?{"content-type":"application/json"}:{}),...(cookie?{cookie}:{})},
       ...(body?{body:multipart?body:JSON.stringify(body)}:{}),
     });
     let data;try{data=await r.json();}catch{data=null;}
