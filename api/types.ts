@@ -58,6 +58,8 @@ export interface SessionUser {
 
 declare module "hono" {
   interface ContextVariableMap {
+    /** Etapa não sensível para localizar falhas HTTP 500, somente staging. */
+    signupDiagnosticStep?: string;
     user: SessionUser;
     company: NonNullable<SessionUser["company"]>;
     settings: import("./lib/settings").CompanySettings;
