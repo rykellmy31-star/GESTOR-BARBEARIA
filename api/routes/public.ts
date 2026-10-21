@@ -321,7 +321,7 @@ publicRouter.post("/orders",async c=>{
   .bind(companyId,key).first<{id:number;code:string;status:string;total_cents:number;payment_choice:string}>();
  if(previous)return respond(previous);
  const ids=parsed.data.items.map(it=>it.productId);
- if(new Set(ids).size!==ids.length)return err(c,"Produtos repetidos no mesmo pedido.",422);
+ if(new Set(ids).size!==ids.length)return err(c,"Produtos repetidos no mesmo pedido.",409);
  const placeholders=ids.map((_,i)=>"?"+(i+2)).join(",");
  const prods=await db.prepare("SELECT id,name,price_cents,stock,active FROM products WHERE company_id=?1 AND id IN ("+placeholders+")")
   .bind(companyId,...ids).all<{id:number;name:string;price_cents:number;stock:number;active:number}>();
