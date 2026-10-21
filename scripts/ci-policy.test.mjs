@@ -126,7 +126,7 @@ test("Reserva no Chromium percorre assistente e valida acesso individual do prof
   const pro=readFileSync(new URL("../src/pages/barber/BarberPanelPage.tsx",import.meta.url),"utf8");
   assert.match(s,/visitante agenda serviço e profissional pela interface real/);
   assert.match(s,/profissional precisa trocar senha provisória no navegador/);
-  assert.match(s,/painel do profissional após troca obrigatória/);
+  assert.match(s,/acesso individual do profissional após troca obrigatória/);
   assert.match(publicForm,/localDay\(tz\)\.slice\(0, 7\)/);
   assert.match(pro,/me\.isError \|\| agenda\.isError/);
 });
