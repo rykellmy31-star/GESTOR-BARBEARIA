@@ -71,6 +71,25 @@ test("Actions: cria D1/R2 somente em push do commit TIGU explicitamente autoriza
   assert.doesNotMatch(provision, /method: "DELETE"|method: "PUT"|method: "PATCH"|wrangler deploy/);
 });
 
+test("Actions: deploy staging exige commit unico, branch TIGU e somente o script preflight",()=>{
+  const gate=content.match(/      - name: Publicar Worker TIGU staging isolado \(commit unico\)[\s\S]*?run: node scripts\/staging-deploy-ci\.mjs/);
+  assert.ok(gate,"Gate de deploy TIGU ausente");
+  assert.match(gate[0],/github\.event_name == 'push'/);
+  assert.match(gate[0],/github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
+  assert.match(gate[0],/github\.event\.head_commit\.message == 'TIGU_DEPLOY_STAGING_ONCE'/);
+  assert.match(gate[0],/CLOUDFLARE_STAGING_TOKEN: \$\{\{ secrets\.CLOUDFLARE_STAGING_TOKEN \}\}/);
+  assert.match(gate[0],/TIGU_STAGING_DEPLOY_APPROVED: YES/);
+  assert.doesNotMatch(gate[0],/run: wrangler deploy|npm run deploy|--remote|secret put/);
+  const deploy=readFileSync(new URL("./staging-deploy-ci.mjs",import.meta.url),"utf8");
+  assert.match(deploy,/stagingConfigIssues\(cfg, production\)/);
+  assert.match(deploy,/TIGU_STAGING_DEPLOY_APPROVED !== "YES"/);
+  assert.match(deploy,/GITHUB_EVENT_NAME !== "push"/);
+  assert.match(deploy,/randomBytes\(48\)/);
+  assert.match(deploy,/scripts\/staging\.mjs","migrate"/);
+  assert.match(deploy,/scripts\/staging\.mjs","deploy"/);
+  assert.doesNotMatch(deploy,/tigu-platform.*deploy|DELETE|payments\.create/);
+});
+
 test("Painéis: consultas sensíveis usam cache separado por barbearia", () => {
   const cases = {
     "ServicesPage.tsx": ['"admin-services", siteBase()', '"admin-barbers", siteBase()'],
