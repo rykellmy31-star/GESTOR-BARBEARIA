@@ -10,6 +10,9 @@ CREATE TABLE company_payment_integrations (
  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 -- Checkout de produtos independente das mensalidades, créditos e reservas.
+ALTER TABLE orders ADD COLUMN customer_email TEXT;
+ALTER TABLE orders ADD COLUMN checkout_key TEXT;
+CREATE UNIQUE INDEX idx_orders_checkout_key ON orders(checkout_key) WHERE checkout_key IS NOT NULL;
 ALTER TABLE orders ADD COLUMN payment_choice TEXT NOT NULL DEFAULT 'after_service'
  CHECK(payment_choice IN ('after_service','pix'));
 CREATE TABLE order_payments (
