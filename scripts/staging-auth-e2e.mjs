@@ -78,6 +78,19 @@ export async function authenticatedStagingChecks({ url,fetcher=fetch,makeBytes=n
   pass("Configuração pública mantém pagamento presencial e bloqueia Pix real",
     publicConfig.status===200&&publicConfig.data?.payment_options?.after_service===true&&
     publicConfig.data?.payment_options?.pix_enabled===false);
+  const merchant=await o("GET",c+"/admin/payments/mercadopago");
+  pass("Dono consulta recebimentos próprios sem expor credenciais",
+    merchant.status===200&&merchant.data?.integration?.connected===false &&
+    merchant.data?.integration?.pix_available===false &&
+    !JSON.stringify(merchant.data).includes("access_token"));
+  const cannotConnect=await o("PUT",c+"/admin/payments/mercadopago",{
+    access_token:"APP_USR-CHAVE-FICTICIA-QUE-NAO-PRODUZ-CARGAS",
+    webhook_secret:"assinatura-ficticia-sem-integracao"});
+  pass("Homologação impede cadastrar token real e iniciar cobrança",
+    cannotConnect.status===503);
+  const remoteWebhook=await response("POST","/api/webhooks/merchant-mercadopago/"+crypto.randomUUID(),
+    {type:"payment",data:{id:"123"}});
+  pass("Webhook recebedor de cliente bloqueado no staging",remoteWebhook.status===403);
   const s=await o("GET",c+"/admin/settings");
   pass("Dono consegue consultar configurações",s.status===200&&!!s.data?.settings);
   const settings={...s.data.settings,min_lead_min:0,
@@ -119,6 +132,11 @@ export async function authenticatedStagingChecks({ url,fetcher=fetch,makeBytes=n
   pass("Reserva fictícia cancelada ao final do teste",cancelled.status===200);
   const product=await o("POST",c+"/admin/products",{name:"Pomada Fictícia",price_cents:2500,stock:3});
   pass("Painel cadastra produto fictício",product.status===200&&Number(product.data?.id)>0);
+  const blockedOrder=await response("POST",c+"/orders",{name:"Cliente Pix Fictício",phone,
+    email:"cliente@example.test",paymentChoice:"pix",idempotencyKey:makeBytes(16).toString("hex"),
+    items:[{productId:product.data.id,qty:1}]});
+  pass("Compra de produto não gera Pix real no staging",blockedOrder.status===503);
+
   const order=await response("POST",c+"/orders",{name:"Cliente Fictício",phone,
     items:[{productId:product.data.id,qty:2}]});
   pass("Cliente cria pedido fictício sem cobrança",order.status===201&&order.data?.total===50);
