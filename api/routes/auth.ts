@@ -15,7 +15,14 @@ import { changePasswordAtomically } from "../lib/password-change";
 
 export const authRouter = new Hono<{ Bindings: Env }>();
 
-authRouter.use("*", authRateLimit(25, 5 * 60_000));
+// /auth/me é consultado a cada abertura de painel protegido. Aplicar o limite
+// de tentativas de login a essa leitura derruba sessões legítimas após 25 telas.
+// Mantemos o rate limit persistente para TODAS as mutações de autenticação.
+const authMutationLimit = authRateLimit(25, 5 * 60_000);
+authRouter.use("*", async (c, next) => {
+  if (c.req.method === "GET" && c.req.path === "/api/auth/me") return next();
+  return authMutationLimit(c, next);
+});
 
 const loginSchema = z.object({ email: z.string().email(), password: z.string().min(6).max(128) });
 
