@@ -326,8 +326,14 @@ try{
   await until("login Superadmin",'document.querySelector("input[type=email]")!==null');
   await fill("input[type=email]",superEmail);await fill("input[type=password]",password);
   await click("Entrar");
+  await until("rota da suíte de plataforma",
+    'location.pathname.startsWith("/superadmin")');
+  const superOverview=await js('fetch("/api/super/overview?days=30")'+
+    '.then(async r=>({status:r.status,body:(await r.text()).slice(0,500)}))');
+  assert.equal(superOverview.status,200,
+    "Indicadores globais devem carregar para o Superadmin: "+JSON.stringify(superOverview));
   await until("Superadmin abre visão geral",
-    'location.pathname.startsWith("/superadmin")&&document.body.innerText.includes("Barbearias ativas")');
+    'document.body.innerText.includes("Barbearias ativas")');
   pass("Superadmin autentica e consulta indicadores globais");
   await go(base+"/superadmin/companies");
   await until("Superadmin enxerga empresa existente",
@@ -337,15 +343,20 @@ try{
     'document.body.innerText.includes("Cadastrar barbearia (onboarding assistido)")');
   const newOwner="novo-dono-"+randomBytes(4).toString("hex")+"@tigu.test";
   const newSlug="nova-chromium-"+randomBytes(4).toString("hex");
-  const formFilled=await js('(()=>{const data=[["Nome","Nova Barbearia Chromium"],'+
-    '["Slug do link (opcional)",'+JSON.stringify(newSlug)+'],["E-mail do dono",'+JSON.stringify(newOwner)+'],'+
-    '["Nome do dono","Proprietário da nova barbearia"]];'+
-    'const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;'+
-    'for(const [label,value] of data){const el=[...document.querySelectorAll("label")]'+
-    '.find(x=>x.querySelector("span")?.textContent?.trim()===label)?.querySelector("input");'+
-    'if(!el)return label;setter.call(el,value);el.dispatchEvent(new Event("input",{bubbles:true}));}'+
-    'return "ok"})()');
-  assert.equal(formFilled,"ok","Campos do cadastro assistido devem estar presentes");
+  for(const [label,value] of [
+    ["Nome","Nova Barbearia Chromium"],
+    ["Slug do link (opcional)",newSlug],
+    ["E-mail do dono",newOwner],
+    ["Nome do dono","Proprietário da nova barbearia"]
+  ]){
+    const result=await js('(()=>{const el=[...document.querySelectorAll("label")]'+
+      '.find(x=>x.querySelector("span")?.textContent?.trim()==='+JSON.stringify(label)+')?.querySelector("input");'+
+      'if(!el)return false;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")'+
+      '.set.call(el,'+JSON.stringify(value)+');el.dispatchEvent(new Event("input",{bubbles:true}));'+
+      'return true})()');
+    assert.ok(result,"Campo do Superadmin ausente: "+label);
+    await pause(50);
+  }
   await until("formulário de Superadmin validado",
     '[...document.querySelectorAll("button")].some(x=>x.textContent.trim()==="Criar"&&!x.disabled)');
   await click("Criar");
