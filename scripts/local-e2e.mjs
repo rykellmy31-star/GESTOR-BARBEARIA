@@ -110,6 +110,12 @@ try {
     {email:professionalEmail,password:"BarberRedefinida#123456"});
   check("Nova senha do barbeiro exige troca no primeiro acesso",
     professionalRenewLogin.status===200&&professionalRenewLogin.data.user.must_change_password===true);
+  const changedProPassword=await currentProfessional("POST","/api/auth/password",{
+    current:"BarberRedefinida#123456",next:"BarberFinal#123456"
+  });
+  const proProfile=await currentProfessional("GET",c+"/barber/me");
+  check("Troca da senha provisória libera o painel próprio",
+    changedProPassword.status===200&&proProfile.status===200&&proProfile.data.barber.id===bid);
   const publicServices=await visitor("GET",c+"/services");
   check("Agendamento lista profissionais associados ao serviço público",
     publicServices.status===200&&publicServices.data.services.some(item=>
@@ -142,6 +148,11 @@ try {
   check("Disponibilidade pública contém horários reais",availability.status===200&&free.length>=3);
   const booking=await visitor("POST",c+"/bookings",{barberId:bid,serviceId:service.data.id,startsAt:free[0].t,name:"Cliente local",phone:"5573999990000",consent:true,whatsappOptin:false,idempotencyKey:randomBytes(16).toString("hex")});
   check("Agendamento público confirmado na API",booking.status===201&&booking.data.booking.id>0);
+  const proAgenda=await currentProfessional("GET",c+"/barber/agenda?from="+day+"&days=1");
+  check("Painel profissional mostra horário, duração e serviço da reserva",
+    proAgenda.status===200&&proAgenda.data.days?.[day]?.some(it=>
+      it.id===booking.data.booking.id&&typeof it.label==="string"&&it.label.length===5&&
+      it.duration_min===30&&it.service_name==="Corte local"));
   const bookingLookup=await visitor("POST",c+"/bookings/lookup",{code:booking.data.booking.code,phone:"5573999990000"});
   check("Cliente encontra reserva com IDs de serviço e barbeiro para remarcar",
     bookingLookup.status===200&&bookingLookup.data.bookings[0]?.service_id===service.data.id&&
