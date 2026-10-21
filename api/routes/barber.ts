@@ -42,7 +42,7 @@ barberRouter.put("/bookings/:id/status", async (c) => {
   const parsed = statusSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "status inválido", 400);
   const s = ctxSettings(c);
-  if (parsed.data.status === "concluido" && !s.barber_can_conclude) return err(c, "O dono desativou conclusão pelo painel do barbeiro", 403);
+  if (["concluido", "no_show"].includes(parsed.data.status) && !s.barber_can_conclude) return err(c, "O dono desativou conclusão pelo painel do barbeiro", 403);
   const m = me(c);
   const id = parseInt(c.req.param("id") || "0", 10);
   const own = await c.env.DB.prepare(`SELECT barber_id FROM bookings WHERE id=?1 AND company_id=?2`).bind(id, cid(c)).first<{ barber_id: number }>();
@@ -118,9 +118,12 @@ barberRouter.get("/reviews", async (c) => {
 barberRouter.get("/notifications", async (c) => {
   const m = me(c);
   const db = c.env.DB;
-  const { results } = await db.prepare(`SELECT * FROM notifications WHERE company_id=?1 AND audience='barber' AND user_id=?2 ORDER BY id DESC LIMIT 40`).bind(cid(c), m.id).all();
-  await db.prepare(`UPDATE notifications SET read_at=?1 WHERE company_id=?2 AND audience='barber' AND user_id=?3 AND read_at IS NULL`).bind(nowIso(), cid(c), m.id).run();
-  return json(c, { notifications: results, unread: 0 });
+  // Ler a caixa não confirma leitura: somente POST /notifications/read altera read_at.
+  const [list, unread] = await Promise.all([
+    db.prepare(`SELECT * FROM notifications WHERE company_id=?1 AND audience='barber' AND user_id=?2 ORDER BY id DESC LIMIT 40`).bind(cid(c),m.id).all(),
+    db.prepare(`SELECT COUNT(*) n FROM notifications WHERE company_id=?1 AND audience='barber' AND user_id=?2 AND read_at IS NULL`).bind(cid(c),m.id).first<{n:number}>(),
+  ]);
+  return json(c, { notifications: list.results, unread: unread?.n ?? 0 });
 });
 
 // ── compatibilidade com o formato usado pelo painel do profissional ────────
@@ -141,7 +144,7 @@ barberRouter.patch("/bookings/:id/status", async (c) => {
     if (!r.ok) return err(c, r.message, r.status);
     return json(c, { ok: true });
   }
-  if (parsed.data.status === "concluido" && !s.barber_can_conclude) return err(c, "O dono desativou conclusão pelo painel do barbeiro", 403);
+  if (["concluido", "no_show"].includes(parsed.data.status) && !s.barber_can_conclude) return err(c, "O dono desativou conclusão pelo painel do barbeiro", 403);
   const r = await setBookingStatus(ctx, bookingId, parsed.data.status);
   if (!r.ok) return err(c, r.message, r.status);
   return json(c, { ok: true });
@@ -161,17 +164,21 @@ barberRouter.get("/agenda", async (c) => {
   const end=localToUtc(tz,to,0).toISOString().replace(/\.\d{3}Z$/,"Z");
   const { results } = await c.env.DB
     .prepare(
-      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.customer_name, b.customer_phone, b.notes, b.price_cents, b.origin, s.name AS service_name
+      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.customer_name, b.customer_phone, b.notes, b.price_cents, b.origin, s.name AS service_name, s.duration_min
        FROM bookings b LEFT JOIN services s ON s.id=b.service_id
        WHERE b.company_id=?1 AND b.barber_id=?2 AND b.starts_at>=?3 AND b.starts_at<?4 AND b.status!='bloqueio' ORDER BY b.starts_at`
     )
     .bind(cid(c),m.barber_id,start,end)
-    .all<Record<string, unknown> & { starts_at: string }>();
+    .all<Record<string, unknown> & { starts_at: string; ends_at: string; duration_min: number | null }>();
   const { utcToLocal } = await import("../lib/time");
   const byDay: Record<string, Record<string, unknown>[]> = {};
   for (const r of results) {
-    const { day } = utcToLocal(tz, r.starts_at);
-    byDay[day] = [...(byDay[day] || []), r];
+    const { day, minutes } = utcToLocal(tz, r.starts_at);
+    // A tela recebe o horário local e a duração para exibir cada atendimento.
+    const duration = Number(r.duration_min ?? Math.round(
+      (Date.parse(r.ends_at) - Date.parse(r.starts_at)) / 60000
+    ));
+    byDay[day] = [...(byDay[day] || []), { ...r, label: fmt(minutes), duration_min: duration }];
   }
   const bd = await c.env.DB.prepare(`SELECT date_from, date_to, reason, kind FROM blocked_days WHERE company_id=?1 AND (barber_id=?2 OR barber_id IS NULL) AND date_to>=?3 AND date_from<=?4`).bind(cid(c), m.barber_id, from, addDays(from, daysN - 1)).all();
   const barberRow = await c.env.DB.prepare(`SELECT work_days FROM barbers WHERE id=?1 AND company_id=?2`).bind(m.barber_id, cid(c)).first<{ work_days: string }>();
