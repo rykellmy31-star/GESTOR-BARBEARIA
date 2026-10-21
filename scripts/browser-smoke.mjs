@@ -238,7 +238,7 @@ try{
     {code:bookingCode,phone:"73999991111"});
   assert.equal(lookupBefore.status,200,"Protocolo e telefone da reserva são válidos na API");
   await go(base+"/c/"+slug+"/meus-agendamentos");
-  await until("busca pública de reservas",'document.querySelector("input[placeholder=\"AUR-XXXXXXXX\"]")!==null');
+  await until("busca pública de reservas",'document.querySelector("input[placeholder^=AUR]")!==null');
   await fill('input[placeholder="AUR-XXXXXXXX"]',bookingCode);
   await fill('input[placeholder*="99999-0000"]',"73999991111");
   await click("Consultar");
