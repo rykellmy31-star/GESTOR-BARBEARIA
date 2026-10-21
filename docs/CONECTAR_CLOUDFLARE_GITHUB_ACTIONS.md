@@ -37,3 +37,7 @@ Não conceder escrita à produção para pular a homologação. Backups são com
 ## Conferência automatizada da conexão após cadastrar o Secret e a Variable
 
 O GitHub Actions da branch de auditoria executa o diagnóstico apenas no evento `push`, com `CLOUDFLARE_ACCOUNT_ID` configurado como Repository variable. Após o cadastro dos dois valores, um novo commit de documentação dispara a execução sem implantar Worker e sem ler dados pessoais. Para conferir, consulte o job `verificar` do workflow `Tigu - verificacao de codigo`, etapa `Diagnosticar acesso Cloudflare por token (se configurado)`. Se a etapa estiver pulada, a Variable não foi reconhecida ou o evento não foi `push`; se falhar, o log informa se falta token, se houve `403` ou se os recursos de staging não existem. Uma execução bem-sucedida prova apenas acesso de leitura à API e presença/ausência dos recursos; não prova deploy nem restauração de backups.
+
+## Diagnóstico solicitado após configurar credenciais
+
+Quando o operador informar que finalizou a variável `CLOUDFLARE_ACCOUNT_ID` e o Secret `CLOUDFLARE_AUDIT_TOKEN`, o próximo commit nesta branch executará novamente o CI. Só considerar a Cloudflare conectada se o passo **Diagnosticar acesso Cloudflare por token (se configurado)** tiver conclusão `success` e logs confirmarem a autenticação e permissões de leitura. `skipped` significa que o gatilho não foi atendido, e `failure` exige análise do erro sem divulgar credenciais.
