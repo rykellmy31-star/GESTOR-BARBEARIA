@@ -72,12 +72,12 @@ describe("checkout do serviço", () => {
     expect(stored).toMatchObject({price_cents:1999,payment_choice:"pix"});
   });
   it("a flag financeira é fechada por padrão e staging nunca permite cobrança", () => {
-    const configured={APP_ENV:"production",BOOKING_PIX_ENABLED:"1",MP_ACCESS_TOKEN:"token",
-      MP_WEBHOOK_SECRET:"segredo",PUBLIC_URL:"https://tigu.example/"} as Env;
-    expect(bookingPixEnabled({...configured,BOOKING_PIX_ENABLED:"0"})).toBe(false);
+    const configured={APP_ENV:"production",MERCHANT_PIX_ENABLED:"1",MSG_ENC_KEY:"12345678901234567890123456789012",
+      PUBLIC_URL:"https://tigu.example/"} as Env;
+    expect(bookingPixEnabled({...configured,MERCHANT_PIX_ENABLED:"0"})).toBe(false);
     expect(bookingPixEnabled({...configured,TIGU_STAGING:"1"})).toBe(false);
     expect(bookingPixEnabled({...configured,PAYMENTS_MOCK:"1"})).toBe(false);
-    expect(bookingPixEnabled({...configured,MP_WEBHOOK_SECRET:undefined})).toBe(false);
+    expect(bookingPixEnabled({...configured,MSG_ENC_KEY:undefined})).toBe(false);
     expect(bookingPixEnabled(configured)).toBe(true);
   });
 });
