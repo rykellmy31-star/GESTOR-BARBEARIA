@@ -61,3 +61,17 @@ Permissões `D1 Edit` e `Workers R2 Storage Edit` têm alcance à conta selecion
 ## Ordem de provisionamento TIGU — execução única
 
 Autorizado pelo proprietário após configuração do token de staging. O commit que introduz esta anotação ativa uma única execução da rotina com allowlist e nomes fixos para **criar somente** D1 `tigu-staging-db` e R2 `tigu-staging-media` caso estejam ausentes. O resultado real deve ser confirmado no GitHub Actions. Não publicar Worker sem validação adicional de segredo, binding e migrações.
+
+## Próxima fase — implantação segura do Worker tigu-staging
+
+Após confirmação **real** da criação de `tigu-staging-db` e `tigu-staging-media`, existe uma segunda rotina restrita a `tigu-staging`:
+
+- Somente um `push` na branch `audit/tigu-primeira-validacao` com mensagem de commit **exatamente** `TIGU_DEPLOY_STAGING_ONCE` habilita o passo; PR, commits comuns e `main` jamais publicam.
+- Confere inventário Cloudflare antes de fazer qualquer escrita; recusa D1/R2 ausentes, UUID inválido, Worker pré-existente ou configuração diferente do contrato de staging.
+- Usa o script revisado `staging.mjs` para preparar config efêmera, validar bindings e flags, aplicar 17 migrations no **D1 de staging**, compilar e publicar o **Worker tigu-staging**.
+- Depois de publicar, gera `SESSION_SECRET` e `MSG_ENC_KEY` aleatórios, **sem imprimi-los**, e os grava diretamente como Worker secrets na Cloudflare. Não configura credenciais Mercado Pago, Meta/WhatsApp nem cron.
+- A Cloudflare cria backup D1 antes de migrations remotas, mas isso **não equivale** à homologação de exportação e restauração controlada D1/R2 do projeto.
+
+A primeira publicação do Worker pode exigir permissões adicionais de Workers Admin conforme o sistema de papéis da conta. Falha 403 é reportada; não aumentar escopo ou alterar a produção automaticamente. Se a implantação falhar após parte das operações, verificar estado real antes de retentar, pois o mecanismo recusa sobrescrever Worker já existente.
+
+Mesmo após deploy, a **homologação funcional remota** e a **validação de recuperação de backups** continuam pendentes até testes reais, acessos fictícios e evidências verificadas.
