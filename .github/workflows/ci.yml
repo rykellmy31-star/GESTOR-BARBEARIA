@@ -116,3 +116,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_REMOTE_R2_RESTORE_APPROVED: YES
         run: node scripts/staging-r2-remote-restore.mjs
+
+      # Atualiza SOMENTE tigu-staging existente. Nunca troca SESSION_SECRET
+      # nem MSG_ENC_KEY, nem recria D1/R2, nem aplica migrações.
+      - name: Atualizar Worker staging preservando segredos (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_UPDATE_WORKER_STAGING_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_STAGING_UPDATE_APPROVED: YES
+        run: node scripts/staging-update-ci.mjs
