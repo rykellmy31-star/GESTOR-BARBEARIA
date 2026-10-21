@@ -117,3 +117,7 @@ O commit único `TIGU_ALL_STAGING_TESTS_ONCE` aciona **na ordem**, após a suít
 ## Execução autorizada da bateria integral — 21/10/2026
 
 O proprietário solicitou a realização de todos os testes necessários. A suíte local do commit anterior passou em Push e PR; este commit habilita unicamente a bateria `TIGU_ALL_STAGING_TESTS_ONCE` em ordem: jornadas autenticadas com dados fictícios, restauração D1 para banco isolado e recuperação de objeto sintético R2 para bucket isolado. O resultado só deve ser declarado após a conferência do GitHub Actions. Não autoriza uso de Pix/Meta reais, alterações em produção, publicação comercial ou leitura de dados privados não fictícios.
+
+## Reteste integral — cadastro remoto e diagnóstico HTTP
+
+Após o primeiro ensaio remoto identificar recusa de cadastro fictício, o script foi alterado para enviar `Origin` de staging e informar exclusivamente código HTTP e mensagem genérica de erro. O CI local aprovou a correção. Este novo commit habilita nova bateria integral; nenhum recurso de restauração separado foi criado na tentativa anterior, que encerrou na primeira etapa.
