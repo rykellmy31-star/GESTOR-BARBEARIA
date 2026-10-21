@@ -87,3 +87,11 @@ CI local completo aprovado previamente; o proprietário autorizou disponibilizar
 - URL publicada pelo Wrangler: `https://tigu-staging.netssh3-0.workers.dev`.
 - O CI passa a executar `staging-smoke.mjs` com apenas GET nessa URL, recusando qualquer destino fora do padrão de homologação. **Ainda é necessário confirmar o sucesso efetivo desse smoke remoto**.
 - As integrações de Pix/Meta permanecem inativas e a exportação/restauração real D1+R2 segue pendente. Nunca considerar os backups homologados com base somente no backup automático de migrations.
+
+## Próximo passo — comprovar exportação D1 da Cloudflare sem expor dados
+
+A branch de auditoria contém `scripts/staging-d1-export-verify.mjs`, que consulta o inventário dos três recursos de staging, usa `wrangler d1 export tigu-staging-db --remote` com configuração temporária restrita, recria a exportação em banco SQLite em memória e confere tabelas obrigatórias, integridade e vínculos. Nenhum dado de cliente é impresso. O dump SQL é apagado ao final da execução; o SHA-256 gerado é somente uma impressão de integridade, **não é uma cópia durável**.
+
+A execução remota por GitHub Actions exige um `push` na branch `audit/tigu-primeira-validacao` cujo commit tenha mensagem exatamente `TIGU_VERIFY_D1_EXPORT_ONCE`. Não executa em PR ou commits comuns, não lê outros bancos, não faz importação no D1 da Cloudflare e não salva artifact. A execução deve ser comprovada nos logs de Actions antes de considerá-la aprovada.
+
+**Limites:** recriar o export da Cloudflare num SQLite temporário é uma evidência mais forte que o teste de migração local, mas **não comprova restauração num D1 remoto separado**, não cobre R2 nem estabelece RPO/RTO ou cópia externa de longo prazo. Mantém a verificação integral de backups como etapa pendente.
