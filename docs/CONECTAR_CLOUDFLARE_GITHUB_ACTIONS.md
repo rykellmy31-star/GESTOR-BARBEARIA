@@ -145,3 +145,7 @@ O GitHub Actions run `39656147680` restaurou o export SQL do D1 de homologação
 ## Atualização temporária para diagnóstico por etapas do signup staging
 
 A leitura de logs do Worker depende da permissão `Account → Workers Tail → Read`, ausente no token atual. Para identificar o ponto exato do HTTP 500 sem esse acesso e sem divulgar o erro interno, o Worker de **staging somente** inclui temporariamente no JSON de erro de `/api/auth/register` dois campos de diagnóstico de baixa sensibilidade: fase fixa de cadastro (`middleware-rate-limit`, `signup-password-hash`, etc.) e categoria (`database`, `cryptography`, `other`). Em produção esses campos nunca aparecem. Nenhuma senha, SQL, email, ID de conta, stack trace ou segredo é retornado. Após identificar/corrigir o bloqueio, esses marcadores devem ser removidos em novo deploy. Este commit faz atualização única do Worker existente preservando os secrets de homologação, D1 e R2.
+
+## Reteste de cadastro remoto com etapa segura de diagnóstico
+
+O Worker staging foi atualizado com sucesso no run `39657412902` (segunda tentativa, após timeout intermitente de leitura da API). Sua configuração, D1/R2 e secrets foram preservados. Esta execução aciona somente a jornada remota fictícia para confirmar cadastro, isolamento, agendamentos, loja e upload. A restauração D1/R2 já foi comprovada em recursos separados; não se deve recriar nem sobrescrever os destinos existentes ao repetir a jornada. Se o cadastro continuar falhando, o teste reporta apenas a fase e categoria de erro (sem dados pessoais ou SQL).
