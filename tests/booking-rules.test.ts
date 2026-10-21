@@ -477,6 +477,61 @@ describe("Pix: recuperar confirmação sem webhook", () => {
   });
 });
 
+
+describe("Pix de recarga: cancelamento seguro e conciliação legada",()=>{
+  it("não cancela Pix real localmente, nem de outra empresa; mock pode ser cancelado",async()=>{
+    const companyId=(await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{id:number}>())!.id;
+    const nonce=crypto.randomUUID();
+    const real="PIX-REAL-"+nonce, mock="PIX-MOCK-"+nonce;
+    for(const item of [{code:real,provider:"mercadopago"},{code:mock,provider:"mock"}]){
+      await db.prepare("INSERT INTO topup_orders(company_id,code,amount_cents,status,provider,provider_payment_id) VALUES (?1,?2,2500,'pending',?3,?4)")
+        .bind(companyId,item.code,item.provider,item.code+"-id").run();
+    }
+    const path=(code:string)=>"/api/c/alfa/admin/wallet/topup/"+code+"/cancel";
+    expect((await api(path(real),{method:"POST",body:"{}"},cookieA)).status).toBe(409);
+    expect(await db.prepare("SELECT status FROM topup_orders WHERE code=?1").bind(real).first("status")).toBe("pending");
+    expect((await api(path(real),{method:"POST",body:"{}"},cookieB)).status).toBe(403);
+    expect((await api(path(mock),{method:"POST",body:"{}"},cookieA)).status).toBe(200);
+    expect(await db.prepare("SELECT status FROM topup_orders WHERE code=?1").bind(mock).first("status")).toBe("cancelled");
+    expect((await api(path(mock),{method:"POST",body:"{}"},cookieA)).status).toBe(409);
+  });
+  it("recupera Pix real cancelado no D1 apenas após comprovar pagamento íntegro no gateway",async()=>{
+    const {confirmTopupFromProvider}=await import("../api/lib/topup");
+    const companyId=(await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{id:number}>())!.id;
+    const before=(await getWallet(db,companyId))!.balance_cents;
+    const nonce=crypto.randomUUID();
+    const approved={code:"LEGACY-OK-"+nonce,id:"MP-OK-"+nonce,cents:2950};
+    const mismatched={code:"LEGACY-BAD-"+nonce,id:"MP-BAD-"+nonce,cents:6000};
+    for(const t of [approved,mismatched]){
+      await db.prepare("INSERT INTO topup_orders(company_id,code,amount_cents,status,provider,provider_payment_id) VALUES (?1,?2,?3,'cancelled','mercadopago',?4)")
+        .bind(companyId,t.code,t.cents,t.id).run();
+    }
+    const spy=vi.spyOn(globalThis,"fetch").mockImplementation(async(input)=>{
+      const target=String(input).includes(approved.id)?approved:mismatched;
+      return new Response(JSON.stringify({
+        id:target.id,status:"approved",currency_id:"BRL",payment_method_id:"pix",
+        external_reference:target.code,transaction_amount:(target.cents+(target===mismatched?100:0))/100
+      }),{status:200,headers:{"content-type":"application/json"}});
+    });
+    const paymentEnv={...env,DB:db,APP_ENV:"development",TIGU_STAGING:"0",
+      MP_ACCESS_TOKEN:"test-token",MP_WEBHOOK_SECRET:"test-secret",PUBLIC_URL:"https://tigu.example.com",
+      PAYMENTS_MOCK:"0"} as Env;
+    try{
+      const bad=await confirmTopupFromProvider(paymentEnv,mismatched.id,"poll");
+      expect(bad).toMatchObject({ok:false,status:"mismatch",credited:false});
+      expect(await db.prepare("SELECT status FROM topup_orders WHERE code=?1").bind(mismatched.code).first("status")).toBe("cancelled");
+      const first=await confirmTopupFromProvider(paymentEnv,approved.id,"poll");
+      expect(first).toMatchObject({ok:true,status:"paid",credited:true});
+      expect((await getWallet(db,companyId))!.balance_cents).toBe(before+approved.cents);
+      const second=await confirmTopupFromProvider(paymentEnv,approved.id,"poll");
+      expect(second).toMatchObject({ok:true,status:"paid",credited:false});
+      expect((await getWallet(db,companyId))!.balance_cents).toBe(before+approved.cents);
+      expect(await db.prepare("SELECT COUNT(*) n FROM wallet_transactions WHERE idempotency_key=?1")
+        .bind("topup:"+(await db.prepare("SELECT id FROM topup_orders WHERE code=?1").bind(approved.code).first("id"))).first("n")).toBe(1);
+    }finally{spy.mockRestore();}
+  });
+});
+
 describe("Webhook Meta: falha de processamento sem perda silenciosa", () => {
   it("responde erro temporário quando não consegue processar o evento recebido", async () => {
     const res = await api("/api/webhooks/whatsapp", {
