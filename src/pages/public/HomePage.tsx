@@ -80,7 +80,7 @@ export function HomePage() {
                   <p className="mt-2 flex-1 text-[13.5px] leading-relaxed text-zinc-400">{sv.description}</p>
                   <div className="mt-4 flex items-center justify-between border-t border-line pt-4">
                     <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500"><Clock size={13} /> {sv.duration_min} min</span>
-                    <Link to={`/agendar?servico=${sv.id}`} className="btn-gold rounded-lg px-3.5 py-1.5 text-[13px]">Agendar</Link>
+                    <Link to={`${siteBase()}/agendar?servico=${sv.id}`} className="btn-gold rounded-lg px-3.5 py-1.5 text-[13px]">Agendar</Link>
                   </div>
                 </div>
               </article>
@@ -106,7 +106,7 @@ export function HomePage() {
                 <div className="p-4 pt-3">
                   <h3 className="font-display text-lg font-semibold text-zinc-50">{b.name}</h3>
                   <p className="mt-0.5 text-[12px] uppercase tracking-wider text-[var(--c-gold)]">{b.specialty}</p>
-                  <Link to={`/agendar?barbeiro=${b.id}`} className="btn-gold mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm">Agendar com {b.name.split(" ")[0]}</Link>
+                  <Link to={`${siteBase()}/agendar?barbeiro=${b.id}`} className="btn-gold mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm">Agendar com {b.name.split(" ")[0]}</Link>
                 </div>
               </article>
             ))}
@@ -197,7 +197,7 @@ export function HomePage() {
 /* hook local com react-query */
 import { useQuery } from "@tanstack/react-query";
 function useQuerySafe<T>(key: string): { data?: T } {
-  const q = useQuery({ queryKey: [key], queryFn: () => api.get<any>(`/${key}`).then((d) => (key === "services" ? d.services : key === "barbers" ? d.barbers : key === "products" ? d.products : d.reviews) as T) });
+  const q = useQuery({ queryKey: ["tenant", siteBase(), key], queryFn: () => api.get<any>(`/${key}`).then((d) => (key === "services" ? d.services : key === "barbers" ? d.barbers : key === "products" ? d.products : d.reviews) as T) });
   return { data: Array.isArray(q.data) ? (q.data as T) : undefined };
 }
 

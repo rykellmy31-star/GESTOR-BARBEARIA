@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { CalendarClock, CalendarX2, LogIn } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { useConfig } from "@/lib/hooks";
 import { Badge, Button, ConfirmDialog, Field, Input, Spinner, useToast } from "@/components/ui";
 import { fmtDateTime, maskPhone, money } from "@/lib/format";
@@ -13,8 +13,8 @@ export function MyBookingsPage() {
   const { data: cfg } = useConfig();
   const tz = cfg?.settings.timezone || "America/Bahia";
   const toast = useToast();
-  const [code, setCode] = useState(loc.state?.code || localStorage.getItem("tigu_last_code") || "");
-  const [phone, setPhone] = useState(localStorage.getItem("tigu_last_phone") || "");
+  const [code, setCode] = useState(loc.state?.code || localStorage.getItem(`tigu_last_code:${siteBase()}`) || "");
+  const [phone, setPhone] = useState(localStorage.getItem(`tigu_last_phone:${siteBase()}`) || "");
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<any[] | null>(null);
   const [cancelTarget, setCancelTarget] = useState<any | null>(null);
@@ -27,8 +27,8 @@ export function MyBookingsPage() {
     try {
       const d = await api.get(`/bookings/lookup?code=${encodeURIComponent(code.trim().toUpperCase())}&phone=${encodeURIComponent(phone.replace(/\D/g, ""))}`);
       setRows(d.bookings);
-      localStorage.setItem("tigu_last_code", code);
-      localStorage.setItem("tigu_last_phone", phone);
+      localStorage.setItem(`tigu_last_code:${siteBase()}`, code);
+      localStorage.setItem(`tigu_last_phone:${siteBase()}`, phone);
     } catch (e: any) {
       toast.push("err", e.message);
       setRows([]);

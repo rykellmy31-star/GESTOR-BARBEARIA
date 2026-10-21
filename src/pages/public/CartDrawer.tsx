@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, cartEvent } from "@/lib/api";
+import { api, cartEvent, siteBase } from "@/lib/api";
 import { MAX_CART_QTY, readCart, reconcileCart, writeCart } from "@/lib/cart";
 import { Badge, Button, Field, Input, Modal, Spinner, useToast } from "@/components/ui";
 import { maskPhone, money } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
 export function CartDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { data, isError, refetch } = useQuery({ queryKey: ["products"], queryFn: () => api.get<{ products: Product[] }>("/products").then((d) => d.products) });
+  const { data, isError, refetch } = useQuery({ queryKey: ["tenant", siteBase(), "products"], queryFn: () => api.get<{ products: Product[] }>("/products").then((d) => d.products) });
   const qc = useQueryClient();
   const products = data ?? [];
   const [cart, setCart] = useState(readCart);
@@ -59,7 +59,7 @@ export function CartDrawer({ open, onClose }: { open: boolean; onClose: () => vo
       });
       setPlaced({ code: res.code, link: res.whatsapp_link });
       sync({});
-      void qc.invalidateQueries({ queryKey: ["products"] });
+      void qc.invalidateQueries({ queryKey: ["tenant", siteBase(), "products"] });
       if (res.whatsapp_link) window.open(res.whatsapp_link, "_blank");
       toast.push("ok", `Pedido ${res.code} registrado! Envie a mensagem que abrimos no WhatsApp.`);
     } catch (e: any) {

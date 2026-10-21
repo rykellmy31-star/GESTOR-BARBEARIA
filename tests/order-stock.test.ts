@@ -160,3 +160,29 @@ describe("fluxo de compras: catálogo, cliente e painel",()=>{
     expect(await f.value("SELECT count(*) n FROM stock_movements WHERE company_id=?1 AND delta<0")).toBe(1);
   });
 });
+
+describe("agendamento público: vínculos dos profissionais e isolamento entre empresas",()=>{
+  it("lista somente profissionais ativos associados aos serviços da própria empresa",async()=>{
+    const a=await fixture(), b=await fixture();
+    const own=Number((await db.prepare("INSERT INTO barbers(company_id,slug,name,active) VALUES (?1,'ativo','Ativo',1)").bind(a.companyId).run()).meta.last_row_id);
+    const inactive=Number((await db.prepare("INSERT INTO barbers(company_id,slug,name,active) VALUES (?1,'inativo','Inativo',0)").bind(a.companyId).run()).meta.last_row_id);
+    const other=Number((await db.prepare("INSERT INTO barbers(company_id,slug,name,active) VALUES (?1,'externo','Externo',1)").bind(b.companyId).run()).meta.last_row_id);
+    const service=Number((await db.prepare("INSERT INTO services(company_id,slug,name,price_cents,duration_min) VALUES (?1,'corte-test','Corte Teste',3000,30)").bind(a.companyId).run()).meta.last_row_id);
+    await db.batch([
+      db.prepare("INSERT INTO service_barbers(service_id,barber_id) VALUES (?1,?2)").bind(service,own),
+      db.prepare("INSERT INTO service_barbers(service_id,barber_id) VALUES (?1,?2)").bind(service,inactive),
+    ]);
+    const response=await a.get("/services");
+    expect(response.status).toBe(200);
+    const body=await response.json() as {services:{id:number;barber_ids:number[]}[]};
+    expect(body.services.find(s=>s.id===service)?.barber_ids).toEqual([own]);
+    expect((await a.get("/barbers/"+own)).status).toBe(200);
+    expect((await a.get("/barbers/"+inactive)).status).toBe(404);
+    expect((await a.get("/barbers/"+other)).status).toBe(404);
+    expect((await b.get("/barbers/"+own)).status).toBe(404);
+    expect((await a.get("/barbers/invalid")).status).toBe(400);
+    expect((await b.get("/services")).status).toBe(200);
+    const foreign=(await (await b.get("/services")).json()) as {services:{id:number}[]};
+    expect(foreign.services.some(s=>s.id===service)).toBe(false);
+  });
+});

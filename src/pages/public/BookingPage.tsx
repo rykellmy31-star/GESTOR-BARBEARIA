@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, CheckCircle2, ChevronLeft, Clock, Loader2, Scissors, ShieldCheck, Star, UserRound, CalendarCheck2, MessageCircle, AlertTriangle } from "lucide-react";
 import { clsx } from "clsx";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { useConfig } from "@/lib/hooks";
 import { Badge, Button, Field, Input, Spinner, Textarea, useToast } from "@/components/ui";
 import { fmtDayLong, localDay, maskPhone, money, wizardKey, weekdayShort, MONTHS } from "@/lib/format";
@@ -28,16 +28,16 @@ export function BookingPage() {
   const [done, setDone] = useState<any | null>(null);
   const [idk] = useState(wizardKey());
 
-  const services = useQuery({ queryKey: ["services"], queryFn: () => api.get<{ services: Service[] }>("/services").then((d) => d.services) });
-  const barbers = useQuery({ queryKey: ["barbers"], queryFn: () => api.get<{ barbers: Barber[] }>("/barbers").then((d) => d.barbers) });
+  const services = useQuery({ queryKey: ["tenant", siteBase(), "services"], queryFn: () => api.get<{ services: Service[] }>("/services").then((d) => d.services) });
+  const barbers = useQuery({ queryKey: ["tenant", siteBase(), "barbers"], queryFn: () => api.get<{ barbers: Barber[] }>("/barbers").then((d) => d.barbers) });
   const service = services.data?.find((x) => x.id === serviceId) ?? null;
   const barberProfile = useQuery({
-    queryKey: ["barber-profile", barberId],
+    queryKey: ["tenant", siteBase(), "barber-profile", barberId],
     queryFn: () => api.get<any>(`/barbers/${barberId}`),
     enabled: Boolean(barberId),
   });
   const availability = useQuery({
-    queryKey: ["availability", barberId, serviceId, date],
+    queryKey: ["tenant", siteBase(), "availability", barberId, serviceId, date],
     queryFn: () => api.get<{ ok: boolean; closed_reason?: string; slots: { t: string; label: string }[] }>(`/availability?barberId=${barberId}&serviceId=${serviceId}&date=${date}`),
     enabled: Boolean(barberId && serviceId && date),
   });
@@ -68,6 +68,9 @@ export function BookingPage() {
       });
       setDone(res);
       localStorage.setItem(`tigu_token_${res.booking.code}`, String(res.cancel_token));
+      // Dados somente do tenant atual, para consulta imediata da própria reserva.
+      localStorage.setItem(`tigu_last_code:${siteBase()}`, res.booking.code);
+      localStorage.setItem(`tigu_last_phone:${siteBase()}`, form.phone.replace(/\D/g, ""));
     } catch (e: any) {
       toast.push("err", e.message);
       if (e.status === 409) {
@@ -270,7 +273,7 @@ function BarberProfile({ data, tz }: { data: any; tz: string }) {
 
 function DateStep({ tz, barberId, serviceId, date, setDate, horizon, onBack }: any) {
   const [cursor, setCursor] = useState(() => new Date().toISOString().slice(0, 7));
-  const month = useQuery({ queryKey: ["avail-month", barberId, serviceId, cursor], queryFn: () => api.get<{ days: { day: string; status: string }[] }>(`/availability-month?barberId=${barberId}&serviceId=${serviceId}&month=${cursor}`) });
+  const month = useQuery({ queryKey: ["tenant", siteBase(), "avail-month", barberId, serviceId, cursor], queryFn: () => api.get<{ days: { day: string; status: string }[] }>(`/availability-month?barberId=${barberId}&serviceId=${serviceId}&month=${cursor}`) });
   const today = localDay(tz);
   const maxDay = useMemo(() => { const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + horizon); return d.toISOString().slice(0, 10); }, [today, horizon]);
   const [yy, mm] = cursor.split("-").map(Number);
@@ -359,8 +362,8 @@ function SuccessScreen({ done, settings, navigate }: any) {
           <p className="mt-5 rounded-xl border border-line bg-ink-soft p-3 text-[11.5px] text-zinc-500">WhatsApp da barbearia não configurado nas Configurações — avise-os por outros canais. <Badge tone="gray">integração opcional</Badge></p>
         )}
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <Button variant="ghost" onClick={() => navigate("/meus-agendamentos", { state: { code: b.code } })}>Gerenciar reserva</Button>
-          <Button variant="ghost" onClick={() => navigate("/")}>Voltar ao início</Button>
+          <Button variant="ghost" onClick={() => navigate(siteBase() + "/meus-agendamentos", { state: { code: b.code } })}>Gerenciar reserva</Button>
+          <Button variant="ghost" onClick={() => navigate(siteBase())}>Voltar ao início</Button>
         </div>
       </div>
     </div>

@@ -40,9 +40,32 @@ publicRouter.get("/barbers", async (c) => {
   const { results } = await c.env.DB.prepare(`SELECT id, slug, name, specialty, bio, photo, rating, reviews_count, work_days, work_start, work_end, active FROM barbers WHERE company_id=?1 AND active=1 ORDER BY sort, name`).bind(cid(c)).all();
   return json(c, { barbers: results });
 });
+publicRouter.get("/barbers/:id", async (c) => {
+  const rawId = c.req.param("id");
+  if (!/^[1-9]\d*$/.test(rawId)) return err(c, "Profissional inválido", 400);
+  const barber = await c.env.DB.prepare(
+    `SELECT id, slug, name, specialty, bio, photo, rating, reviews_count, work_days,
+            work_start, work_end, break_start, break_end
+       FROM barbers WHERE id=?1 AND company_id=?2 AND active=1`
+  ).bind(Number(rawId), cid(c)).first();
+  if (!barber) return err(c, "Profissional não encontrado", 404);
+  return json(c, { barber });
+});
 publicRouter.get("/services", async (c) => {
-  const { results } = await c.env.DB.prepare(`SELECT s.* FROM services s WHERE s.company_id=?1 AND s.active=1 AND s.show_in_catalog=1 ORDER BY s.sort, s.name`).bind(cid(c)).all();
-  return json(c, { services: results.map((x: Record<string, unknown>) => ({ ...x, price: Number(x.price_cents) / 100 })) });
+  const companyId = cid(c);
+  const { results } = await c.env.DB.prepare(`SELECT s.* FROM services s WHERE s.company_id=?1 AND s.active=1 AND s.show_in_catalog=1 ORDER BY s.sort, s.name`).bind(companyId).all();
+  // O assistente de agendamento precisa saber quais profissionais atendem
+  // cada serviço. Nunca incluir barbeiros inativos ou de outra empresa.
+  const { results: links } = await c.env.DB.prepare(
+    `SELECT sb.service_id, sb.barber_id FROM service_barbers sb
+       JOIN services s ON s.id=sb.service_id AND s.company_id=?1 AND s.active=1 AND s.show_in_catalog=1
+       JOIN barbers b ON b.id=sb.barber_id AND b.company_id=?1 AND b.active=1`
+  ).bind(companyId).all<{ service_id: number; barber_id: number }>();
+  const byService = new Map<number, number[]>();
+  for (const link of links) byService.set(link.service_id, [...(byService.get(link.service_id) ?? []), link.barber_id]);
+  return json(c, { services: results.map((x: Record<string, unknown>) => ({
+    ...x, barber_ids: byService.get(Number(x.id)) ?? [], price: Number(x.price_cents) / 100,
+  })) });
 });
 publicRouter.get("/reviews", async (c) => {
   if (!ctxSettings(c).reviews_enabled) return json(c, { reviews: [] });
