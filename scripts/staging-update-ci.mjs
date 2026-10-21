@@ -17,7 +17,7 @@ export async function updateStagingWorker({token,accountId,fetcher=fetch,exec=ex
     throw Error("Token staging ou Account ID ausente ou inválido.");
   const base="/accounts/"+accountId;
   async function get(path){
-    const r=await fetch("https://api.cloudflare.com/client/v4"+path,{
+    const r=await fetcher("https://api.cloudflare.com/client/v4"+path,{
       method:"GET",redirect:"error",signal:AbortSignal.timeout(15000),
       headers:{Authorization:"Bearer "+token,Accept:"application/json"},
     });
