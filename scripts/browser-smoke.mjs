@@ -259,7 +259,7 @@ try{
   const afterResched=await api(base,"/api/c/"+slug+"/bookings/lookup","POST",
     {code:bookingCode,phone:"73999991111"});
   assert.equal(afterResched.status,200);
-  assert.ok(afterResched.data.bookings.some(x=>x.code===bookingCode&&x.starts_at===newSlot.t),
+  assert.ok(afterResched.data.bookings.some(x=>x.code===bookingCode&&Date.parse(x.starts_at)===Date.parse(newSlot.t)),
     "Remarcação deve persistir a nova data/hora");
   pass("cliente remarca reserva para horário livre pela interface");
   await until("ação de cancelamento",'[...document.querySelectorAll("button")].some(x=>x.textContent.trim().includes("Cancelar"))');
