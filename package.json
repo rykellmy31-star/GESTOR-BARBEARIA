@@ -33,7 +33,8 @@
     "validate": "node scripts/validate.mjs",
     "test:local-e2e": "npm run build && node scripts/local-e2e.mjs",
     "test:browser-smoke": "npm run build && node scripts/browser-smoke.mjs",
-    "test:migrations": "node --test scripts/migrations-smoke.node.test.mjs"
+    "test:migrations": "node --test scripts/migrations-smoke.node.test.mjs",
+    "backup:evidence": "node scripts/backup-evidence.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
