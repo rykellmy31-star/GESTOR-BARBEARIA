@@ -58,7 +58,7 @@ export function MyBookingsPage() {
     setPixBusy(true);
     try {
       const response=await api.post<{payment:any}>("/bookings/pix/status",{
-        code:b.code,phone:phone.replace(/\\D/g,""),cancel_token:token
+        code:b.code,phone:phone.replace(/\D/g,""),cancel_token:token
       });
       setPixTarget(b.id);
       setPixInfo(response.payment);
