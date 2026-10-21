@@ -14,7 +14,7 @@ import { sqlFingerprint } from "./staging-d1-remote-restore.mjs";
 import { stagingConfigIssues } from "./staging-config.mjs";
 
 const DEST="tigu-staging-restore-check",SOURCE="tigu-staging-db";
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const requiredTables=["booking_payments","order_payments","company_payment_integrations"];
 
 function schemaReport(sql){
