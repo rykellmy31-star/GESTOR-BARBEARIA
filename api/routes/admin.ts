@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { Env } from "../types";
 import { err, json, nowIso, uniqueSlug, slugify, brl, normalizePhone } from "../lib/utils";
 import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
-import { createBooking, createBookingSchema, cancelBooking, rescheduleBooking, setBookingStatus } from "../lib/booking";
+import { createBooking, createBookingSchema, cancelBooking, rescheduleBooking, setBookingStatus, finishBookingEarly } from "../lib/booking";
 import { assertSlotAllowed, slotKeysFor, type BarberRow, type ServiceRow } from "../lib/availability";
 import { companySettingsSchema, saveCompanySettings } from "../lib/settings";
 import { audit } from "../lib/audit";
@@ -247,6 +247,14 @@ adminRouter.put("/bookings/:id/status", async (c) => {
   const res = await setBookingStatus({ env: c.env, db: P(c), companyId: cid(c), settings: ctxSettings(c), origin: "admin", user: c.get("user") }, await bookingIdParam(c), parsed.data.status);
   if (!res.ok) return err(c, res.message, res.status);
   return json(c, { ok: true });
+});
+
+adminRouter.post("/bookings/:id/finish-early",async c=>{
+  const result=await finishBookingEarly({
+    env:c.env,db:P(c),companyId:cid(c),settings:ctxSettings(c),origin:"admin",user:c.get("user")
+  },await bookingIdParam(c));
+  if(!result.ok)return err(c,result.message,result.status);
+  return json(c,result);
 });
 
 adminRouter.post("/bookings/:id/cancel", async (c) => {
