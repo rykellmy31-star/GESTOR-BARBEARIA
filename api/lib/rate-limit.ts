@@ -14,8 +14,10 @@ export async function persistentRateLimit(
       reset_at=CASE WHEN reset_at<=?3 THEN ?2 ELSE reset_at END
     WHERE reset_at<=?3 OR attempts<?4
     RETURNING attempts`)
-    .bind(fingerprint,now+windowMs,now,limit).first<{attempts:number}>();
-  return Boolean(row);
+    .bind(fingerprint,now+windowMs,now,limit).run<{attempts:number}>();
+  // D1 em produção utiliza run() para INSERT...RETURNING. A chamada
+  // first() é voltada a SELECT e pode divergir do emulador local.
+  return row.results.length===1;
 }
 
 export async function purgeRequestRateLimits(db: D1Database, now = Date.now()) {
