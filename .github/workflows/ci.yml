@@ -32,3 +32,5 @@ jobs:
         run: npm ci
       - name: Validar auditoria, homologacao, tipos, build e testes
         run: npm run validate
+      - name: Homologar fluxos HTTP completos com Worker, D1 e R2 locais
+        run: node scripts/local-e2e.mjs
