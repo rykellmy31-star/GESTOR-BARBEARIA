@@ -34,3 +34,11 @@ jobs:
         run: npm run validate
       - name: Homologar fluxos HTTP completos com Worker, D1 e R2 locais
         run: node scripts/local-e2e.mjs
+      # Executa somente depois da suite local, em push da branch autorizada,
+      # quando o operador definir uma URL do Worker de testes nas Variables.
+      # Script faz apenas GET, recusa dominios fora de tigu-staging.*.workers.dev.
+      - name: Conferir homologacao Cloudflare online (se configurada)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && vars.TIGU_STAGING_URL != '' }}
+        env:
+          STAGING_URL: ${{ vars.TIGU_STAGING_URL }}
+        run: node scripts/staging-smoke.mjs

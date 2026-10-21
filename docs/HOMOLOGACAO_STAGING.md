@@ -82,6 +82,14 @@ Requisitos: Node.js 22+, uma conta Cloudflare autenticada pelo Wrangler e acesso
 - O registro público de contas merece proteção por acesso restrito antes de divulgar a URL. Não compartilhe o Worker de homologação com clientes. Cloudflare Access pode ser adicionado quando a conta oferecer o recurso.
 - A prévia visual Pages permanece em `https://tigu-preview.pages.dev/preview` **se a publicação Pages já estiver concluída**; não confundir esse endereço com o Worker de homologação.
 
+## Diagnóstico online automático pelo GitHub Actions (opcional)
+
+Quando o Worker de homologação já estiver publicado, configure em **GitHub → Settings → Secrets and variables → Actions → Variables** a variável de repositório `TIGU_STAGING_URL` com a URL de origem exata, por exemplo `https://tigu-staging.sua-subconta.workers.dev`, **sem token, caminho ou parâmetros**.
+
+Nos próximos **pushes à branch `audit/tigu-primeira-validacao`**, após os testes locais, a CI executará `node scripts/staging-smoke.mjs`, que realiza somente requisições GET: valida identidade do Worker, bindings D1/R2, segredos presentes, Pix/Meta reais desabilitados, planos e proteção de acesso. Sem a variável, a etapa é ignorada; PRs e a branch principal não fazem chamadas remotas. Não há deploy, migração, dados reais ou criação de recursos por essa etapa.
+
+**Importante:** resultado verde com a etapa ignorada não confirma a homologação online. Mesmo com ela aprovada, testes autenticados com contas fictícias, backup/restauração e integrações de pagamento/WhatsApp ainda exigem validação específica.
+
 ## Próximos trabalhos pendentes
 
 - Fazer a implantação assistida com IDs de recursos **sem compartilhar senhas ou tokens neste chat**.

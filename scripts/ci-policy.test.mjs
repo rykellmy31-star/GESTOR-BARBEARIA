@@ -24,3 +24,18 @@ test("Actions: permissao de leitura e validacao sem deploy ou migracoes remotas"
   assert.match(content, /run: node scripts\/local-e2e\.mjs/);
 
 });
+
+test("Actions: verificacao online opcional, somente leitura e limitada a staging", () => {
+  const gate = content.match(/  - name: Conferir homologacao Cloudflare online \(se configurada\)[\s\S]*?run: node scripts\/staging-smoke\.mjs/);
+  assert.ok(gate, "Etapa de verificacao remota ausente");
+  assert.match(gate[0], /github\.event_name == 'push'/);
+  assert.match(gate[0], /github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
+  assert.match(gate[0], /vars\.TIGU_STAGING_URL != ''/);
+  assert.match(gate[0], /STAGING_URL: \$\{\{ vars\.TIGU_STAGING_URL \}\}/);
+  assert.doesNotMatch(gate[0], /secrets\.|wrangler|deploy|--remote|npm run/);
+  const diagnostic = readFileSync(new URL("./staging-smoke.mjs", import.meta.url), "utf8");
+  assert.match(diagnostic, /redirect: "manual"/);
+  assert.match(diagnostic, /method: "GET"/);
+  assert.match(diagnostic, /tigu-staging/);
+  assert.doesNotMatch(diagnostic, /method: "POST"|method: "DELETE"|method: "PUT"|method: "PATCH"/);
+});
