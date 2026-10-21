@@ -55,7 +55,7 @@ export async function generateBookingPix(env:Env,companyId:number,bookingId:numb
   try {
     result=await createMerchantPayment(merchant,{
       amountCents:current.amount_cents,
-      externalReference:current.code,
+      reference:current.code,
       description:"Serviço de barbearia - "+booking.code,
       payerEmail:booking.customer_email
     });
