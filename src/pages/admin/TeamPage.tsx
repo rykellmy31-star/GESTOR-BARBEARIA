@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { Loader2, Plus, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { Badge, Button, EmptyState, Field, Input, Modal, Select, useToast } from "@/components/ui";
 
 export function TeamPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const q = useQuery({ queryKey: ["team"], queryFn: () => api.get<any>("/admin/team").then((d) => d.team as any[]) });
-  const barbers = useQuery({ queryKey: ["admin-barbers"], queryFn: () => api.get<any>("/admin/barbers").then((d) => d.barbers as any[]) });
+  const q = useQuery({ queryKey: ["team", siteBase()], queryFn: () => api.get<any>("/admin/team").then((d) => d.team as any[]) });
+  const barbers = useQuery({ queryKey: ["admin-barbers", siteBase()], queryFn: () => api.get<any>("/admin/barbers").then((d) => d.barbers as any[]) });
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ name: "", email: "", role: "barber", barber_id: "", password: "" });
   const add = useMutation({

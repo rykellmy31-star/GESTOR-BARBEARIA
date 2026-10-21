@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ClipboardList, Phone } from "lucide-react";
 import { clsx } from "clsx";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { Badge, Button, EmptyState, Spinner, useToast } from "@/components/ui";
 import { fmtDateTime, money } from "@/lib/format";
 
@@ -19,7 +19,7 @@ export function OrdersPage() {
   const toast = useToast();
   const [status, setStatus] = useState("");
   const [open, setOpen] = useState<number | null>(null);
-  const q = useQuery({ queryKey: ["orders", status], queryFn: () => api.get<any>(`/admin/orders${status ? `?status=${status}` : ""}`).then((d) => d.orders) });
+  const q = useQuery({ queryKey: ["orders", siteBase(), status], queryFn: () => api.get<any>(`/admin/orders${status ? `?status=${status}` : ""}`).then((d) => d.orders) });
 
   const act = useMutation({
     mutationFn: ({ id, to }: { id: number; to: string }) => api.patch(`/admin/orders/${id}/status`, { status: to }),

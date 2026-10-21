@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
 import { clsx } from "clsx";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { Badge, Button, ConfirmDialog, EmptyState, Field, Input, Modal, Spinner, Textarea, useToast } from "@/components/ui";
 import { ImageUpload } from "@/components/ui/Upload";
 
@@ -13,8 +13,8 @@ const BLANK: BarberForm = { name: "", specialty: "", bio: "", photo: "", work_da
 export function BarbersPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const list = useQuery({ queryKey: ["admin-barbers"], queryFn: () => api.get<any>("/admin/barbers").then((d) => d.barbers) });
-  const services = useQuery({ queryKey: ["admin-services"], queryFn: () => api.get<any>("/admin/services").then((d) => d.services) });
+  const list = useQuery({ queryKey: ["admin-barbers", siteBase()], queryFn: () => api.get<any>("/admin/barbers").then((d) => d.barbers) });
+  const services = useQuery({ queryKey: ["admin-services", siteBase()], queryFn: () => api.get<any>("/admin/services").then((d) => d.services) });
   const [edit, setEdit] = useState<BarberForm | null>(null);
   const [del, setDel] = useState<any | null>(null);
   const [cred, setCred] = useState<any | null>(null);
@@ -22,12 +22,12 @@ export function BarbersPage() {
 
   const save = useMutation({
     mutationFn: (f: BarberForm) => (f.id ? api.put(`/admin/barbers/${f.id}`, f) : api.post("/admin/barbers", f)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-barbers"] }); qc.invalidateQueries({ queryKey: ["barbers"] }); qc.invalidateQueries({ queryKey: ["admin-services"] }); setEdit(null); toast.push("ok", "Barbeiro salvo."); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-barbers"] }); qc.invalidateQueries({ queryKey: ["tenant", siteBase(), "barbers"] }); qc.invalidateQueries({ queryKey: ["tenant", siteBase(), "services"] }); qc.invalidateQueries({ queryKey: ["admin-services"] }); setEdit(null); toast.push("ok", "Barbeiro salvo."); },
     onError: (e: any) => toast.push("err", e.message),
   });
   const remove = useMutation({
     mutationFn: (id: number) => api.del<any>(`/admin/barbers/${id}`),
-    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["admin-barbers"] }); setDel(null); toast.push("ok", r?.message || "Removido."); },
+    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["admin-barbers"] }); qc.invalidateQueries({ queryKey: ["tenant", siteBase(), "barbers"] }); qc.invalidateQueries({ queryKey: ["tenant", siteBase(), "services"] }); setDel(null); toast.push("ok", r?.message || "Removido."); },
     onError: (e: any) => toast.push("err", e.message),
   });
   const creds = useMutation({

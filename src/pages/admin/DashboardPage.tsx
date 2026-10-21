@@ -18,7 +18,7 @@ export function DashboardPage() {
     d.setUTCDate(d.getUTCDate() - (days - 1));
     return { from: d.toISOString().slice(0, 10), to: today };
   }, [days, tz]);
-  const q = useQuery({ queryKey: ["dashboard", from, to], queryFn: () => api.get<any>(`/admin/dashboard?from=${from}&to=${to}`) });
+  const q = useQuery({ queryKey: ["dashboard", siteBase(), from, to], queryFn: () => api.get<any>(`/admin/dashboard?from=${from}&to=${to}`) });
   if (q.isLoading) return <Spinner label="Carregando indicadores…" />;
   const d = q.data;
   const k = d.kpis;

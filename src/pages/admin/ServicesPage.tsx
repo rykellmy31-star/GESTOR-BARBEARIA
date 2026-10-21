@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { Badge, Button, ConfirmDialog, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, useToast } from "@/components/ui";
 import { ImageUpload } from "@/components/ui/Upload";
 import { money, toCents } from "@/lib/format";
@@ -14,8 +14,8 @@ const CATS = ["cabelo", "barba", "combo", "tratamento", "infantil", "sobrancelha
 export function ServicesPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const list = useQuery({ queryKey: ["admin-services"], queryFn: () => api.get<any>("/admin/services").then((d) => d.services) });
-  const barbers = useQuery({ queryKey: ["admin-barbers"], queryFn: () => api.get<any>("/admin/barbers").then((d: any) => d.barbers) });
+  const list = useQuery({ queryKey: ["admin-services", siteBase()], queryFn: () => api.get<any>("/admin/services").then((d) => d.services) });
+  const barbers = useQuery({ queryKey: ["admin-barbers", siteBase()], queryFn: () => api.get<any>("/admin/barbers").then((d: any) => d.barbers) });
   const [edit, setEdit] = useState<F | null>(null);
   const [del, setDel] = useState<any | null>(null);
 
@@ -24,12 +24,12 @@ export function ServicesPage() {
       const body = { name: f.name, description: f.description, price_cents: toCents(f.price_reais), duration_min: f.duration_min, category: f.category, photo: f.photo, active: f.active, show_in_catalog: f.show_in_catalog, barber_ids: f.barber_ids };
       return f.id ? api.put(`/admin/services/${f.id}`, body) : api.post("/admin/services", body);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-services"] }); qc.invalidateQueries({ queryKey: ["services"] }); qc.invalidateQueries({ queryKey: ["admin-barbers"] }); setEdit(null); toast.push("ok", "Serviço salvo no catálogo."); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-services"] }); qc.invalidateQueries({ queryKey: ["tenant", siteBase(), "services"] }); qc.invalidateQueries({ queryKey: ["admin-barbers"] }); setEdit(null); toast.push("ok", "Serviço salvo no catálogo."); },
     onError: (e: any) => toast.push("err", e.message),
   });
   const remove = useMutation({
     mutationFn: (id: number) => api.del<any>(`/admin/services/${id}`),
-    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["admin-services"] }); setDel(null); toast.push("ok", r?.message || "Removido."); },
+    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["admin-services"] }); qc.invalidateQueries({ queryKey: ["tenant", siteBase(), "services"] }); setDel(null); toast.push("ok", r?.message || "Removido."); },
     onError: (e: any) => toast.push("err", e.message),
   });
 

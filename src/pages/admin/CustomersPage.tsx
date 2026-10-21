@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search, ShieldAlert, UserRound } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { Badge, Button, ConfirmDialog, EmptyState, Input, Modal, Spinner, useToast } from "@/components/ui";
 import { fmtDateTime, money } from "@/lib/format";
 
@@ -13,8 +13,8 @@ export function CustomersPage() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [anon, setAnon] = useState<any | null>(null);
   const qc = useQueryClient();
-  const list = useQuery({ queryKey: ["customers", q], queryFn: () => api.get<any>(`/admin/customers?q=${encodeURIComponent(q)}`).then((d) => d.customers) });
-  const detail = useQuery({ queryKey: ["customer", openId], queryFn: () => api.get<any>(`/admin/customers/${openId}`), enabled: Boolean(openId) });
+  const list = useQuery({ queryKey: ["customers", siteBase(), q], queryFn: () => api.get<any>(`/admin/customers?q=${encodeURIComponent(q)}`).then((d) => d.customers) });
+  const detail = useQuery({ queryKey: ["customer", siteBase(), openId], queryFn: () => api.get<any>(`/admin/customers/${openId}`), enabled: Boolean(openId) });
 
   const anonymize = useMutation({
     mutationFn: (id: number) => api.post<any>(`/admin/customers/${id}/anonymize`, {}),

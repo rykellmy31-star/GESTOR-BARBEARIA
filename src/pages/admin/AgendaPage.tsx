@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, CalendarX2, CheckCircle2, ChevronLeft, ChevronRight, Clock, Inbox, Link2, Plus, Search, User } from "lucide-react";
 import { clsx } from "clsx";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { useConfig } from "@/lib/hooks";
 import { Badge, Button, ConfirmDialog, Field, Input, Modal, Select, Spinner, Textarea, useToast } from "@/components/ui";
 import { fmtDayLong, fromMinutes, localToUtcIso, money, toMinutes, utcToLocalParts } from "@/lib/format";
@@ -27,9 +27,9 @@ export function AgendaPage() {
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [reqOpen, setReqOpen] = useState(false);
 
-  const barbers = useQuery({ queryKey: ["admin-barbers"], queryFn: () => api.get<any>("/admin/barbers").then((d) => d.barbers) });
+  const barbers = useQuery({ queryKey: ["admin-barbers", siteBase()], queryFn: () => api.get<any>("/admin/barbers").then((d) => d.barbers) });
   const agenda = useQuery({
-    queryKey: ["agenda", view, date, barberId, search],
+    queryKey: ["agenda", siteBase(), view, date, barberId, search],
     queryFn: () => api.get<any>(`/admin/agenda?view=${view}&date=${date}${barberId ? `&barberId=${barberId}` : ""}${search ? `&q=${encodeURIComponent(search)}` : ""}`),
   });
 
@@ -224,7 +224,7 @@ function BookingModal({ item: b, onClose, onChanged, tz }: any) {
 function BlockRequestsModal({ onClose, onDone }: any) {
   const toast = useToast();
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["block-requests"], queryFn: () => api.get<any>("/admin/block-requests") });
+  const q = useQuery({ queryKey: ["block-requests", siteBase()], queryFn: () => api.get<any>("/admin/block-requests") });
   const act = async (id: number, ok: boolean) => {
     try {
       const r = await api.post<any>(`/admin/block-requests/${id}/${ok ? "approve" : "reject"}`, {});
@@ -261,7 +261,7 @@ function BlockRequestsModal({ onClose, onDone }: any) {
 function ManualModal({ barbers, onClose, onDone }: any) {
   const toast = useToast();
   const [f, setF] = useState({ barberId: barbers[0]?.id ?? 0, serviceId: 0, day: new Date().toISOString().slice(0, 10), hhmm: "09:00", name: "", phone: "", notes: "", status: "confirmado" });
-  const services = useQuery({ queryKey: ["admin-services"], queryFn: () => api.get<any>("/admin/services").then((d: any) => d.services.filter((s: any) => s.active)) });
+  const services = useQuery({ queryKey: ["admin-services", siteBase()], queryFn: () => api.get<any>("/admin/services").then((d: any) => d.services.filter((s: any) => s.active)) });
   const { data: cfg } = useConfig();
   const tz = cfg?.settings.timezone || "America/Bahia";
   const create = async () => {
@@ -327,7 +327,7 @@ function BlockModal({ barbers, onClose, onDone, tz }: any) {
 function BlockedDaysModal({ barbers, onClose, onChanged }: any) {
   const toast = useToast();
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["blocked-days"], queryFn: () => api.get<any>("/admin/blocked-days") });
+  const q = useQuery({ queryKey: ["blocked-days", siteBase()], queryFn: () => api.get<any>("/admin/blocked-days") });
   const [f, setF] = useState({ barberId: "" as string | number, dateFrom: new Date().toISOString().slice(0, 10), dateTo: new Date().toISOString().slice(0, 10), kind: "day_off", reason: "" });
   const create = async () => {
     try {

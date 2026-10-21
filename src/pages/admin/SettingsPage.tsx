@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Info, Save, ShieldCheck } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { Badge, Button, Field, Input, Select, Spinner, Textarea, useToast } from "@/components/ui";
 import { ImageUpload } from "@/components/ui/Upload";
 import { fmtDateTime } from "@/lib/format";
@@ -18,18 +18,25 @@ const PRESETS = [
 export function SettingsPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const q = useQuery({ queryKey: ["admin-settings"], queryFn: () => api.get<any>("/admin/settings").then((d) => d.settings as ShopSettings) });
+  const q = useQuery({ queryKey: ["admin-settings", siteBase()], queryFn: () => api.get<any>("/admin/settings").then((d) => d.settings as ShopSettings) });
+  const tenant = siteBase();
   const [s, setS] = useState<ShopSettings | null>(null);
-  useEffect(() => { if (q.data && !s) setS(JSON.parse(JSON.stringify(q.data))); }, [q.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [loadedTenant, setLoadedTenant] = useState<string | null>(null);
+  useEffect(() => {
+    if (q.data && loadedTenant !== tenant) {
+      setS(JSON.parse(JSON.stringify(q.data)));
+      setLoadedTenant(tenant);
+    }
+  }, [q.data, loadedTenant, tenant]);
 
   const save = useMutation({
     mutationFn: () => api.put("/admin/settings", s),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-settings"] }); qc.invalidateQueries({ queryKey: ["config"] }); toast.push("ok", "Configurações salvas — site atualizado em tempo real (tema incluso)."); },
     onError: (e: any) => toast.push("err", e.message || "Dados inválidos — revise os campos destacados pelo servidor."),
   });
-  const audit = useQuery({ queryKey: ["audit"], queryFn: () => api.get<any>("/admin/audit?limit=25").then((d) => d.log) });
+  const audit = useQuery({ queryKey: ["audit", siteBase()], queryFn: () => api.get<any>("/admin/audit?limit=25").then((d) => d.log) });
 
-  if (!s) return <Spinner label="Carregando configurações…" />;
+  if (!s || loadedTenant !== tenant) return <Spinner label="Carregando configurações…" />;
   const set = (patch: Partial<ShopSettings>) => setS({ ...s, ...patch });
   const setBrand = (patch: Partial<ShopSettings["brand"]>) => setS({ ...s, brand: { ...s.brand, ...patch } });
 
