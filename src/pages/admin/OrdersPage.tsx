@@ -11,7 +11,7 @@ const NEXT: Record<string, { to: string; label: string; kind?: "danger" | "dark"
   novo: [{ to: "pago", label: "Registrar pagamento" }, { to: "cancelado", label: "Cancelar pedido", kind: "danger" }],
   pago: [{ to: "entregue", label: "Marcar entregue" }, { to: "cancelado", label: "Cancelar (devolve estoque)", kind: "danger" }],
   entregue: [],
-  cancelado: [{ to: "novo", label: "Reabrir", kind: "dark" }],
+  cancelado: [],
 };
 
 export function OrdersPage() {
@@ -23,7 +23,7 @@ export function OrdersPage() {
 
   const act = useMutation({
     mutationFn: ({ id, to }: { id: number; to: string }) => api.patch(`/admin/orders/${id}/status`, { status: to }),
-    onSuccess: (_, v) => { qc.invalidateQueries({ queryKey: ["orders"] }); toast.push("ok", v.to === "pago" ? "Pagamento registrado — estoque baixado." : `Pedido ${v.to}.`); },
+    onSuccess: (_, v) => { qc.invalidateQueries({ queryKey: ["orders"] }); toast.push("ok", v.to === "pago" ? "Pagamento registrado. O estoque já foi reservado no pedido." : `Pedido ${v.to}.`); },
     onError: (e: any) => toast.push("err", e.message),
   });
 
@@ -32,7 +32,7 @@ export function OrdersPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="font-display text-2xl text-zinc-50">Pedidos da loja</h1>
-          <p className="text-xs text-zinc-500">Pedidos chegam do carrinho do site via WhatsApp; o estoque só baixa quando você registra o pagamento.</p>
+          <p className="text-xs text-zinc-500">Pedidos criados pelo site reservam estoque imediatamente. O pagamento é registrado manualmente pela barbearia.</p>
         </div>
         <div className="flex gap-1 rounded-xl border border-line p-0.5">
           {["", "novo", "pago", "entregue", "cancelado"].map((s) => (
@@ -51,12 +51,12 @@ export function OrdersPage() {
               <span className="font-mono text-xs text-[var(--c-gold)]">{o.code}</span>
               <span className="font-medium text-zinc-100">{o.customer_name}</span>
               {o.customer_phone && (
-                <a href={`https://wa.me/55${String(o.customer_phone).replace(/\D/g, "")}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-[var(--c-gold)]">
+                <a href={`https://wa.me/${String(o.customer_phone).replace(/\D/g, "").replace(/^(?!55)/, "55")}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-[var(--c-gold)]">
                   <Phone size={11} /> {o.customer_phone}
                 </a>
               )}
               <Badge tone={TONE[o.status]}>{o.status}</Badge>
-              <span className="text-xs text-zinc-500">{o.items_n} item(ns) · {fmtDateTime(o.created_at)}</span>
+              <span className="text-xs text-zinc-500">{(o.items ?? []).reduce((sum: number, item: {qty:number}) => sum + item.qty, 0)} unidade(s) · {fmtDateTime(o.created_at)}</span>
               <span className="ml-auto flex items-center gap-3">
                 <span className="font-display text-lg text-[var(--c-gold)]">{money(o.total_cents)}</span>
                 <ChevronDown size={15} className={clsx("text-zinc-500 transition-transform", open === o.id && "rotate-180")} />
@@ -75,7 +75,7 @@ export function OrdersPage() {
                 <div className="flex flex-col gap-2">
                   {(o.notes && <p className="rounded-lg border border-line p-2.5 text-xs text-zinc-400">Obs.: {o.notes}</p>) || null}
                   {(NEXT[o.status] ?? []).map((a) => (
-                    <Button key={a.to} size="sm" variant={a.kind ?? "gold"} onClick={() => act.mutate({ id: o.id, to: a.to })}>{a.label}</Button>
+                    <Button key={a.to} size="sm" variant={a.kind ?? "gold"} disabled={act.isPending} onClick={() => act.mutate({ id: o.id, to: a.to })}>{a.label}</Button>
                   ))}
                   {NEXT[o.status]?.length === 0 && <p className="text-xs text-zinc-500">Pedido finalizado.</p>}
                 </div>
