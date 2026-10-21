@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Instalar árvore atual antes do upgrade
+        run: npm ci --no-audit --no-fund
       - name: Atualizar pacote e lock pela resolução oficial npm
         run: npm install --save-dev --save-exact vitest@4.1.12 --no-audit --no-fund
       - name: Revalidar advisories moderados
