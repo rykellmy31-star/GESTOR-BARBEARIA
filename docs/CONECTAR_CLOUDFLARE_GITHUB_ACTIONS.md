@@ -57,3 +57,7 @@ Com o Secret `CLOUDFLARE_STAGING_TOKEN` já cadastrado no repositório TIGU e o 
 - `node scripts/staging-provision.mjs check` faz apenas consultas GET. Depois da criação, o deploy do Worker depende de configurações de secrets e migrações próprias e deve ser validado separadamente.
 
 Permissões `D1 Edit` e `Workers R2 Storage Edit` têm alcance à conta selecionada pela Cloudflare e **não garantem isolamento por recurso**. Os bloqueios desse script reduzem o risco de alterações indevidas, mas não restringem o próprio token. Se o ambiente de produção estiver na mesma conta, o risco residual permanece até restringir ou revogar o token de escrita. Recursos novos podem gerar cobranças conforme o plano Cloudflare.
+
+## Ordem de provisionamento TIGU — execução única
+
+Autorizado pelo proprietário após configuração do token de staging. O commit que introduz esta anotação ativa uma única execução da rotina com allowlist e nomes fixos para **criar somente** D1 `tigu-staging-db` e R2 `tigu-staging-media` caso estejam ausentes. O resultado real deve ser confirmado no GitHub Actions. Não publicar Worker sem validação adicional de segredo, binding e migrações.
