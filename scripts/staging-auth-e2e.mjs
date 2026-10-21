@@ -118,9 +118,8 @@ export async function authenticatedStagingChecks({ url,fetcher=fetch,makeBytes=n
   pass("Painel encontra pedido e valor em centavos",orders.status===200&&entry?.total_cents===5000);
   pass("Pedido fictício cancelado e estoque restaurado",(await o("POST",c+"/admin/orders/"+entry.id+"/status",
     {status:"cancelado"})).status===200);
-  const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9uoAAAAASUV5CYII=","base64");
   // Use known safe fixture from the project (1x1 PNG).
-  const image=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9uoAAAAASUV5CYII=","base64");
+  const image=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9uoAAAAASUVORK5CYII=","base64");
   const upload=new FormData();
   upload.append("file",new Blob([image],{type:"image/png"}),"tigu-ficticio.png");
   const up=await o("POST",c+"/admin/upload",upload);
