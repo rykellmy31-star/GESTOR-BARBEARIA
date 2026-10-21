@@ -678,9 +678,36 @@ adminRouter.put("/team/:membershipId", async (c) => {
 adminRouter.get("/customers", async (c) => {
   const q = (c.req.query("q") || "").trim();
   const id = cid(c);
-  const where = q ? `AND (name LIKE ?2 OR phone LIKE ?2)` : "";
-  const { results } = await P(c).prepare(`SELECT id, name, phone, email, whatsapp_optin, created_at, (SELECT COUNT(*) FROM bookings b WHERE b.company_id = customers.company_id AND b.customer_phone = customers.phone) AS bookings_count
-                                          FROM customers WHERE company_id=?1 ${where} ORDER BY bookings_count DESC, name LIMIT 200`).bind(id, ...(q ? [`%${q}%`] : [])).all();
+  const where = q ? "AND (cu.name LIKE ?2 OR cu.phone LIKE ?2)" : "";
+  // Mesma definição da tela: visitas incluem reservas canceladas; faturamento
+  // considera somente atendimentos concluídos e pedidos pagos/entregues.
+  // Agregações são filtradas por empresa ANTES de associar o telefone.
+  const { results } = await P(c).prepare(`WITH booking_stats AS (
+      SELECT customer_phone, COUNT(*) AS visits,
+        SUM(CASE WHEN status='concluido' THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN status='cancelado' THEN 1 ELSE 0 END) AS canceled,
+        SUM(CASE WHEN status='concluido' THEN price_cents ELSE 0 END) AS service_spent_cents,
+        MAX(CASE WHEN status='concluido' THEN starts_at END) AS last_visit
+      FROM bookings WHERE company_id=?1 AND status!='bloqueio'
+      GROUP BY customer_phone
+    ), purchase_stats AS (
+      SELECT customer_phone, SUM(total_cents) AS product_spent_cents
+      FROM orders WHERE company_id=?1 AND status IN ('pago','entregue')
+      GROUP BY customer_phone
+    )
+    SELECT cu.id, cu.name, cu.phone, cu.email, cu.whatsapp_optin, cu.created_at,
+      COALESCE(b.visits,0) AS visits,
+      COALESCE(b.visits,0) AS bookings_count,
+      COALESCE(b.completed,0) AS completed,
+      COALESCE(b.canceled,0) AS canceled,
+      COALESCE(b.service_spent_cents,0)+COALESCE(p.product_spent_cents,0) AS spent_cents,
+      b.last_visit
+    FROM customers cu
+    LEFT JOIN booking_stats b ON b.customer_phone=cu.phone
+    LEFT JOIN purchase_stats p ON p.customer_phone=cu.phone
+    WHERE cu.company_id=?1 ${where}
+    ORDER BY visits DESC, cu.name LIMIT 200`)
+    .bind(id, ...(q ? [`%${q}%`] : [])).all();
   return json(c, { customers: results });
 });
 adminRouter.post("/customers/:id/anonymize", async (c) => {
