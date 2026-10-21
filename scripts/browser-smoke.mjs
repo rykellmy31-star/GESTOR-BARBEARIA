@@ -264,6 +264,22 @@ try{
   assert.equal(serviceRemoved.data.services.find(x=>x.id===hydration.id).active,0,
     "Serviço desativado deve preservar registro e não permitir novas reservas");
   pass("dono desativa serviço sem apagar histórico");
+  const missingService=await api(base,"/api/c/"+slug+"/admin/services/999999999","DELETE",
+    undefined,signup.cookie);
+  assert.equal(missingService.status,404,"Excluir serviço inexistente não pode afirmar sucesso");
+  pass("serviço inexistente retorna 404 na exclusão");
+  const secondEmail="tenant-isolado-"+randomBytes(5).toString("hex")+"@tigu.test";
+  const secondCompany=await api(base,"/api/auth/register","POST",{
+    company_name:"Barbearia Isolada Chromium",name:"Dono de Outra Empresa",email:secondEmail,
+    password:"Isolado!"+randomBytes(13).toString("hex")});
+  assert.equal(secondCompany.status,201,"Cadastro da segunda empresa de teste");
+  const outsideDelete=await api(base,"/api/c/"+secondCompany.data.company.slug+
+    "/admin/services/"+service.data.id,"DELETE",undefined,secondCompany.cookie);
+  assert.equal(outsideDelete.status,404,"Outra empresa não pode excluir serviço alheio");
+  const originalServices=await api(base,"/api/c/"+slug+"/admin/services","GET",undefined,signup.cookie);
+  assert.equal(originalServices.data.services.find(x=>x.id===service.data.id)?.active,1,
+    "Tentativa de outra empresa não deve alterar serviço da barbearia original");
+  pass("exclusão de serviço respeita o isolamento entre empresas");
   // Configurações editáveis refletidas na API e mantidas após recarregar a tela.
   await go(base+"/c/"+slug+"/admin/configuracoes");
   await until("configurações carregadas",'document.body.innerText.includes("Identidade da barbearia")');
@@ -325,6 +341,10 @@ try{
   await click("Confirmar agendamento");
   await until("reserva confirmada",'document.body.innerText.includes("Seu horário está garantido")');
   pass("visitante agenda serviço e profissional pela interface real");
+  const deleteBookedService=await api(base,"/api/c/"+slug+"/admin/services/"+service.data.id,
+    "DELETE",undefined,signup.cookie);
+  assert.equal(deleteBookedService.status,409,"Serviço com reserva ativa não pode ser desativado");
+  pass("exclusão de serviço com reserva ativa é bloqueada");
   const bookingCode=await js('(()=>{const item=[...document.querySelectorAll("b")]'+
     '.find(el=>el.parentElement?.textContent?.includes("Protocolo"));'+
     'return item?.textContent?.trim()||""})()');
@@ -571,7 +591,7 @@ try{
   await until("tabela de precificação",
     'document.body.innerText.includes("Precificação de mensagens")');
   pass("Superadmin consulta precificação vigente");
-  console.log("37 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
+  console.log("40 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){
