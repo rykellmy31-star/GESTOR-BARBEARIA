@@ -338,16 +338,22 @@ try{
     'return r?[...r.querySelectorAll("td")].map(x=>x.textContent.trim()):null})()');
   assert.ok(customerRow&&customerRow[1]==="1"&&customerRow[3]==="1",
     "Visitas e cancelamentos precisam estar visíveis na tabela");
+  const customerDetail=await api(base,"/api/c/"+slug+"/admin/customers/"+customer.id,
+    "GET",undefined,signup.cookie);
+  assert.equal(customerDetail.status,200,"Detalhe do cliente deve responder: "+JSON.stringify(customerDetail.data));
+  assert.ok(customerDetail.data.bookings.some(x=>x.code===bookingCode&&x.status==="cancelado"),
+    "Detalhe deve mostrar a reserva do mesmo cliente: "+JSON.stringify(customerDetail.data.bookings));
   const openedCustomer=await js('(()=>{const r=[...document.querySelectorAll("tbody tr")]'+
     '.find(x=>x.textContent.includes("Cliente Reserva Chromium"));if(!r)return false;r.click();return true})()');
   assert.ok(openedCustomer,"Detalhe do cliente deve abrir pelo clique");
+  await until("modal de cliente", 'document.querySelector(".modal-backdrop")!==null');
+  const detailInBrowser=await js('fetch("/api/c/'+slug+'/admin/customers/'+customer.id+'")'+
+    '.then(async r=>({status:r.status,data:await r.json().catch(()=>null)}))');
+  assert.equal(detailInBrowser.status,200,
+    "Sessão Chromium não acessa o detalhe do cliente: "+JSON.stringify(detailInBrowser));
   await until("histórico real do cliente no modal",
-    'document.body.innerText.includes("Histórico")&&document.body.innerText.includes("Corte Navegador")');
-  const customerDetail=await api(base,"/api/c/"+slug+"/admin/customers/"+customer.id,
-    "GET",undefined,signup.cookie);
-  assert.equal(customerDetail.status,200,"Detalhe do cliente deve responder");
-  assert.ok(customerDetail.data.bookings.some(x=>x.code===bookingCode&&x.status==="cancelado"),
-    "Detalhe deve mostrar a reserva do mesmo cliente");
+    'document.querySelector(".modal-backdrop")?.innerText.includes("Histórico")&&'+
+    'document.querySelector(".modal-backdrop")?.innerText.includes("Corte Navegador")');
   pass("cliente abre histórico e indicadores corretos no painel");
   await go(base+"/c/"+slug+"/admin/agenda");
   await until("agenda administrativa",'document.body.innerText.includes("Pedidos")');
