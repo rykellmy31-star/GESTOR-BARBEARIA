@@ -1,0 +1,30 @@
+name: TIGU - diagnostico do cadastro staging
+
+on:
+  push:
+    branches: [audit/tigu-primeira-validacao]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnosticar-signup:
+    if: ${{ github.event.head_commit.message == 'TIGU_DIAGNOSE_SIGNUP_ONCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Baixar branch de auditoria
+        uses: actions/checkout@v4
+      - name: Configurar Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci --no-audit --no-fund
+      - name: Capturar somente falhas redigidas do signup no Worker staging
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_DIAGNOSE_APPROVED: YES
+        run: node scripts/staging-diagnose-signup.mjs
