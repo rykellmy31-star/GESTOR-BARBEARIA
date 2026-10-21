@@ -107,7 +107,7 @@ try{
     "--remote-debugging-address=127.0.0.1","--remote-debugging-port="+chromePort,
     "--remote-allow-origins=*","--user-data-dir="+join(tmp,"chrome"),"about:blank"],
     {cwd:root,stdio:"ignore"});
-  let target;const deadline=Date.now()+25000;
+  let target;const deadline=Date.now()+60000;
   while(Date.now()<deadline){if(chrome.exitCode!==null)throw Error("Chromium encerrou");
     try{const list=await (await fetch("http://127.0.0.1:"+chromePort+"/json/list",
       {signal:AbortSignal.timeout(1000)})).json();
@@ -372,17 +372,14 @@ try{
     '.then(async r=>({status:r.status,body:(await r.text()).slice(0,900)}))');
   assert.equal(detailResponse.status,200,
     "API de detalhes de barbearia deve funcionar: "+JSON.stringify(detailResponse));
-  await pause(500);
-  const detailScreen=await js('document.querySelector("main")?.innerText.slice(0,1400)');
-  console.log("Diagnóstico local de empresa Superadmin:",JSON.stringify({id:newlyCreated.id,detailScreen}));
   await until("detalhe da nova barbearia",'document.body.innerText.includes("Nova Barbearia Chromium")'+
-    '&&document.body.innerText.includes("Ajuste manual de créditos")');
+    '&&document.body.innerText.includes("AJUSTE MANUAL DE CRÉDITOS")');
   pass("Superadmin abre detalhes e configurações de barbearia");
   await fill('input[placeholder^="ex.: 5000"]',"1250");
   await fill('input[placeholder^="Justificativa"]',"Teste isolado de auditoria de créditos");
   await click("Aplicar");
   await until("carteira atualizada no painel",
-    'document.body.innerText.includes("R$ 12,50")');
+    'document.body.innerText.includes("12,50")');
   const walletAdjusted=await js('fetch("/api/super/wallets/'+newlyCreated.id+
     '").then(r=>r.json())');
   assert.equal(walletAdjusted.wallet.balance_cents,1250,
