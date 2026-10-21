@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Check, Copy, CreditCard, Loader2, QrCode, Wallet as WalletIcon, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
+import { parseTopupAmountCents } from "../../../api/lib/wallet-amount";
 import { Badge, Button, EmptyState, Field, Input, Modal, Spinner, useToast } from "@/components/ui";
 import { money } from "@/lib/format";
 
@@ -11,13 +12,13 @@ const STATUS_TONE: Record<string, "gold" | "green" | "red" | "gray" | "amber" | 
 export function WalletPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const q = useQuery({ queryKey: ["wallet"], queryFn: () => api.get<any>("/admin/wallet"), refetchInterval: 30_000 });
+  const q = useQuery({ queryKey: ["wallet", siteBase()], queryFn: () => api.get<any>("/admin/wallet"), refetchInterval: 30_000 });
   const [amount, setAmount] = useState<number>(2500);
   const [custom, setCustom] = useState("");
   const [checkout, setCheckout] = useState<any | null>(null);
 
   const create = useMutation({
-    mutationFn: () => api.post<any>("/admin/wallet/topup", { amount_cents: amount }),
+    mutationFn: (cents: number) => api.post<any>("/admin/wallet/topup", { amount_cents: cents }),
     onSuccess: (r) => { setCheckout({ ...r.topup, mock: r.mock }); toast.push("ok", "Cobrança Pix gerada. Pague para creditar os créditos."); qc.invalidateQueries({ queryKey: ["wallet"] }); },
     onError: (e: any) => toast.push("err", e.message),
   });
@@ -43,11 +44,15 @@ export function WalletPage() {
   };
 
   if (q.isLoading) return <Spinner label="Abrindo carteira…" />;
+  if (q.isError || !q.data) return <div role="alert" className="rounded-xl border border-amber-500/40 bg-panel p-5 text-sm text-amber-200">Não foi possível carregar a carteira. Nenhuma cobrança foi iniciada. <button className="underline" onClick={() => void q.refetch()}>Tentar novamente</button></div>;
   const d = q.data;
   const w = d?.wallet;
   const effPrice = d?.pricing?.price_cents ?? 10;
-  const selected = custom ? Math.round(Number(custom.replace(",", ".")) * 100) : amount;
-  const valid = Number.isFinite(selected) && selected >= 1000 && selected <= 100000;
+  const limits = d.topup_limits ?? { min_cents: 1000, max_cents: 500_000 };
+  const parsedCustom = custom.trim() ? parseTopupAmountCents(custom) : null;
+  const selected = custom.trim() ? parsedCustom : amount;
+  const valid = selected !== null && Number.isSafeInteger(selected) &&
+    selected >= limits.min_cents && selected <= limits.max_cents;
 
   return (
     <div className="space-y-5">
@@ -71,12 +76,12 @@ export function WalletPage() {
             ))}
           </div>
           <div className="mt-3">
-            <Field label="Ou valor personalizado (R$)" hint="Entre R$ 10,00 e R$ 1.000,00 por recarga.">
+            <Field label="Ou valor personalizado (R$)" hint={`Entre ${money(limits.min_cents)} e ${money(limits.max_cents)} por recarga.`}>
               <Input inputMode="decimal" placeholder="ex.: 35,00" value={custom} onChange={(e) => setCustom(e.target.value)} />
             </Field>
           </div>
-          <Button className="btn-gold mt-4 w-full justify-center py-3" disabled={!valid || create.isPending} onClick={() => create.mutate()}>
-            {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} />} Pagar {money(valid ? selected : 0)} via Pix
+          <Button className="btn-gold mt-4 w-full justify-center py-3" disabled={!valid || !d.payments_available || create.isPending} onClick={() => { if (selected !== null) create.mutate(selected); }}>
+            {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} />} Pagar {money(valid && selected !== null ? selected : 0)} via Pix
           </Button>
           {!d?.payments_available && <p className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">Pix automático indisponível neste ambiente. Peça o crédito ao suporte Tigu — a equipe credita com registro auditado.</p>}
         </div>
@@ -128,7 +133,7 @@ export function WalletPage() {
               <div>
                 <p className="mb-1 text-[11px] uppercase tracking-wide text-zinc-500">Pix copia-e-cola</p>
                 <textarea readOnly className="h-24 w-full rounded-xl border border-line bg-ink p-2 font-mono text-[11px] text-zinc-300" value={checkout.qr_code_text} onFocus={(e) => e.target.select()} />
-                <Button className="mt-2 w-full justify-center border border-line py-2 text-sm" onClick={() => { navigator.clipboard?.writeText(checkout.qr_code_text); toast.push("ok", "Código Pix copiado."); }}><Copy size={14} /> Copiar</Button>
+                <Button className="mt-2 w-full justify-center border border-line py-2 text-sm" onClick={async () => { try { await navigator.clipboard.writeText(checkout.qr_code_text); toast.push("ok", "Código Pix copiado."); } catch { toast.push("err", "Não foi possível copiar. Selecione o código manualmente."); } }}><Copy size={14} /> Copiar</Button>
               </div>
             )}
             {checkout.status === "pending" ? (
