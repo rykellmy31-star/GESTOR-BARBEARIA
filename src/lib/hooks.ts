@@ -39,15 +39,26 @@ export function useAuth() {
   });
   const login = useMutation({
     mutationFn: (creds: { email: string; password: string }) => api.post<{ user: TiguUser; companies: CompanyRef[]; next: string }>("/auth/login", creds),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["auth-me"] }); },
+    onSuccess: async (data) => {
+      // O Gate precisa ver a nova sessão ANTES de navegar para o painel.
+      // Invalidar sem await deixava auth-me=null e redirecionava de volta ao login.
+      qc.setQueryData<TiguUser>(["auth-me"], { ...data.user, companies: data.companies });
+      await qc.invalidateQueries({ queryKey: ["auth-me"] });
+    },
   });
   const logout = useMutation({
     mutationFn: () => api.post("/auth/logout"),
-    onSuccess: () => qc.invalidateQueries(),
+    onSuccess: async () => {
+      qc.setQueryData(["auth-me"], null);
+      await qc.invalidateQueries();
+    },
   });
   const register = useMutation({
     mutationFn: (data: { company_name: string; email: string; password: string; name: string; phone?: string }) => api.post<{ ok: boolean; company: { slug: string }; next: string }>("/auth/register", data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["auth-me"] }),
+    onSuccess: async () => {
+      // Cadastro também cria sessão; espere /me antes de montar a área protegida.
+      await qc.invalidateQueries({ queryKey: ["auth-me"] });
+    },
   });
   const changePassword = useMutation({
     mutationFn: (data: { current: string; next: string }) => api.post("/auth/password", data),
