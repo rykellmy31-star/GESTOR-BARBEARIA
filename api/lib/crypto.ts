@@ -1,12 +1,28 @@
 import { bufToB64, b64ToBuf, randomHex } from "./utils";
+import { pbkdf2 as nodePbkdf2 } from "node:crypto";
 
-// Hash de senhas com PBKDF2-SHA256 (WebCrypto — disponível em Workers e Node 20).
+// PBKDF2-SHA256: WebCrypto do Workers limita a derivação a até 100 mil iterações.
+// Hashes legados com 150 mil continuam verificáveis via node:crypto (nodejs_compat).
 // Formato armazenado: pbkdf2_sha256$<iterações>$<salt b64>$<hash b64>
-const ITERATIONS = 150_000;
+const ITERATIONS = 100_000;
+const MAX_STORED_ITERATIONS = 1_000_000;
 
 const enc = new TextEncoder();
 
 async function derive(password: string, salt: Uint8Array, iterations: number): Promise<ArrayBuffer> {
+  if (!Number.isSafeInteger(iterations) || iterations < 1 || iterations > MAX_STORED_ITERATIONS)
+    throw new Error("Parâmetros PBKDF2 fora do intervalo permitido");
+  if (iterations > ITERATIONS) {
+    // Compatibilidade com hashes históricos produzidos antes da correção;
+    // o formato salvo inclui o número de iterações de cada credencial.
+    const derived = await new Promise<Uint8Array>((resolve, reject) => {
+      nodePbkdf2(password, Buffer.from(salt), iterations, 32, "sha256", (error, value) => {
+        if (error) reject(error);
+        else resolve(Uint8Array.from(value));
+      });
+    });
+    return derived.buffer;
+  }
   const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
   return crypto.subtle.deriveBits({ name: "PBKDF2", salt: salt as unknown as BufferSource, iterations, hash: "SHA-256" }, key, 256);
 }
