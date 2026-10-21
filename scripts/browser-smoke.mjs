@@ -80,6 +80,27 @@ try{
     {name:"Pomada Navegador",description:"Produto seguro",price_cents:3490,stock:4,
       category:"cuidados",photo:"",active:true},signup.cookie);
   assert.equal(product.status,200,"Cadastro de produto no D1");
+  const service=await api(base,"/api/c/"+slug+"/admin/services","POST",
+    {name:"Corte Navegador",description:"Atendimento teste",price_cents:3000,
+      duration_min:30,barber_ids:[]},signup.cookie);
+  assert.equal(service.status,200,"Serviço local cadastrado");
+  const barber=await api(base,"/api/c/"+slug+"/admin/barbers","POST",
+    {name:"Profissional Navegador",specialty:"Corte",bio:"Atende clientes do teste",
+      work_days:[0,1,2,3,4,5,6],work_start:"08:00",work_end:"20:00",
+      break_start:"12:00",break_end:"13:00",service_ids:[service.data.id]},signup.cookie);
+  assert.equal(barber.status,200,"Profissional e serviço vinculados");
+  const localToday=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Bahia"}).format(new Date());
+  let bookingDay,bookingSlot;
+  for(let offset=2;offset<=8;offset++){
+    const day=new Date(Date.parse(localToday+"T12:00:00Z")+offset*86400000).toISOString().slice(0,10);
+    const availability=await api(base,"/api/c/"+slug+"/availability?barberId="+barber.data.id+
+      "&serviceId="+service.data.id+"&date="+day);
+    if(availability.status===200&&availability.data.ok){
+      const free=availability.data.slots.find(slot=>slot.available!==false);
+      if(free){bookingDay=day;bookingSlot=free;break;}
+    }
+  }
+  assert.ok(bookingDay&&bookingSlot,"Data com vaga disponível no D1");
   chrome=spawn(executable,["--headless=new","--no-sandbox","--disable-dev-shm-usage",
     "--disable-background-networking","--no-first-run","--no-default-browser-check",
     "--disable-extensions","--window-size=1280,960",
@@ -131,7 +152,78 @@ try{
   await go(base+"/c/"+slug+"/admin/carteira");
   await until("carteira",'document.body.innerText.includes("Carteira de créditos")');
   pass("Pix real bloqueado no ambiente local",await js('(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("via Pix"));return !!b&&b.disabled})()'));
-  console.log("7 verificações Chromium aprovadas: React, Worker e D1 locais; nenhum pagamento real.");
+
+  // Reserva criada de verdade pela interface do visitante.
+  await go(base+"/c/"+slug+"/agendar");
+  await until("serviço disponível no assistente",'document.body.innerText.includes("Corte Navegador")');
+  await click("Corte Navegador");
+  await until("profissional elegível",'document.body.innerText.includes("Profissional Navegador")');
+  await click("Profissional Navegador");
+  await until("seleção do profissional",'document.body.innerText.includes("Escolher data")');
+  await click("Escolher data");
+  await until("calendário público",'document.querySelector(".cal-day")!==null');
+  const targetMonth=bookingDay.slice(0,7);
+  const shownMonth=await js('(()=>{const b=document.querySelector(".cal-day");return b&&'+
+    'new Date(new Date().toISOString().slice(0,7)+"-01T12:00:00Z").toISOString().slice(0,7)})()');
+  if(shownMonth!==targetMonth){
+    const forward=await js('(()=>{const b=[...document.querySelectorAll("button")]'+
+      '.find(x=>x.textContent.trim()==="→"&&!x.disabled);if(!b)return false;b.click();return true})()');
+    assert.ok(forward,"Avanço para o próximo mês não disponível");
+  }
+  await until("dia com vaga renderizado",'[...document.querySelectorAll("button.cal-day")]'+
+    '.some(x=>x.textContent.trim()==='+JSON.stringify(String(Number(bookingDay.slice(8))))+'&&!x.disabled)');
+  const chosen=await js('(()=>{const b=[...document.querySelectorAll("button.cal-day")]'+
+    '.find(x=>x.textContent.trim()==='+JSON.stringify(String(Number(bookingDay.slice(8))))+'&&!x.disabled);'+
+    'if(!b)return false;b.click();return true})()');
+  assert.ok(chosen,"Data válida não foi selecionada");
+  await until("horários da reserva",'document.body.innerText.includes("4. Horário")');
+  await until("horário escolhido",'[...document.querySelectorAll("button")]'+
+    '.some(x=>x.textContent.trim()==='+JSON.stringify(bookingSlot.label)+')');
+  await click(bookingSlot.label);
+  await click("Continuar");
+  await until("dados do visitante",'document.querySelector("input[placeholder^=\\"Como você\\"]")!==null');
+  await fill('input[placeholder^="Como você"]',"Cliente Reserva Chromium");
+  await fill('input[placeholder*="99999-0000"]',"73999991111");
+  const consent=await js('(()=>{const c=document.querySelector("input[type=checkbox]");'+
+    'if(!c)return false;c.click();return c.checked})()');
+  assert.ok(consent,"Consentimento LGPD não foi registrado");
+  await click("Revisar agendamento");
+  await until("revisão do atendimento",'document.body.innerText.includes("Confirme seu horário")');
+  await click("Confirmar agendamento");
+  await until("reserva confirmada",'document.body.innerText.includes("Seu horário está garantido")');
+  pass("visitante agenda serviço e profissional pela interface real");
+  const bookingCode=await js('(()=>{const t=document.body.innerText;'+
+    'return t.match(/Protocolo\s+([A-Z0-9-]+)/)?.[1]||""})()');
+  assert.ok(bookingCode,"Protocolo não foi mostrado na confirmação");
+  const schedule=await api(base,"/api/c/"+slug+"/admin/agenda?view=day&date="+bookingDay,"GET",undefined,signup.cookie);
+  assert.equal(schedule.status,200,"API do painel recebe a reserva do Chromium");
+  pass("agendamento persistiu na agenda administrativa");
+  // Conta exclusiva para o profissional; autenticação realizada no navegador.
+  const proEmail="pro-"+randomBytes(4).toString("hex")+"@tigu.test";
+  const proPassword="Profissional!"+randomBytes(10).toString("hex");
+  const access=await api(base,"/api/c/"+slug+"/admin/barbers/"+barber.data.id+"/credentials",
+    "POST",{email:proEmail,password:proPassword},signup.cookie);
+  assert.equal(access.status,201,"Painel cria acesso exclusivo para o profissional");
+  await go(base+"/login");
+  await until("login profissional",'document.querySelector("input[type=email]")!==null');
+  await fill("input[type=email]",proEmail);await fill("input[type=password]",proPassword);
+  await click("Entrar");
+  await until("troca obrigatória",'location.pathname==="/alterar-senha"');
+  pass("profissional precisa trocar senha provisória no navegador");
+  const replacement="SenhaFinal!"+randomBytes(10).toString("hex");
+  await until("campos nova senha",'document.querySelectorAll("input[type=password]").length===3');
+  const passwords=await js('(()=>{const inputs=document.querySelectorAll("input[type=password]");'+
+    'const values='+JSON.stringify([proPassword,replacement,replacement])+';'+
+    'const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;'+
+    'inputs.forEach((x,i)=>{setter.call(x,values[i]);x.dispatchEvent(new Event("input",{bubbles:true}));});'+
+    'return inputs.length})()');
+  assert.equal(passwords,3);
+  await click("Salvar nova senha");
+  await until("nova senha aceita",'location.pathname==="/selecionar"');
+  await go(base+"/c/"+slug+"/painel");
+  await until("painel do profissional",'document.body.innerText.includes("Painel do profissional")');
+  pass("acesso individual do profissional após troca obrigatória");
+  console.log("11 verificações Chromium aprovadas: loja, agendamento e painel profissional. Nenhum pagamento real.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){

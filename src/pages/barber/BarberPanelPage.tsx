@@ -35,11 +35,17 @@ export function BarberPanelPage() {
   });
   const setStatus = useMutation({
     mutationFn: ({ id, status }: any) => api.patch(`/barber/bookings/${id}/status`, { status }),
-    onSuccess: (_v, args) => { qc.invalidateQueries({ queryKey: ["barber-agenda"] }); qc.invalidateQueries({ queryKey: ["barber/notifications"] }); toast.push("ok", `Reserva marcada como ${args.status}.`); },
+    onSuccess: (_v, args) => { qc.invalidateQueries({ queryKey: ["barber-agenda", siteBase()] }); qc.invalidateQueries({ queryKey: ["/barber/notifications", siteBase().split("/")[2]] }); toast.push("ok", `Reserva marcada como ${args.status}.`); },
     onError: (e: any) => toast.push("err", e.message),
   });
 
   if (me.isLoading || agenda.isLoading) return <div className="grid min-h-screen place-items-center"><Spinner label="Abrindo sua agenda…" /></div>;
+  if (me.isError || agenda.isError) return (
+    <div role="alert" className="mx-auto mt-20 max-w-lg rounded-2xl border border-amber-500/40 bg-panel p-6 text-sm text-amber-200">
+      Não foi possível carregar o painel do profissional.
+      <button className="ml-2 underline" onClick={() => { void me.refetch(); void agenda.refetch(); }}>Tentar novamente</button>
+    </div>
+  );
   const barber = me.data?.barber;
   const perms = me.data?.permissions;
   if (!barber) return <div className="grid min-h-screen place-items-center text-sm text-zinc-400">Usuário sem barbeiro vinculado — fale com o proprietário.</div>;
@@ -62,7 +68,7 @@ export function BarberPanelPage() {
           </div>
           <div className="ml-auto flex items-center gap-2">
             <NotificationsBell panel="barber" />
-            <button className="rounded-lg border border-line p-2 text-zinc-400 hover:text-red-300" onClick={() => logout.mutateAsync().then(() => navigate("/admin"))} aria-label="Sair"><LogOut size={16} /></button>
+            <button className="rounded-lg border border-line p-2 text-zinc-400 hover:text-red-300" onClick={() => logout.mutateAsync().then(() => navigate("/login"))} aria-label="Sair"><LogOut size={16} /></button>
           </div>
         </div>
       </header>

@@ -272,7 +272,7 @@ function BarberProfile({ data, tz }: { data: any; tz: string }) {
 }
 
 function DateStep({ tz, barberId, serviceId, date, setDate, horizon, onBack }: any) {
-  const [cursor, setCursor] = useState(() => new Date().toISOString().slice(0, 7));
+  const [cursor, setCursor] = useState(() => localDay(tz).slice(0, 7));
   const month = useQuery({ queryKey: ["tenant", siteBase(), "avail-month", barberId, serviceId, cursor], queryFn: () => api.get<{ days: { day: string; status: string }[] }>(`/availability-month?barberId=${barberId}&serviceId=${serviceId}&month=${cursor}`) });
   const today = localDay(tz);
   const maxDay = useMemo(() => { const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + horizon); return d.toISOString().slice(0, 10); }, [today, horizon]);

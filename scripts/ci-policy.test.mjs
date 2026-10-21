@@ -118,3 +118,15 @@ test("CI roda Chromium real local e dashboard trata indisponibilidade",()=>{
   assert.match(smoke,/Runtime\.evaluate/);
   assert.match(dashboard,/q\.isError \|\| !q\.data/);
 });
+
+
+test("Reserva no Chromium percorre assistente e valida acesso individual do profissional",()=>{
+  const s=readFileSync(new URL("../scripts/browser-smoke.mjs",import.meta.url),"utf8");
+  const publicForm=readFileSync(new URL("../src/pages/public/BookingPage.tsx",import.meta.url),"utf8");
+  const pro=readFileSync(new URL("../src/pages/barber/BarberPanelPage.tsx",import.meta.url),"utf8");
+  assert.match(s,/visitante agenda serviço e profissional pela interface real/);
+  assert.match(s,/profissional precisa trocar senha provisória no navegador/);
+  assert.match(s,/painel do profissional após troca obrigatória/);
+  assert.match(publicForm,/localDay\(tz\)\.slice\(0, 7\)/);
+  assert.match(pro,/me\.isError \|\| agenda\.isError/);
+});
