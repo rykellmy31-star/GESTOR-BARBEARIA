@@ -55,6 +55,22 @@ test("Actions: token Cloudflare apenas na etapa opcional e com diagnostico GET s
   assert.doesNotMatch(diagnostic, /wrangler deploy|migrations apply|d1 execute|R2\.put/);
 });
 
+test("Actions: cria D1/R2 somente em push do commit TIGU explicitamente autorizado", () => {
+  const gate = content.match(/      - name: Provisionar D1 e R2 isolados do TIGU \(commit unico\)[\s\S]*?run: node scripts\/staging-provision\.mjs create/);
+  assert.ok(gate, "Gate de provisionamento TIGU ausente");
+  assert.match(gate[0], /github\.event_name == 'push'/);
+  assert.match(gate[0], /github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
+  assert.match(gate[0], /github\.event\.head_commit\.message == 'TIGU_PROVISION_STAGING_ONCE'/);
+  assert.match(gate[0], /CLOUDFLARE_STAGING_TOKEN: \$\{\{ secrets\.CLOUDFLARE_STAGING_TOKEN \}\}/);
+  assert.match(gate[0], /TIGU_STAGING_CREATE_APPROVED: YES/);
+  assert.doesNotMatch(gate[0], /wrangler|staging:deploy|--remote|terraform|curl|deploy/);
+  const provision = readFileSync(new URL("./staging-provision.mjs",import.meta.url), "utf8");
+  assert.match(provision, /const D1_NAME = "tigu-staging-db"/);
+  assert.match(provision, /const R2_NAME = "tigu-staging-media"/);
+  assert.match(provision, /allowedPOST = new Set\(\[prefix \+ "\/d1\/database", prefix \+ "\/r2\/buckets"\]\)/);
+  assert.doesNotMatch(provision, /method: "DELETE"|method: "PUT"|method: "PATCH"|wrangler deploy/);
+});
+
 test("Painéis: consultas sensíveis usam cache separado por barbearia", () => {
   const cases = {
     "ServicesPage.tsx": ['"admin-services", siteBase()', '"admin-barbers", siteBase()'],
