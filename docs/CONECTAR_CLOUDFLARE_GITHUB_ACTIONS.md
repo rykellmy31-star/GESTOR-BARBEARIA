@@ -79,3 +79,11 @@ Mesmo após deploy, a **homologação funcional remota** e a **validação de re
 ## Disparo unico do Worker de homologação — 21/10/2026
 
 CI local completo aprovado previamente; o proprietário autorizou disponibilizar o token `CLOUDFLARE_STAGING_TOKEN`. O commit desta anotação é o gatilho único para preparar e migrar **somente D1 staging** e tentar implantar **somente o Worker tigu-staging** com segredos próprios. Os resultados devem ser confirmados no GitHub Actions; esta anotação não representa aprovação remota nem restauração de backups.
+
+## Recursos Cloudflare criados — evidência real de 21/10/2026
+
+- [Run de criação D1/R2 aprovado](https://github.com/rykellmy31-star/GESTOR-BARBEARIA/actions/runs/39636682380): `tigu-staging-db` e `tigu-staging-media` novos, sem alterações em recursos existentes.
+- [Run de deploy aprovado](https://github.com/rykellmy31-star/GESTOR-BARBEARIA/actions/runs/39638246202): 17 migrações D1 aplicadas, 25 assets enviados, Worker `tigu-staging` publicado e dois segredos fortes configurados no Worker.
+- URL publicada pelo Wrangler: `https://tigu-staging.netssh3-0.workers.dev`.
+- O CI passa a executar `staging-smoke.mjs` com apenas GET nessa URL, recusando qualquer destino fora do padrão de homologação. **Ainda é necessário confirmar o sucesso efetivo desse smoke remoto**.
+- As integrações de Pix/Meta permanecem inativas e a exportação/restauração real D1+R2 segue pendente. Nunca considerar os backups homologados com base somente no backup automático de migrations.
