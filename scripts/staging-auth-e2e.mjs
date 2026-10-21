@@ -74,6 +74,10 @@ export async function authenticatedStagingChecks({ url,fetcher=fetch,makeBytes=n
   const billing=await o("GET",c+"/billing/status");
   pass("Plano grátis disponível no D1 remoto",billing.status===200&&billing.data?.subscription?.status==="trial");
   pass("Pix externo bloqueado no staging",(await o("POST",c+"/billing/pix",{plan_code:"free"})).status===503);
+  const publicConfig=await response("GET",c+"/config");
+  pass("Configuração pública mantém pagamento presencial e bloqueia Pix real",
+    publicConfig.status===200&&publicConfig.data?.payment_options?.after_service===true&&
+    publicConfig.data?.payment_options?.pix_enabled===false);
   const s=await o("GET",c+"/admin/settings");
   pass("Dono consegue consultar configurações",s.status===200&&!!s.data?.settings);
   const settings={...s.data.settings,min_lead_min:0,
@@ -94,10 +98,18 @@ export async function authenticatedStagingChecks({ url,fetcher=fetch,makeBytes=n
   const free=availability.data?.slots?.filter(s=>s.available)||[];
   pass("Disponibilidade pública de horário remoto",availability.status===200&&free.length>0);
   const phone="55730000"+random.replace(/[a-f]/g,()=> "0").slice(0,5);
+  const pixAttempt=await response("POST",c+"/bookings",{barberId:barber.data.id,
+    serviceId:service.data.id,startsAt:free[0].t,name:"Cliente Pix Fictício",phone,
+    email:"cliente-pix@example.test",consent:true,whatsappOptin:false,
+    paymentChoice:"pix",idempotencyKey:makeBytes(16).toString("hex")});
+  pass("Checkout recusa Pix real em staging sem consumir horário",pixAttempt.status===503);
   const book=await response("POST",c+"/bookings",{barberId:barber.data.id,serviceId:service.data.id,
     startsAt:free[0].t,name:"Cliente Fictício",phone,consent:true,whatsappOptin:false,
     idempotencyKey:makeBytes(16).toString("hex")});
   pass("Reserva fictícia persistida no D1 remoto",book.status===201&&Number(book.data?.booking?.id)>0);
+  pass("Checkout padrão conserva preço do serviço e pagamento posterior",
+    book.data?.payment_choice==="after_service"&&book.data?.payment===null&&
+    book.data?.booking?.price_cents===1900);
   const lookup=await response("POST",c+"/bookings/lookup",{code:book.data.booking.code,phone});
   pass("Cliente fictício consulta agendamento pelo protocolo",lookup.status===200&&
     lookup.data?.bookings?.some(it=>it.id===book.data.booking.id));
