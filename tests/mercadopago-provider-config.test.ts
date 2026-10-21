@@ -17,7 +17,7 @@ describe("Pix: pré-requisitos antes de criar cobranças reais", () => {
   it("gera callback público HTTPS apenas na rota exata de webhook", () => {
     expect(mercadoPagoNotificationUrl(ready())).toBe("https://tigu.example.com/api/webhooks/mercadopago");
     expect(mercadoPagoNotificationUrl(ready({ PUBLIC_URL: "https://tigu.example.com/" }))).toBe("https://tigu.example.com/api/webhooks/mercadopago");
-    expect(pickPaymentProvider(ready()).provider?.kind).toBe("mercadopago");
+    expect(pickPaymentProvider(ready(), false).provider?.kind).toBe("mercadopago");
   });
 
   it.each([
@@ -32,7 +32,7 @@ describe("Pix: pré-requisitos antes de criar cobranças reais", () => {
   ])("bloqueia endereço de callback inválido: %s", async (publicUrl) => {
     const e = ready({ PUBLIC_URL: publicUrl });
     expect(mercadoPagoNotificationUrl(e)).toBeNull();
-    expect(pickPaymentProvider(e).provider).toBeNull();
+    expect(pickPaymentProvider(e, false).provider).toBeNull();
     const attempt = await mpProvider(e).createPixPayment({
       amountCents: 1000, externalReference: "TIGU-TEST",
       description: "Teste", payerEmail: "demo@example.com",
@@ -56,11 +56,11 @@ describe("Pix: pré-requisitos antes de criar cobranças reais", () => {
   });
 
   it("mantém homologação isolada e mock local, sem liberar mock em produção", () => {
-    expect(pickPaymentProvider(ready({ TIGU_STAGING: "1" })).provider).toBeNull();
+    expect(pickPaymentProvider(ready({ TIGU_STAGING: "1" }), false).provider).toBeNull();
     expect(pickPaymentProvider(ready({
       APP_ENV: "development", MP_ACCESS_TOKEN: "",
       PAYMENTS_MOCK: "1", MP_WEBHOOK_SECRET: "", PUBLIC_URL: "",
-    })).provider?.kind).toBe("mock");
-    expect(pickPaymentProvider(ready({ PAYMENTS_MOCK: "1" })).provider).toBeNull();
+    }), false).provider?.kind).toBe("mock");
+    expect(pickPaymentProvider(ready({ PAYMENTS_MOCK: "1" }), false).provider).toBeNull();
   });
 });
