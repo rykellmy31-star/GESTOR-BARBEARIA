@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_CART_LINES, MAX_CART_QTY, normalizeCart, reconcileCart } from "../src/lib/cart";
+import { MAX_CART_LINES, MAX_CART_QTY, normalizeCart, reconcileCart } from "../api/lib/cart-logic";
 
 describe("carrinho público: estoque e persistência não confiável",()=>{
   it("ignora formatos inválidos",()=>{

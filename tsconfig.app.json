@@ -22,5 +22,5 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src", "vite-env.d.ts", "api/lib/url.ts"]
+  "include": ["src", "vite-env.d.ts", "api/lib/url.ts", "api/lib/cart-logic.ts"]
 }
