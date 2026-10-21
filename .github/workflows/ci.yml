@@ -76,3 +76,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_STAGING_DEPLOY_APPROVED: YES
         run: node scripts/staging-deploy-ci.mjs
+
+      # Backup SOMENTE-LEITURA do D1 remoto de staging, com restauração do SQL
+      # em SQLite EFÊMERO no runner. Não exporta arquivos como artifacts,
+      # não executa SQL remoto e não persiste conteúdo de clientes.
+      - name: Exportar D1 staging e validar restauração SQLite efêmera (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_VERIFY_D1_EXPORT_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_D1_EXPORT_APPROVED: YES
+        run: node scripts/staging-d1-export-verify.mjs
