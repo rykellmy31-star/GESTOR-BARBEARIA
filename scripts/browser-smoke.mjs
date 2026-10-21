@@ -232,7 +232,43 @@ try{
   await until("reserva exibida ao profissional",'document.body.innerText.includes("Cliente Reserva Chromium")');
   pass("profissional vê seu agendamento, horário e ações na agenda");
 
-  console.log("12 verificações Chromium aprovadas: loja, agendamento e painel profissional. Nenhum pagamento real.");
+
+  // Cliente gerencia pelo site o mesmo agendamento, sem ter uma sessão de funcionário.
+  await go(base+"/c/"+slug+"/meus-agendamentos");
+  await until("busca pública de reservas",'document.body.innerText.includes("Meus agendamentos")');
+  await click("Consultar");
+  await until("reserva localizada pelo próprio cliente",'document.body.innerText.includes("Cliente") && document.body.innerText.includes("Corte Navegador")');
+  pass("cliente consulta a própria reserva pelo protocolo e telefone");
+  await click("Remarcar");
+  await until("modal de remarcação",'document.body.innerText.includes("Novo horário — Profissional Navegador")');
+  const reschedDay=new Date(Date.parse(bookingDay+"T12:00:00Z")+86400000).toISOString().slice(0,10);
+  const available=await api(base,"/api/c/"+slug+"/availability?barberId="+barber.data.id+
+    "&serviceId="+service.data.id+"&date="+reschedDay);
+  assert.equal(available.status,200);
+  const newSlot=available.data.slots.find(x=>x.available!==false);
+  assert.ok(newSlot,"Horário para remarcação está indisponível");
+  await fill('input[type="date"]',reschedDay);
+  await until("slots da nova data",'[...document.querySelectorAll("button")].some(x=>x.textContent.trim()==='+JSON.stringify(newSlot.label)+')');
+  await click(newSlot.label);
+  await until("modal de remarcação fechado",'!document.body.innerText.includes("Novo horário — Profissional Navegador")');
+  const afterResched=await api(base,"/api/c/"+slug+"/bookings/lookup","POST",
+    {code:bookingCode,phone:"73999991111"});
+  assert.equal(afterResched.status,200);
+  assert.ok(afterResched.data.bookings.some(x=>x.code===bookingCode&&x.starts_at===newSlot.t),
+    "Remarcação deve persistir a nova data/hora");
+  pass("cliente remarca reserva para horário livre pela interface");
+  await until("ação de cancelamento",'[...document.querySelectorAll("button")].some(x=>x.textContent.trim().includes("Cancelar"))');
+  await click("Cancelar");
+  await until("confirmação de cancelamento",'document.body.innerText.includes("Cancelar agendamento?")');
+  await click("Confirmar");
+  await until("estado cancelado da reserva",'document.body.innerText.includes("cancelado")');
+  const afterCancel=await api(base,"/api/c/"+slug+"/bookings/lookup","POST",
+    {code:bookingCode,phone:"73999991111"});
+  assert.equal(afterCancel.status,200);
+  assert.ok(afterCancel.data.bookings.some(x=>x.code===bookingCode&&x.status==="cancelado"),
+    "Cancelamento deve persistir no D1");
+  pass("cliente cancela reserva pela confirmação e libera horário");
+  console.log("15 verificações Chromium aprovadas: loja, agendamento, painel profissional, remarcação e cancelamento. Nenhum pagamento real.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){

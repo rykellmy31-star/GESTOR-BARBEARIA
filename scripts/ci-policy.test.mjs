@@ -130,3 +130,15 @@ test("Reserva no Chromium percorre assistente e valida acesso individual do prof
   assert.match(publicForm,/localDay\(tz\)\.slice\(0, 7\)/);
   assert.match(pro,/me\.isError \|\| agenda\.isError/);
 });
+
+
+test("Consulta pública e cancelamento exigem confirmação com bloqueio de envio duplicado",()=>{
+  const booking=readFileSync(new URL("../src/pages/public/MyBookingsPage.tsx",import.meta.url),"utf8");
+  const dialog=readFileSync(new URL("../src/components/ui/index.tsx",import.meta.url),"utf8");
+  const browser=readFileSync(new URL("../scripts/browser-smoke.mjs",import.meta.url),"utf8");
+  assert.match(booking,/if \(!cancelTarget \|\| cancelBusy\) return/);
+  assert.match(booking,/busy=\{cancelBusy\}/);
+  assert.match(dialog,/disabled=\{busy\} onClick=\{onConfirm\}/);
+  assert.match(browser,/cliente remarca reserva para horário livre pela interface/);
+  assert.match(browser,/cliente cancela reserva pela confirmação e libera horário/);
+});

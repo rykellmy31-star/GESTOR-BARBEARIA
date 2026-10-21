@@ -20,6 +20,7 @@ export function MyBookingsPage() {
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<any[] | null>(null);
   const [cancelTarget, setCancelTarget] = useState<any | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
   const [reschedTarget, setReschedTarget] = useState<any | null>(null);
   const [slots, setSlots] = useState<ReschedSlot[]>([]);
   const [reschedDate, setReschedDate] = useState("");
@@ -49,12 +50,15 @@ export function MyBookingsPage() {
   };
 
   const doCancel = async () => {
+    if (!cancelTarget || cancelBusy) return;
+    setCancelBusy(true);
     try {
       await api.post("/bookings/cancel", { code: cancelTarget.code, phone: phone.replace(/\D/g, "") });
       toast.push("ok", "Agendamento cancelado — o horário foi liberado.");
       setCancelTarget(null);
-      lookup();
+      void lookup();
     } catch (e: any) { toast.push("err", e.message); }
+    finally { setCancelBusy(false); }
   };
 
   useEffect(() => {
@@ -144,8 +148,9 @@ export function MyBookingsPage() {
 
       <ConfirmDialog
         open={Boolean(cancelTarget)}
-        onCancel={() => setCancelTarget(null)}
+        onCancel={() => { if (!cancelBusy) setCancelTarget(null); }}
         onConfirm={doCancel}
+        busy={cancelBusy}
         danger
         title="Cancelar agendamento?"
         text={`O horário ${cancelTarget ? fmtDateTime(cancelTarget.starts_at, tz) : ""} será liberado para outros clientes. Esta ação não pode ser desfeita — será preciso agendar novamente.`}

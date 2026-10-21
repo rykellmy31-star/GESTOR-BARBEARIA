@@ -98,13 +98,13 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
   );
 }
 
-export function ConfirmDialog({ open, onCancel, onConfirm, title, text, danger }: { open: boolean; onCancel: () => void; onConfirm: () => void; title: string; text: string; danger?: boolean }) {
+export function ConfirmDialog({ open, onCancel, onConfirm, title, text, danger, busy = false }: { open: boolean; onCancel: () => void; onConfirm: () => void; title: string; text: string; danger?: boolean; busy?: boolean }) {
   return (
     <Modal open={open} onClose={onCancel} title={title}>
       <p className="mb-5 text-sm leading-relaxed text-zinc-300">{text}</p>
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={onCancel}>Voltar</Button>
-        <Button variant={danger ? "danger" : "gold"} onClick={onConfirm}>Confirmar</Button>
+        <Button variant="ghost" disabled={busy} onClick={onCancel}>Voltar</Button>
+        <Button variant={danger ? "danger" : "gold"} disabled={busy} onClick={onConfirm}>{busy ? "Processando…" : "Confirmar"}</Button>
       </div>
     </Modal>
   );

@@ -185,7 +185,7 @@ function BookingModal({ item: b, onClose, onChanged, tz }: any) {
           <p className="text-zinc-300">{new Date(b.starts_at).toLocaleString("pt-BR", { timeZone: tz })} → {new Date(b.ends_at).toLocaleString("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit" })}</p>
           <div className="rounded-xl border border-line bg-ink-soft p-3 text-[13px]">
             <p className="flex items-center gap-1.5 text-zinc-200"><User size={13} className="text-zinc-500" /> {b.customer_name}</p>
-            {b.customer_phone && <a className="flex items-center gap-1.5 text-[var(--c-gold)]" href={`https://wa.me/55${b.customer_phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"><Link2 size={13} /> {b.customer_phone} (WhatsApp)</a>}
+            {b.customer_phone && <a className="flex items-center gap-1.5 text-[var(--c-gold)]" href={`https://wa.me/${b.customer_phone.replace(/\D/g, "").replace(/^(?!55)/, "55")}`} target="_blank" rel="noreferrer"><Link2 size={13} /> {b.customer_phone} (WhatsApp)</a>}
             {b.notes && <p className="mt-1.5 text-zinc-400">Obs.: {b.notes}</p>}
           </div>
           {b.status !== "bloqueio" && (
