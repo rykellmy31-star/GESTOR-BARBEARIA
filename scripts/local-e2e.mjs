@@ -240,6 +240,17 @@ try {
   check("Paginação comercial recusa cursor inválido",badCursor.status===400);
   const assisted=await superadmin("POST","/api/super/companies",{name:"Assistida local",slug:"assistida-local",owner_name:"Dono assistido",owner_email:"assisted@local-e2e.test",plan_code:"pro"});
   check("Cadastro assistido entrega senha provisória e fim do teste",assisted.status===201&&!!assisted.data.generated_password&&!!assisted.data.trial_end);
+  // Recargas fictícias inseridas exclusivamente no D1 local: sem chamada ao gateway.
+  wrangler(["d1","execute","tigu-local-e2e-db","--command",
+    `INSERT INTO topup_orders(company_id,code,amount_cents,status,provider,provider_payment_id)
+      SELECT id,'E2E-PIX-REAL',2500,'pending','mercadopago','E2E-FAKE-PAYMENT'
+      FROM companies WHERE slug=${q(slug)}`]);
+  const localCancelReal=await owner("POST",c+"/admin/wallet/topup/E2E-PIX-REAL/cancel",{});
+  const localUncancelled=await owner("GET",c+"/admin/wallet/topup/E2E-PIX-REAL");
+  check(`Pix real não pode ser cancelado só no banco; mantém conciliação possível (cancel=${localCancelReal.status}, consulta=${localUncancelled.status}, estado=${localUncancelled.data?.topup?.status??"ausente"})`,
+    localCancelReal.status===409&&localUncancelled.status===200&&localUncancelled.data.topup?.status==="pending");
+  check("Outra empresa não pode cancelar Pix alheio",
+    (await other("POST",c+"/admin/wallet/topup/E2E-PIX-REAL/cancel",{})).status===403);
   const expiring=await visitor("POST",c+"/bookings",{barberId:bid,serviceId:service.data.id,startsAt:free[0].t,name:"Cliente local",phone:"5573999990000",consent:true,whatsappOptin:false,idempotencyKey:randomBytes(16).toString("hex")});
   check("Reserva prévia preservada para teste de vencimento",expiring.status===201);
   wrangler(["d1","execute","tigu-local-e2e-db","--command",`UPDATE subscriptions SET period_end='2000-01-01T00:00:00Z' WHERE company_id=(SELECT id FROM companies WHERE slug=${q(slug)})`]);
@@ -278,17 +289,6 @@ try {
   check("Cron manual rejeita empresa inválida sem processar fila global",
     invalidTenant.every(x=>x.status===400));
   // Homologação financeira direta via Worker+D1, não apenas testes unitários.
-  // Recargas fictícias inseridas exclusivamente no D1 local: sem chamada ao gateway.
-  wrangler(["d1","execute","tigu-local-e2e-db","--command",
-    `INSERT INTO topup_orders(company_id,code,amount_cents,status,provider,provider_payment_id)
-      SELECT id,'E2E-PIX-REAL',2500,'pending','mercadopago','E2E-FAKE-PAYMENT'
-      FROM companies WHERE slug=${q(slug)}`]);
-  const localCancelReal=await owner("POST",c+"/admin/wallet/topup/E2E-PIX-REAL/cancel",{});
-  const localUncancelled=await owner("GET",c+"/admin/wallet/topup/E2E-PIX-REAL");
-  check(`Pix real não pode ser cancelado só no banco; mantém conciliação possível (cancel=${localCancelReal.status}, consulta=${localUncancelled.status}, estado=${localUncancelled.data?.topup?.status??"ausente"})`,
-    localCancelReal.status===409&&localUncancelled.status===200&&localUncancelled.data.topup?.status==="pending");
-  check("Outra empresa não pode cancelar Pix alheio",
-    (await other("POST",c+"/admin/wallet/topup/E2E-PIX-REAL/cancel",{})).status===403);
   const walletBefore=await owner("GET",c+"/admin/wallet");
   check("Carteira mostra os limites reais de recarga do Superadmin",
     walletBefore.status===200&&walletBefore.data.topup_limits.min_cents>=0&&
