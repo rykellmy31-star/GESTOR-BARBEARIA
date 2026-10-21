@@ -123,6 +123,12 @@ try {
   check("Cancelamento libera o atendimento",(await owner("POST",c+`/admin/bookings/${bookingId}/cancel`,{reason:"Validação local"})).status===200);
   check("Atendimento cancelado não pode ser restaurado por status",(await owner("PUT",c+`/admin/bookings/${bookingId}/status`,{status:"confirmado"})).status===409);
   const product=await owner("POST",c+"/admin/products",{name:"Pomada local",price_cents:2500,stock:3});
+  const editStock=await owner("PUT",c+"/admin/products/"+product.data.id,{price_cents:2450,adjust_stock_by:1,stock_reason:"Compra de reposição"});
+  check("Painel edita produto e movimenta estoque com histórico",editStock.status===200&&
+    (await owner("GET",c+"/admin/products")).data.products.find(item=>item.id===product.data.id).stock===4);
+  const stockRevert=await owner("PUT",c+"/admin/products/"+product.data.id,{price_cents:2500,adjust_stock_by:-1,stock_reason:"Ajuste de inventário"});
+  check("Painel corrige estoque e preço com dados atômicos",stockRevert.status===200&&
+    (await owner("GET",c+"/admin/products")).data.products.find(item=>item.id===product.data.id).stock===3);
   const catalogue=await visitor("GET",c+"/products");
   check("Cliente vê produto ativo, preço e estoque no catálogo",product.status===200&&catalogue.status===200&&
     catalogue.data.products.some(item=>item.id===product.data.id&&item.stock===3&&item.price_cents===2500));
@@ -151,6 +157,11 @@ try {
   const unavailable=await visitor("POST",c+"/orders",{name:"Cliente",phone:"5573999992222",items:[{productId:empty.data.id,qty:1}]});
   check("Produto sem estoque aparece na loja mas não aceita pedido",empty.status===200&&unavailable.status===409&&
     (await visitor("GET",c+"/products")).data.products.some(item=>item.id===empty.data.id&&item.stock===0));
+  const removal=await owner("DELETE",c+"/admin/products/"+empty.data.id);
+  const removedFromCatalog=await visitor("GET",c+"/products");
+  check("Painel desativa produto sem apagar estoque histórico",removal.status===200&&
+    !removedFromCatalog.data.products.some(item=>item.id===empty.data.id)&&
+    (await owner("GET",c+"/admin/products")).data.products.some(item=>item.id===empty.data.id&&item.active===0));
   const login=await superadmin("POST","/api/auth/login",{email:superEmail,password:superPassword});
   check("Superadmin local autentica",login.status===200&&login.data.user.platform_role==="superadmin");
   const assisted=await superadmin("POST","/api/super/companies",{name:"Assistida local",slug:"assistida-local",owner_name:"Dono assistido",owner_email:"assisted@local-e2e.test",plan_code:"pro"});

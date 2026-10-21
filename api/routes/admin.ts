@@ -489,17 +489,55 @@ adminRouter.post("/products", async (c) => {
   return json(c, { ok: true, id: pid });
 });
 adminRouter.put("/products/:id", async (c) => {
-  const parsed = productSchema.partial().safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "Dados inválidos", 422);
+  const parsed = productSchema.partial().extend({
+    adjust_stock_by: z.number().int().min(-100000).max(100000).optional(),
+    stock_reason: z.string().trim().min(3).max(120).optional(),
+  }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
   const db = P(c); const id = cid(c);
   const cur = await db.prepare(`SELECT id FROM products WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<{ id: number }>();
   if (!cur) return err(c, "Produto não encontrado", 404);
+  const { adjust_stock_by: delta = 0, stock_reason: reason } = parsed.data;
+  if (delta !== 0 && !reason) return err(c, "Informe o motivo da movimentação de estoque", 422);
   const d = parsed.data as Record<string, unknown>;
   const sets: string[] = []; const binds: (string | number)[] = [];
   for (const k of ["name", "description", "price_cents", "category", "photo"] as const) if (k in d) { sets.push(`${k} = ?`); binds.push(d[k] as string | number); }
   for (const k of ["active", "featured"] as const) if (k in d) { sets.push(`${k} = ?`); binds.push(d[k] ? 1 : 0); }
-  if (sets.length) await db.prepare(`UPDATE products SET ${sets.join(", ")} WHERE id=? AND company_id=?`).bind(...binds, cur.id, id).run();
+  if (delta !== 0) { sets.push("stock = stock + ?"); binds.push(delta); }
+  if (!sets.length) return json(c, { ok: true });
+  const guard = delta !== 0 ? " AND stock + ? BETWEEN 0 AND 100000" : "";
+  const update = db.prepare(`UPDATE products SET ${sets.join(", ")} WHERE id=? AND company_id=?${guard}`)
+    .bind(...binds, cur.id, id, ...(delta !== 0 ? [delta] : []));
+  if (delta === 0) {
+    await update.run();
+  } else {
+    try {
+      // Atualização de preço/dados, estoque e histórico: uma só transação D1.
+      // O INSERT usa changes() para impedir movimentação se o UPDATE falhar.
+      const results = await db.batch([
+        update,
+        db.prepare(`INSERT INTO stock_movements (company_id, product_id, delta, reason, ref, created_at)
+          SELECT ?1,?2,?3,?4,'painel',?5 WHERE changes()=1`)
+          .bind(id, cur.id, delta, reason!, nowIso()),
+      ]);
+      if (results[0].meta.changes !== 1)
+        return err(c, "Estoque insuficiente, acima do limite ou alterado por outra operação", 409);
+    } catch {
+      return err(c, "Não foi possível atualizar o produto e o estoque. Nenhuma movimentação foi aplicada.", 409);
+    }
+  }
   return json(c, { ok: true });
+});
+adminRouter.delete("/products/:id", async (c) => {
+  const db = P(c); const id = cid(c);
+  const productId = await bookingIdParam(c);
+  const exists = await db.prepare("SELECT id FROM products WHERE id=?1 AND company_id=?2")
+    .bind(productId,id).first();
+  if (!exists) return err(c, "Produto não encontrado", 404);
+  // Desativação preserva order_items, ledger e fotos históricas de pedidos.
+  await db.prepare("UPDATE products SET active=0,featured=0 WHERE id=?1 AND company_id=?2")
+    .bind(productId,id).run();
+  return json(c, { ok: true, message: "Produto retirado da vitrine; histórico e estoque preservados." });
 });
 adminRouter.post("/products/:id/stock", async (c) => {
   const parsed = z.object({ delta: z.number().int().min(-100000).max(100000).refine(v=>v!==0), reason: z.string().min(3).max(120).default("Ajuste manual") }).safeParse(await c.req.json().catch(() => null));

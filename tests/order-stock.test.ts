@@ -186,3 +186,47 @@ describe("agendamento público: vínculos dos profissionais e isolamento entre e
     expect(foreign.services.some(s=>s.id===service)).toBe(false);
   });
 });
+
+describe("painel de produtos: movimentações e desativação",()=>{
+  it("edita preço e movimenta estoque uma única vez, com motivo auditável",async()=>{
+    const f=await fixture(5);
+    const r=await f.request(`/admin/products/${f.productId}`,
+      {name:"Pomada premium",price_cents:2799,adjust_stock_by:-2,stock_reason:"Saída por avaria"},"PUT");
+    expect(r.status).toBe(200);
+    expect(await db.prepare("SELECT name,price_cents,stock FROM products WHERE id=?1").bind(f.productId).first())
+      .toEqual({name:"Pomada premium",price_cents:2799,stock:3});
+    expect(await db.prepare("SELECT delta,reason,ref FROM stock_movements WHERE product_id=?1").bind(f.productId).all())
+      .toMatchObject({results:[{delta:-2,reason:"Saída por avaria",ref:"painel"}]});
+  });
+  it("não altera preço nem estoque quando a movimentação excede saldo",async()=>{
+    const f=await fixture(1);
+    const res=await f.request(`/admin/products/${f.productId}`,
+      {name:"Mudança indevida",price_cents:9999,adjust_stock_by:-2,stock_reason:"Avaria comprovada"},"PUT");
+    expect(res.status).toBe(409);
+    expect(await db.prepare("SELECT name,price_cents,stock FROM products WHERE id=?1").bind(f.productId).first())
+      .toEqual({name:"Pomada",price_cents:1999,stock:1});
+    expect(await f.value("SELECT count(*) n FROM stock_movements WHERE company_id=?1")).toBe(0);
+  });
+  it("exige motivo em ajustes e impede alterações em estoque de outra empresa",async()=>{
+    const a=await fixture(),b=await fixture();
+    expect((await a.request(`/admin/products/${a.productId}`,{adjust_stock_by:3},"PUT")).status).toBe(422);
+    expect((await a.request(`/admin/products/${b.productId}`,
+      {adjust_stock_by:3,stock_reason:"Entrada de estoque"},"PUT")).status).toBe(404);
+    expect(await db.prepare("SELECT stock FROM products WHERE id=?1").bind(b.productId).first("stock")).toBe(5);
+  });
+  it("excluir desativa vitrine e preserva pedido, estoque e histórico",async()=>{
+    const a=await fixture(5),b=await fixture(5);
+    const sale=await a.create([{productId:a.productId,qty:2}]);
+    expect(sale.status).toBe(201);
+    const resp=await a.request(`/admin/products/${a.productId}`,{},"DELETE");
+    expect(resp.status).toBe(200);
+    expect(await db.prepare("SELECT active,stock FROM products WHERE id=?1").bind(a.productId).first())
+      .toEqual({active:0,stock:3});
+    const publicCat=await a.get("/products");
+    expect((await publicCat.json() as {products:{id:number}[]}).products.some(p=>p.id===a.productId)).toBe(false);
+    expect(await a.value("SELECT count(*) n FROM orders WHERE company_id=?1")).toBe(1);
+    expect(await a.value("SELECT count(*) n FROM stock_movements WHERE company_id=?1")).toBe(1);
+    expect((await a.request(`/admin/products/${b.productId}`,{},"DELETE")).status).toBe(404);
+    expect(await db.prepare("SELECT active FROM products WHERE id=?1").bind(b.productId).first("active")).toBe(1);
+  });
+});

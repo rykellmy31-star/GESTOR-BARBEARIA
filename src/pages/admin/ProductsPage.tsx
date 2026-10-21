@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Boxes, Pencil, Plus, Sparkle, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { Badge, Button, ConfirmDialog, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, useToast } from "@/components/ui";
 import { ImageUpload } from "@/components/ui/Upload";
 import { money, toCents } from "@/lib/format";
@@ -14,7 +14,7 @@ const CATS = ["cuidados", "finalizacao", "acessorios", "kits", "bebe", "outro"];
 export function ProductsPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const list = useQuery({ queryKey: ["admin-products"], queryFn: () => api.get<any>("/admin/products").then((d) => d.products) });
+  const list = useQuery({ queryKey: ["admin-products", siteBase()], queryFn: () => api.get<any>("/admin/products").then((d) => d.products) });
   const [edit, setEdit] = useState<F | null>(null);
   const [del, setDel] = useState<any | null>(null);
   const [onlyLow, setOnlyLow] = useState(false);
@@ -25,12 +25,12 @@ export function ProductsPage() {
       if (f.adjust_stock_by) { body.adjust_stock_by = f.adjust_stock_by; body.stock_reason = f.stock_reason || "ajuste manual"; }
       return f.id ? api.put(`/admin/products/${f.id}`, body) : api.post("/admin/products", body);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-products"] }); qc.invalidateQueries({ queryKey: ["products"] }); setEdit(null); toast.push("ok", "Produto salvo."); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-products"] }); qc.invalidateQueries({ queryKey: ["tenant", siteBase(), "products"] }); setEdit(null); toast.push("ok", "Produto salvo."); },
     onError: (e: any) => toast.push("err", e.message),
   });
   const remove = useMutation({
     mutationFn: (id: number) => api.del<any>(`/admin/products/${id}`),
-    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["admin-products"] }); setDel(null); toast.push("ok", r?.message || "Removido."); },
+    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["admin-products"] }); qc.invalidateQueries({ queryKey: ["tenant", siteBase(), "products"] }); setDel(null); toast.push("ok", r?.message || "Desativado."); },
     onError: (e: any) => toast.push("err", e.message),
   });
 
@@ -41,7 +41,7 @@ export function ProductsPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="font-display text-2xl text-zinc-50">Produtos & Estoque</h1>
-          <p className="text-xs text-zinc-500">Baixa automática ao registrar pagamento do pedido; estorno ao cancelar.</p>
+          <p className="text-xs text-zinc-500">Reserva de estoque ao criar pedido; registro manual de pagamento e estorno ao cancelar.</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setOnlyLow((v) => !v)} className={clsx("rounded-lg border px-3 py-1.5 text-xs", onlyLow ? "border-amber-500/60 bg-amber-500/10 text-amber-300" : "border-line text-zinc-400")}>
@@ -102,14 +102,14 @@ export function ProductsPage() {
             </div>
             <div>
               <ImageUpload label="Foto do produto" value={edit.photo} onChange={(photo) => setEdit({ ...edit, photo })} />
-              <Button className="mt-4 w-full justify-center" disabled={!edit.name || save.isPending} onClick={() => save.mutate(edit)}>{save.isPending ? "Salvando…" : "Salvar produto"}</Button>
+              <Button className="mt-4 w-full justify-center" disabled={!edit.name || save.isPending || (edit.adjust_stock_by !== 0 && edit.stock + edit.adjust_stock_by < 0)} onClick={() => save.mutate(edit)}>{save.isPending ? "Salvando…" : "Salvar produto"}</Button>
             </div>
           </div>
         </Modal>
       )}
 
       <ConfirmDialog open={Boolean(del)} onCancel={() => setDel(null)} onConfirm={() => del && remove.mutate(del.id)} danger
-        title={`Excluir "${del?.name}"?`} text="Produtos com vendas registradas são desativados (o histórico e o faturamento ficam intactos); os demais são apagados." />
+        title={`Excluir "${del?.name}"?`} text="O produto sairá da vitrine e será desativado. Histórico de vendas e movimentações de estoque serão preservados." />
     </div>
   );
 }
