@@ -9,7 +9,7 @@ import type { Env } from "../types";
 import { err, json, nowIso } from "../lib/utils";
 import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
 import { calendarDaySchema } from "../lib/admin-blocks";
-import { setBookingStatus, cancelBooking, rescheduleBooking } from "../lib/booking";
+import { setBookingStatus, cancelBooking, rescheduleBooking, finishBookingEarly } from "../lib/booking";
 import { todayLocal, addDays, localToUtc } from "../lib/time";
 import { computeDaySlots, type BarberRow } from "../lib/availability";
 import type { ServiceRow } from "../lib/availability";
@@ -51,6 +51,22 @@ barberRouter.put("/bookings/:id/status", async (c) => {
   const res = await setBookingStatus({ env: c.env, db: c.env.DB, companyId: cid(c), settings: s, origin: "barbeiro", user: c.get("user") as never }, id, parsed.data.status);
   if (!res.ok) return err(c, res.message, res.status);
   return json(c, { ok: true });
+});
+
+barberRouter.post("/bookings/:id/finish-early",async c=>{
+ const settings=ctxSettings(c);
+ if(!settings.barber_can_conclude)return err(c,"Conclusão pelo profissional desativada pelo dono.",403);
+ const id=Number(c.req.param("id")),m=me(c);
+ if(!Number.isSafeInteger(id)||id<1)return err(c,"Reserva inválida.",400);
+ const booking=await c.env.DB.prepare("SELECT barber_id FROM bookings WHERE id=?1 AND company_id=?2")
+   .bind(id,cid(c)).first<{barber_id:number}>();
+ if(!booking)return err(c,"Reserva não encontrada.",404);
+ if(booking.barber_id!==m.barber_id)return err(c,"Este atendimento não é seu.",403);
+ const result=await finishBookingEarly({
+   env:c.env,db:c.env.DB,companyId:cid(c),settings,origin:"barbeiro",user:c.get("user") as never
+ },id);
+ if(!result.ok)return err(c,result.message,result.status);
+ return json(c,result);
 });
 
 barberRouter.post("/bookings/:id/cancel", async (c) => {
