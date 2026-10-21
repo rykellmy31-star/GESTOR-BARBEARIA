@@ -126,3 +126,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_STAGING_UPDATE_APPROVED: YES
         run: node scripts/staging-update-ci.mjs
+
+      # Migrações somente no D1 staging existente, após testes locais.
+      # Não publica Worker nem altera D1 de produção.
+      - name: Migrar checkout Pix exclusivamente no D1 staging (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_MIGRATE_BOOKING_STAGING_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_BOOKING_MIGRATION_APPROVED: YES
+        run: node scripts/staging-booking-migrate-ci.mjs
