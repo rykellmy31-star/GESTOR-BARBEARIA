@@ -56,6 +56,13 @@ export function OrdersPage() {
                 </a>
               )}
               <Badge tone={TONE[o.status]}>{o.status}</Badge>
+               <span className="text-xs text-zinc-400">
+                 {o.payment_choice==="pix" ?
+                   o.payment_status==="paid"?"Pix confirmado":
+                   o.payment_status==="refund_required"?"Estorno pendente":
+                   o.payment_status==="pending"?"Aguardando Pix":"Pix não confirmado"
+                   :"Pagamento combinado com a barbearia"}
+               </span>
               <span className="text-xs text-zinc-500">{(o.items ?? []).reduce((sum: number, item: {qty:number}) => sum + item.qty, 0)} unidade(s) · {fmtDateTime(o.created_at)}</span>
               <span className="ml-auto flex items-center gap-3">
                 <span className="font-display text-lg text-[var(--c-gold)]">{money(o.total_cents)}</span>
@@ -74,7 +81,7 @@ export function OrdersPage() {
                 </ul>
                 <div className="flex flex-col gap-2">
                   {(o.notes && <p className="rounded-lg border border-line p-2.5 text-xs text-zinc-400">Obs.: {o.notes}</p>) || null}
-                  {(NEXT[o.status] ?? []).map((a) => (
+                  {(NEXT[o.status] ?? []).filter(a=>!(o.payment_choice==="pix"&&a.to==="pago")).map((a) => (
                     <Button key={a.to} size="sm" variant={a.kind ?? "gold"} disabled={act.isPending} onClick={() => act.mutate({ id: o.id, to: a.to })}>{a.label}</Button>
                   ))}
                   {NEXT[o.status]?.length === 0 && <p className="text-xs text-zinc-500">Pedido finalizado.</p>}
