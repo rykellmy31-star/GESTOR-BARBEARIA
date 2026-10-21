@@ -378,12 +378,20 @@ try{
   await fill('input[placeholder^="ex.: 5000"]',"1250");
   await fill('input[placeholder^="Justificativa"]',"Teste isolado de auditoria de créditos");
   await click("Aplicar");
-  await until("carteira atualizada no painel",
-    'document.body.innerText.includes("12,50")');
+  await pause(700);
   const walletAdjusted=await js('fetch("/api/super/wallets/'+newlyCreated.id+
     '").then(r=>r.json())');
+  const adjustmentScreen=await js('(()=>({main:document.querySelector("main")?.innerText.slice(0,1000),'+
+    'value:document.querySelector("input[placeholder^=\\\"ex.: 5000\\\"]")?.value,'+
+    'alerts:document.body.innerText.slice(-350)}))()');
+  console.log("Diagnóstico local de ajuste financeiro:",JSON.stringify({
+    balance:walletAdjusted.wallet?.balance_cents,transactions:walletAdjusted.transactions?.length,
+    screen:adjustmentScreen
+  }));
   assert.equal(walletAdjusted.wallet.balance_cents,1250,
     "Ajuste manual deve registrar exatamente 1.250 centavos na carteira D1");
+  await until("carteira atualizada no painel",
+    'document.body.innerText.includes("12,50")');
   assert.ok(walletAdjusted.transactions.some(x=>Number(x.amount_cents)===1250),
     "Ajuste deve criar lançamento de auditoria financeira");
   pass("Superadmin faz ajuste financeiro auditável apenas na carteira local");
