@@ -129,3 +129,7 @@ A bateria autenticada identificou um HTTP 500 ao cadastrar a primeira barbearia 
 ## Reteste remoto após atualização do Worker e do D1 Rate Limit
 
 A nova versão do Worker `tigu-staging` foi publicada no Actions run `39650984613` sem recriar D1/R2 nem modificar segredos. Este commit reexecuta a bateria autenticada fictícia seguida dos ensaios de recuperação D1/R2, com gating seguro. Cada etapa deverá ser comprovada nos logs. A fonte original e a produção não devem ser alteradas.
+
+## Diagnóstico controlado do HTTP 500 no cadastro de staging
+
+O cadastro remoto segue retornando HTTP 500 mesmo depois do ajuste de D1 `run()` e da atualização do Worker. Para não adivinhar outra causa, há um workflow exclusivo de diagnóstico que inicia uma sessão temporária `wrangler tail` para `tigu-staging`, envia **somente um cadastro fictício** com email `example.test`, captura unicamente mensagens de exceção e erro da rota `/api/auth/register`, redige emails, telefones e tokens, e encerra o tail sem armazenar dados em artifact. O disparo exige commit com mensagem `TIGU_DIAGNOSE_SIGNUP_ONCE` na branch de auditoria. Logs indisponíveis ou permissão de tail insuficiente exigem outro diagnóstico antes de declarar correção.
