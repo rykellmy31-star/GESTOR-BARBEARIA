@@ -278,6 +278,10 @@ try {
   check("Cron manual rejeita empresa inválida sem processar fila global",
     invalidTenant.every(x=>x.status===400));
   // Homologação financeira direta via Worker+D1, não apenas testes unitários.
+  const walletBefore=await owner("GET",c+"/admin/wallet");
+  check("Carteira mostra os limites reais de recarga do Superadmin",
+    walletBefore.status===200&&walletBefore.data.topup_limits.min_cents>=0&&
+    walletBefore.data.topup_limits.max_cents>=walletBefore.data.topup_limits.min_cents);
   const financeInitial=await superadmin("GET","/api/super/settings");
   const pricing=financeInitial.data.settings;
   check("Superadmin lê os limites financeiros da plataforma",
@@ -292,6 +296,10 @@ try {
   const badCeiling=await superadmin("PUT","/api/super/settings",{key:"topup_max_cents",value:pricing.topup_min_cents-1});
   check("HTTP recusa recarga máxima menor que mínima",badCeiling.status===422);
   const goodAttempts=await superadmin("PUT","/api/super/settings",{key:"msg_max_attempts",value:4});
+  const walletAfter=await owner("GET",c+"/admin/wallet");
+  check("Alterações dos limites financeiros aparecem imediatamente na carteira",
+    walletAfter.status===200&&walletAfter.data.topup_limits.min_cents===pricing.topup_min_cents&&
+    walletAfter.data.topup_limits.max_cents===pricing.topup_max_cents);
   const financeUpdated=await superadmin("GET","/api/super/settings");
   check("HTTP aceita ajuste válido e grava no D1",goodAttempts.status===200 &&
     financeUpdated.status===200 && financeUpdated.data.settings.msg_max_attempts===4);

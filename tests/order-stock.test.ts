@@ -268,3 +268,28 @@ describe("painel de barbeiros: horários e vínculos dos serviços",()=>{
     expect(cleared?.service_ids).toEqual([]);
   });
 });
+
+
+describe("carteira: recargas seguem limites configurados no Superadmin",()=>{
+  it("retorna limites do D1 e rejeita valores fora da faixa antes do gateway",async()=>{
+    const f=await fixture();
+    const previous=await db.prepare("SELECT key,value FROM platform_settings WHERE key IN ('topup_min_cents','topup_max_cents')").all<{key:string;value:string}>();
+    const original=new Map(previous.results.map(r=>[r.key,r.value]));
+    try {
+      await db.batch([
+        db.prepare("INSERT INTO platform_settings(key,value) VALUES ('topup_min_cents','3500') ON CONFLICT(key) DO UPDATE SET value=excluded.value"),
+        db.prepare("INSERT INTO platform_settings(key,value) VALUES ('topup_max_cents','90000') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+      ]);
+      const response=await f.get("/admin/wallet");
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({topup_limits:{min_cents:3500,max_cents:90000}});
+      expect((await f.request("/admin/wallet/topup",{amount_cents:3499})).status).toBe(422);
+      expect((await f.request("/admin/wallet/topup",{amount_cents:90001})).status).toBe(422);
+    } finally {
+      for (const key of ["topup_min_cents","topup_max_cents"]) {
+        if (original.has(key)) await db.prepare("UPDATE platform_settings SET value=?1 WHERE key=?2").bind(original.get(key),key).run();
+        else await db.prepare("DELETE FROM platform_settings WHERE key=?1").bind(key).run();
+      }
+    }
+  });
+});

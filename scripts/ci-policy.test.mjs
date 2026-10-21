@@ -82,3 +82,14 @@ test("Painel Equipe interpreta dias já normalizados e mantém serviços vincula
   assert.match(route, /WHERE b\.company_id=\?1/);
   assert.match(route, /work_days: safeArr/);
 });
+
+
+test("Valor personalizado é o mesmo enviado à API, sem cobranças quando gateway estiver ausente",()=>{
+  const src=readFileSync(new URL("../src/pages/admin/WalletPage.tsx",import.meta.url),"utf8");
+  assert.match(src,/create\.mutate\(selected\)/);
+  assert.match(src,/amount_cents: cents/);
+  assert.match(src,/parseTopupAmountCents\(custom\)/);
+  assert.match(src,/!d\.payments_available \|\| create\.isPending/);
+  assert.match(src,/topup_limits/);
+  assert.doesNotMatch(src,/amount_cents: amount/);
+});
