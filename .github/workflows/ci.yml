@@ -44,3 +44,12 @@ jobs:
         env:
           STAGING_URL: ${{ vars.TIGU_STAGING_URL }}
         run: node scripts/staging-smoke.mjs
+      # Apenas leitura de metadados, depois dos testes locais e somente na
+      # branch de auditoria; o token fica em Repository secrets do TIGU.
+      # Sem Account ID configurado, nao faz qualquer chamada Cloudflare.
+      - name: Diagnosticar acesso Cloudflare por token (se configurado)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && vars.CLOUDFLARE_ACCOUNT_ID != '' }}
+        env:
+          CLOUDFLARE_AUDIT_TOKEN: ${{ secrets.CLOUDFLARE_AUDIT_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/cloudflare-audit.mjs
