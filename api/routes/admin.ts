@@ -333,8 +333,22 @@ adminRouter.post("/block-requests/:id/resolve", async (c) => {
 const barberSchema = z.object({ name: z.string().min(2).max(80), specialty: z.string().max(80).default(""), bio: z.string().max(500).default(""), photo: z.string().max(500).default(""), ...barberScheduleFields, active: z.boolean().default(true), service_ids: z.array(z.number().int().positive()).default([]) });
 
 adminRouter.get("/barbers", async (c) => {
-  const { results } = await P(c).prepare(`SELECT * FROM barbers WHERE company_id=?1 ORDER BY sort, name`).bind(cid(c)).all();
-  return json(c, { barbers: results.map((b: Record<string, unknown>) => ({ ...b, work_days: safeArr(String(b.work_days)) })) });
+  const db = P(c); const companyId = cid(c);
+  const { results } = await db.prepare(`SELECT * FROM barbers WHERE company_id=?1 ORDER BY sort, name`).bind(companyId).all();
+  // O editor da equipe precisa receber os serviços já vinculados ao barbeiro.
+  // Sem service_ids, salvar uma simples edição de nome apaga os vínculos.
+  const { results: links } = await db.prepare(`SELECT sb.barber_id, sb.service_id
+    FROM service_barbers sb JOIN barbers b ON b.id=sb.barber_id
+    JOIN services s ON s.id=sb.service_id AND s.company_id=b.company_id
+    WHERE b.company_id=?1 ORDER BY sb.barber_id, sb.service_id`).bind(companyId)
+    .all<{ barber_id: number; service_id: number }>();
+  const byBarber = new Map<number, number[]>();
+  for (const link of links)
+    byBarber.set(link.barber_id, [...(byBarber.get(link.barber_id) ?? []), link.service_id]);
+  return json(c, { barbers: results.map((b: Record<string, unknown>) => ({
+    ...b, work_days: safeArr(String(b.work_days)),
+    service_ids: byBarber.get(Number(b.id)) ?? [],
+  })) });
 });
 adminRouter.post("/barbers", async (c) => {
   const parsed = barberSchema.safeParse(await c.req.json().catch(() => null));

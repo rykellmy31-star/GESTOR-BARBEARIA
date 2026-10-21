@@ -79,13 +79,24 @@ try {
   const bid=barber.data.id;
   const service=await owner("POST",c+"/admin/services",{name:"Corte local",price_cents:1999,duration_min:30,barber_ids:[bid]});
   check("Profissional e serviço vinculados",barber.status===200&&service.status===200);
+  const barberFromPanel=(await owner("GET",c+"/admin/barbers")).data.barbers.find(item=>item.id===bid);
+  check("Painel Equipe recebe dias válidos e serviços vinculados",
+    Array.isArray(barberFromPanel?.work_days)&&barberFromPanel.work_days.length===7&&
+    Array.isArray(barberFromPanel.service_ids)&&barberFromPanel.service_ids.includes(service.data.id));
+  const editBarber=await owner("PUT",c+"/admin/barbers/"+bid,{
+    name:"Barbeiro local atualizado",work_days:barberFromPanel.work_days,
+    service_ids:barberFromPanel.service_ids
+  });
+  const barberAfterEdit=(await owner("GET",c+"/admin/barbers")).data.barbers.find(item=>item.id===bid);
+  check("Editar profissional não apaga serviços da agenda",
+    editBarber.status===200&&barberAfterEdit.service_ids.includes(service.data.id));
   const publicServices=await visitor("GET",c+"/services");
   check("Agendamento lista profissionais associados ao serviço público",
     publicServices.status===200&&publicServices.data.services.some(item=>
       item.id===service.data.id&&Array.isArray(item.barber_ids)&&item.barber_ids.includes(bid)));
   const publicBarber=await visitor("GET",c+"/barbers/"+bid);
   check("Perfil público do profissional carrega antes da confirmação",
-    publicBarber.status===200&&publicBarber.data.barber.id===bid&&publicBarber.data.barber.name==="Barbeiro local");
+    publicBarber.status===200&&publicBarber.data.barber.id===bid&&publicBarber.data.barber.name==="Barbeiro local atualizado");
   const otherSlug=second.data.company.slug;
   check("Outra empresa não consegue acessar perfil do profissional",
     (await visitor("GET","/api/c/"+otherSlug+"/barbers/"+bid)).status===404);

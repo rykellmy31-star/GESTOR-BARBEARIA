@@ -70,3 +70,15 @@ test("Cliente: remarcação seleciona dia e pesquisa protocolo sem expor telefon
   assert.match(src, /slotsLoading \? <Spinner/);
   assert.match(src, /Sem horários disponíveis nessa data/);
 });
+
+
+test("Painel Equipe interpreta dias já normalizados e mantém serviços vinculados", () => {
+  const frontend = readFileSync(new URL("../src/pages/admin/BarbersPage.tsx", import.meta.url), "utf8");
+  const backend = readFileSync(new URL("../api/routes/admin.ts", import.meta.url), "utf8");
+  assert.match(frontend, /Array\.isArray\(b\.work_days\)/);
+  assert.doesNotMatch(frontend, /JSON\.parse\(b\.work_days/);
+  const route = backend.split('adminRouter.get("/barbers"')[1]?.split('adminRouter.post("/barbers"')[0] ?? "";
+  assert.match(route, /service_ids: byBarber\.get\(Number\(b\.id\)\)/);
+  assert.match(route, /WHERE b\.company_id=\?1/);
+  assert.match(route, /work_days: safeArr/);
+});

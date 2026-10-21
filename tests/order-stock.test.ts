@@ -230,3 +230,41 @@ describe("painel de produtos: movimentações e desativação",()=>{
     expect(await db.prepare("SELECT active FROM products WHERE id=?1").bind(b.productId).first("active")).toBe(1);
   });
 });
+
+describe("painel de barbeiros: horários e vínculos dos serviços",()=>{
+  it("retorna dias como lista, mostra serviços associados e preserva-os ao editar nome",async()=>{
+    const own=await fixture(), other=await fixture();
+    const barberId=Number((await db.prepare("INSERT INTO barbers(company_id,slug,name,work_days) VALUES (?1,'editor','Profissional','[1,3,5]')").bind(own.companyId).run()).meta.last_row_id);
+    const serviceId=Number((await db.prepare("INSERT INTO services(company_id,slug,name,price_cents,duration_min) VALUES (?1,'corte-editor','Corte',3000,30)").bind(own.companyId).run()).meta.last_row_id);
+    const foreignService=Number((await db.prepare("INSERT INTO services(company_id,slug,name,price_cents,duration_min) VALUES (?1,'outro-corte','Outro Corte',2200,30)").bind(other.companyId).run()).meta.last_row_id);
+    await db.prepare("INSERT INTO service_barbers(service_id,barber_id) VALUES (?1,?2)").bind(serviceId,barberId).run();
+    const response=await own.get("/admin/barbers");
+    expect(response.status).toBe(200);
+    const list=(await response.json() as {barbers:{id:number;work_days:number[];service_ids:number[]}[]}).barbers;
+    const editor=list.find(b=>b.id===barberId);
+    expect(editor).toMatchObject({work_days:[1,3,5],service_ids:[serviceId]});
+    expect(editor?.service_ids).not.toContain(foreignService);
+    const updated=await own.request(`/admin/barbers/${barberId}`,
+      {name:"Profissional atualizado",work_days:editor!.work_days,service_ids:editor!.service_ids},"PUT");
+    expect(updated.status).toBe(200);
+    expect(await db.prepare("SELECT service_id FROM service_barbers WHERE barber_id=?1").bind(barberId).first("service_id")).toBe(serviceId);
+    expect(await db.prepare("SELECT name,work_days FROM barbers WHERE id=?1").bind(barberId).first())
+      .toEqual({name:"Profissional atualizado",work_days:"[1,3,5]"});
+    expect((await other.get("/admin/barbers")).status).toBe(200);
+    const foreign=(await (await other.get("/admin/barbers")).json() as {barbers:{id:number}[]}).barbers;
+    expect(foreign.some(b=>b.id===barberId)).toBe(false);
+  });
+  it("editar serviços pela tela reflete no GET e não mostra vínculos cruzados",async()=>{
+    const f=await fixture();
+    const barberId=Number((await db.prepare("INSERT INTO barbers(company_id,slug,name) VALUES (?1,'sem-servico','Sem serviço')").bind(f.companyId).run()).meta.last_row_id);
+    const serviceId=Number((await db.prepare("INSERT INTO services(company_id,slug,name,price_cents,duration_min) VALUES (?1,'ligar','Serviço',3000,30)").bind(f.companyId).run()).meta.last_row_id);
+    const first=(await (await f.get("/admin/barbers")).json() as {barbers:{id:number;service_ids:number[]}[]}).barbers.find(b=>b.id===barberId);
+    expect(first?.service_ids).toEqual([]);
+    expect((await f.request(`/admin/barbers/${barberId}`,{service_ids:[serviceId]},"PUT")).status).toBe(200);
+    const linked=(await (await f.get("/admin/barbers")).json() as {barbers:{id:number;service_ids:number[]}[]}).barbers.find(b=>b.id===barberId);
+    expect(linked?.service_ids).toEqual([serviceId]);
+    expect((await f.request(`/admin/barbers/${barberId}`,{service_ids:[]},"PUT")).status).toBe(200);
+    const cleared=(await (await f.get("/admin/barbers")).json() as {barbers:{id:number;service_ids:number[]}[]}).barbers.find(b=>b.id===barberId);
+    expect(cleared?.service_ids).toEqual([]);
+  });
+});

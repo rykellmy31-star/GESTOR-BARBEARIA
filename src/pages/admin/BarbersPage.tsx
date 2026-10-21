@@ -49,7 +49,7 @@ export function BarbersPage() {
       {list.isLoading && <Spinner />}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {(list.data ?? []).map((b: any) => {
-          const days = JSON.parse(b.work_days || "[]");
+          const days: number[] = Array.isArray(b.work_days) ? b.work_days : [];
           return (
             <article key={b.id} className={clsx("card-luxe rounded-2xl border border-line bg-panel p-4", !b.active && "opacity-60")}>
               <div className="flex gap-3">
