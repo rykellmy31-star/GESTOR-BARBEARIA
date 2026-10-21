@@ -111,15 +111,28 @@ try {
   check("Disponibilidade pública contém horários reais",availability.status===200&&free.length>=3);
   const booking=await visitor("POST",c+"/bookings",{barberId:bid,serviceId:service.data.id,startsAt:free[0].t,name:"Cliente local",phone:"5573999990000",consent:true,whatsappOptin:false,idempotencyKey:randomBytes(16).toString("hex")});
   check("Agendamento público confirmado na API",booking.status===201&&booking.data.booking.id>0);
-  const bookingLookup=await visitor("GET",c+"/bookings/lookup?code="+encodeURIComponent(booking.data.booking.code)+"&phone=5573999990000");
+  const bookingLookup=await visitor("POST",c+"/bookings/lookup",{code:booking.data.booking.code,phone:"5573999990000"});
   check("Cliente encontra reserva com IDs de serviço e barbeiro para remarcar",
     bookingLookup.status===200&&bookingLookup.data.bookings[0]?.service_id===service.data.id&&
     bookingLookup.data.bookings[0]?.barber_id===bid);
   check("Consulta de reserva não vaza para outra barbearia",
-    (await visitor("GET","/api/c/"+otherSlug+"/bookings/lookup?code="+encodeURIComponent(booking.data.booking.code)+"&phone=5573999990000")).status===404);
+    (await visitor("POST","/api/c/"+otherSlug+"/bookings/lookup",{code:booking.data.booking.code,phone:"5573999990000"})).status===404);
   const bookingId=booking.data.booking.id;
   const moved=await owner("POST",c+`/admin/bookings/${bookingId}/reschedule`,{startsAt:free[2].t});
   check("Remarcação aplica versão e slots novos",moved.status===200);
+  const laterDay=new Date(Date.now()+4*86400000).toISOString().slice(0,10);
+  const laterSlots=await visitor("GET",c+`/availability?barberId=${bid}&serviceId=${service.data.id}&day=${laterDay}`);
+  const laterFree=laterSlots.data.slots?.filter(slot=>slot.available) ?? [];
+  check("Cliente consulta opções de remarcação em outro dia",laterSlots.status===200&&laterFree.length>0);
+  const changedByClient=await visitor("POST",c+"/bookings/reschedule",{
+    code:booking.data.booking.code,phone:"5573999990000",startsAt:laterFree[0].t
+  });
+  const afterClient=await visitor("POST",c+"/bookings/lookup",{code:booking.data.booking.code,phone:"5573999990000"});
+  check("Cliente remarca para outro dia e consulta o horário novo",
+    changedByClient.status===200&&afterClient.status===200&&
+    afterClient.data.bookings[0]?.starts_at===laterFree[0].t);
+  check("Protocolo com telefone incorreto não revela a reserva",
+    (await visitor("POST",c+"/bookings/lookup",{code:booking.data.booking.code,phone:"5573999993333"})).status===404);
   check("Cancelamento libera o atendimento",(await owner("POST",c+`/admin/bookings/${bookingId}/cancel`,{reason:"Validação local"})).status===200);
   check("Atendimento cancelado não pode ser restaurado por status",(await owner("PUT",c+`/admin/bookings/${bookingId}/status`,{status:"confirmado"})).status===409);
   const product=await owner("POST",c+"/admin/products",{name:"Pomada local",price_cents:2500,stock:3});
