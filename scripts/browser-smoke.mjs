@@ -192,8 +192,9 @@ try{
   await click("Confirmar agendamento");
   await until("reserva confirmada",'document.body.innerText.includes("Seu horário está garantido")');
   pass("visitante agenda serviço e profissional pela interface real");
-  const bookingCode=await js('(()=>{const t=document.body.innerText;'+
-    'return t.match(/Protocolo\s+([A-Z0-9-]+)/)?.[1]||""})()');
+  const bookingCode=await js('(()=>{const item=[...document.querySelectorAll("b")]'+
+    '.find(el=>el.parentElement?.textContent?.includes("Protocolo"));'+
+    'return item?.textContent?.trim()||""})()');
   assert.ok(bookingCode,"Protocolo não foi mostrado na confirmação");
   const schedule=await api(base,"/api/c/"+slug+"/admin/agenda?view=day&date="+bookingDay,"GET",undefined,signup.cookie);
   assert.equal(schedule.status,200,"API do painel recebe a reserva do Chromium");
