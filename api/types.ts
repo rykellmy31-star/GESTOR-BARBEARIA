@@ -34,7 +34,7 @@ export interface Env {
   WHATSAPP_MOCK?: string;
 
   // ── Pagamentos (Pix) ──
-  BOOKING_PIX_ENABLED?: string; // só ativar após aprovar recebedor, repasses e estornos de cada barbearia
+  MERCHANT_PIX_ENABLED?: string; // kill-switch de checkout por conta própria da barbearia (não afeta assinatura/recarga)
   MP_ACCESS_TOKEN?: string; // produção ou sandbox (deixe consistente com o ambiente)
   MP_WEBHOOK_SECRET?: string; // validação x-signature
   PAYMENTS_MOCK?: string; // '1' habilita provedor mock (dev/testes)
