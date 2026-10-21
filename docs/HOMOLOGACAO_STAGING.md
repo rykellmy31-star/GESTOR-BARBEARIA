@@ -90,6 +90,12 @@ Nos próximos **pushes à branch `audit/tigu-primeira-validacao`**, após os tes
 
 **Importante:** resultado verde com a etapa ignorada não confirma a homologação online. Mesmo com ela aprovada, testes autenticados com contas fictícias, backup/restauração e integrações de pagamento/WhatsApp ainda exigem validação específica.
 
+## Teste automatizado de recuperação de backup local
+
+O comando `npm run validate` executa também testes de **cópia e restauração de SQLite fictício** (`scripts/migrations-smoke.node.test.mjs`). O teste aplica as 17 migrações, cria dados de duas empresas, inclui carteira, ledger, recarga Pix paga, assinatura, webhook e pedido, faz um snapshot com `VACUUM INTO` e o reabre. Verifica integridade SQLite, referências entre tabelas, idempotência financeira, separação entre empresas, registros históricos e SHA-256 do arquivo. Um arquivo truncado também é rejeitado.
+
+**Limite importante:** isso demonstra somente a recuperabilidade de um banco **local e descartável**. Não cria nem verifica backups reais do Cloudflare D1 e **não cobre objetos R2**. Antes de comercializar, é obrigatório executar uma recuperação controlada de exportação D1 e de objetos R2 em recursos isolados de homologação, sem substituir dados de produção.
+
 ## Próximos trabalhos pendentes
 
 - Fazer a implantação assistida com IDs de recursos **sem compartilhar senhas ou tokens neste chat**.
