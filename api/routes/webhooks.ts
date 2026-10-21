@@ -11,6 +11,7 @@ import { ingestWhatsappWebhook } from "../lib/messaging/jobs";
 import { verifyWebhookSignature } from "../lib/messaging/provider";
 import { verifyMpWebhookSignature, paymentWebhookUid } from "../lib/payments";
 import { confirmTopupFromProvider } from "../lib/topup";
+import { confirmBookingPix } from "../lib/booking-payments";
 import { confirmSubscriptionPix } from "../lib/subscription-billing";
 import { nowIso } from "../lib/utils";
 
@@ -86,7 +87,8 @@ webhooksRouter.post("/mercadopago", async (c) => {
       // Recarga de créditos e assinatura usam o mesmo endpoint, mas
       // registros e efeitos são inteiramente separados por payment_id.
       const topup = await confirmTopupFromProvider(c.env,dataId,"webhook");
-      const result = topup.ok ? topup : await confirmSubscriptionPix(c.env,dataId);
+      const subscription = topup.ok ? null : await confirmSubscriptionPix(c.env,dataId);
+      const result = topup.ok ? topup : subscription?.ok ? subscription : await confirmBookingPix(c.env,dataId);
       if(result.ok && result.status==="paid") {
         await db.prepare("UPDATE payment_webhook_events SET processed=1 WHERE event_uid=?1")
           .bind(uid).run();
