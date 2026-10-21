@@ -429,6 +429,8 @@ adminRouter.put("/barbers/:id", async (c) => {
 adminRouter.delete("/barbers/:id", async (c) => {
   const db = P(c); const id = cid(c);
   const bid = await bookingIdParam(c);
+  const exists = await db.prepare("SELECT id FROM barbers WHERE id=?1 AND company_id=?2").bind(bid,id).first();
+  if (!exists) return err(c, "Barbeiro não encontrado", 404);
   const future = await db.prepare(`SELECT COUNT(*) n FROM bookings WHERE company_id=?1 AND barber_id=?2 AND status IN ('pendente','confirmado') AND starts_at > ?3`).bind(id, bid, new Date().toISOString()).first<{ n: number }>();
   if ((future?.n ?? 0) > 0) return err(c, "Há agendamentos futuros com este barbeiro — remarque-os antes de remover.", 409);
   await db.prepare(`UPDATE barbers SET active = 0 WHERE id = ?1 AND company_id = ?2`).bind(bid, id).run();
