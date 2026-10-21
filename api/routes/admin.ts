@@ -1110,8 +1110,10 @@ adminRouter.post("/upload", async (c) => {
 
 // ── compat/extra do painel (aliases PATCH + audit + detalhe cliente + blocks + credentials + demo) ──
 adminRouter.get("/audit", async (c) => {
-  const limit = Math.min(100, Number(c.req.query("limit") || 25));
-  const { results } = await P(c).prepare(`SELECT * FROM audit_log WHERE company_id=?1 ORDER BY id DESC LIMIT ${limit}`).bind(cid(c)).all();
+  const requested = Number(c.req.query("limit") || 25);
+  const limit = Number.isSafeInteger(requested) ? Math.max(1, Math.min(100, requested)) : 25;
+  const { results } = await P(c).prepare("SELECT * FROM audit_log WHERE company_id=?1 ORDER BY id DESC LIMIT ?2")
+    .bind(cid(c), limit).all();
   return json(c, { log: results });
 });
 
