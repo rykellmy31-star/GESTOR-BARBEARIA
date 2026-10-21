@@ -127,6 +127,33 @@ try {
   const uid=login.data.user.id;
   check("Último Superadmin não pode ser desativado",(await superadmin("PUT",`/api/super/users/${uid}`,{active:false})).status===409);
   check("Usuário comum não acessa o Superadmin",(await owner("GET","/api/super/overview")).status===403);
+
+  // Testa historico além do limite inicial em uma base D1 local descartável.
+  const historySql = "WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM seq WHERE i<205) " +
+    "INSERT INTO message_jobs(company_id,to_phone,template_code,scheduled_at,fire_deadline,status,idempotency_key,last_error) " +
+    "SELECT (SELECT id FROM companies WHERE slug="+q(slug)+"),'5573999990000','manual'," +
+    "'2026-01-01T00:00:00Z','2026-01-02T00:00:00Z','failed','e2e-history-'+i," +
+    "CASE WHEN i=1 THEN '[CONFLITO META: falha divergente]' ELSE '' END FROM seq";
+  wrangler(["d1","execute","tigu-local-e2e-db","--command",historySql]);
+  const firstPage = await superadmin("GET","/api/super/messages");
+  check("Fila global informa cursor após 100 mensagens",
+    firstPage.status===200 && firstPage.data.jobs.length===100 &&
+    Number.isSafeInteger(firstPage.data.next_before_id));
+  const secondPage = await superadmin("GET","/api/super/messages?beforeId="+firstPage.data.next_before_id);
+  check("Página seguinte entrega 100 mensagens sem duplicação",
+    secondPage.status===200 && secondPage.data.jobs.length===100 &&
+    !secondPage.data.jobs.some(x=>firstPage.data.jobs.some(y=>y.id===x.id)));
+  const thirdPage = await superadmin("GET","/api/super/messages?beforeId="+secondPage.data.next_before_id);
+  check("Fila permite percorrer registros além dos primeiros 200",
+    thirdPage.status===200 && thirdPage.data.jobs.length>=5);
+  const conflictPage = await superadmin("GET","/api/super/messages?status=conflict");
+  check("Conflito antigo encontrado por filtro na API",
+    conflictPage.status===200 && conflictPage.data.jobs.some(x=>x.last_error?.includes("[CONFLITO META:")));
+  check("Cursor inválido é rejeitado",(await superadmin("GET","/api/super/messages?beforeId=-1")).status===400);
+  const invalidTenant = await Promise.all(["0","NaN","9007199254740992"].map(value=>
+    superadmin("POST","/api/super/messages/run-cron?companyId="+value,{})));
+  check("Cron manual rejeita empresa inválida sem processar fila global",
+    invalidTenant.every(x=>x.status===400));
   console.log(`\n${checks} verificações HTTP locais aprovadas. Nenhum deploy, pagamento ou envio real.`);
 } catch(error) {
   console.error(error.message);process.exitCode=1;
