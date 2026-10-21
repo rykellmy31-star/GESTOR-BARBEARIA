@@ -45,3 +45,15 @@ Quando o operador informar que finalizou a variável `CLOUDFLARE_ACCOUNT_ID` e o
 ## Reteste autorizado após correção do Account ID — 21/10/2026
 
 O proprietário informou que ajustou `CLOUDFLARE_ACCOUNT_ID` no GitHub do TIGU. Este commit dispara novamente o workflow de `push` na branch de auditoria, para confirmar que a etapa `Diagnosticar acesso Cloudflare por token (se configurado)` lê o ID atualizado e realiza exclusivamente consultas GET. O status real deverá ser conferido no log do run correspondente; nenhuma publicação ou modificação Cloudflare faz parte desse teste.
+
+## Provisionamento remoto autorizado — D1 e R2 de homologação
+
+Com o Secret `CLOUDFLARE_STAGING_TOKEN` já cadastrado no repositório TIGU e o Account ID validado, foi acrescentada uma rotina de criação restrita, testada localmente em simulações, sem alterar produção:
+
+- Verifica se o token está ativo e se os nomes `tigu-staging-db` e `tigu-staging-media` já existem na conta; não sobrescreve objetos já encontrados.
+- Quando acionada na modalidade `create`, usa exclusivamente `POST /accounts/<conta>/d1/database` com nome fixo `tigu-staging-db` e `POST /accounts/<conta>/r2/buckets` com nome fixo `tigu-staging-media`.
+- Confere a presença de ambos em nova consulta; não publica Worker nem manipula SQL, arquivos de clientes, DNS ou produção.
+- A execução de criação por Actions só ocorre no `push` da branch `audit/tigu-primeira-validacao` com mensagem de commit **exatamente** `TIGU_PROVISION_STAGING_ONCE`. Em todos os outros pushes e PRs o passo é ignorado. O gate de ambiente `TIGU_STAGING_CREATE_APPROVED=YES` é exigido pelo script.
+- `node scripts/staging-provision.mjs check` faz apenas consultas GET. Depois da criação, o deploy do Worker depende de configurações de secrets e migrações próprias e deve ser validado separadamente.
+
+Permissões `D1 Edit` e `Workers R2 Storage Edit` têm alcance à conta selecionada pela Cloudflare e **não garantem isolamento por recurso**. Os bloqueios desse script reduzem o risco de alterações indevidas, mas não restringem o próprio token. Se o ambiente de produção estiver na mesma conta, o risco residual permanece até restringir ou revogar o token de escrita. Recursos novos podem gerar cobranças conforme o plano Cloudflare.
