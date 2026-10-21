@@ -151,7 +151,9 @@ try{
   pass("estoque aparece no painel");
   await go(base+"/c/"+slug+"/admin/carteira");
   await until("carteira",'document.body.innerText.includes("Carteira de créditos")');
-  pass("Pix real bloqueado no ambiente local",await js('(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("via Pix"));return !!b&&b.disabled})()'));
+  await until("Pix real bloqueado no ambiente local",
+    '(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("via Pix"));return !!b&&b.disabled})()');
+  pass("Pix real bloqueado no ambiente local");
 
   // Reserva criada de verdade pela interface do visitante.
   await go(base+"/c/"+slug+"/agendar");
