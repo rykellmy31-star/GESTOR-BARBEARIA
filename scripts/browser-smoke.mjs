@@ -514,6 +514,22 @@ try{
     'document.querySelector(".modal-backdrop")?.innerText.includes("HISTÓRICO")&&'+
     'document.querySelector(".modal-backdrop")?.innerText.includes("Corte Navegador")');
   pass("cliente abre histórico e indicadores corretos no painel");
+  await click("Anonimizar dados");
+  await until("confirmação LGPD",'document.body.innerText.includes("Anonimizar este cliente?")');
+  await click("Confirmar");
+  await until("cliente anonimizado no painel",
+    'document.body.innerText.includes("Cliente anonimizado")&&document.querySelector(".modal-backdrop")===null');
+  const anonymized=await api(base,"/api/c/"+slug+"/admin/customers/"+customer.id,
+    "GET",undefined,signup.cookie);
+  assert.equal(anonymized.status,200);
+  assert.equal(anonymized.data.customer.name,"Cliente anonimizado");
+  assert.ok(anonymized.data.customer.phone.startsWith("anon-") &&
+    anonymized.data.customer.anonymized_at,"Contato deve deixar de conter telefone real");
+  assert.equal(anonymized.data.bookings[0].status,"cancelado");
+  const oldLookup=await api(base,"/api/c/"+slug+"/bookings/lookup","POST",
+    {code:bookingCode,phone:"73999991111"});
+  assert.equal(oldLookup.status,404,"Protocolo antigo e telefone original não podem revelar dados anonimizados");
+  pass("dono anonimiza cliente pelo painel sem perder histórico e revoga consulta pelo telefone antigo");
   // Exercita gerenciamento de membros pela interface, incluindo revogação e restauração.
   await go(base+"/c/"+slug+"/admin/equipe");
   await until("painel de equipe carregado",'document.body.innerText.includes("Equipe & acessos")');
@@ -659,7 +675,7 @@ try{
   await until("tabela de precificação",
     'document.body.innerText.includes("Precificação de mensagens")');
   pass("Superadmin consulta precificação vigente");
-  console.log("49 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
+  console.log("50 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){
