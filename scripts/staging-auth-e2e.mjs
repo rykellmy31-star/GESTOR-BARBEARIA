@@ -55,7 +55,7 @@ export async function authenticatedStagingChecks({ url,fetcher=fetch,makeBytes=n
   const register=async creds=>response("POST","/api/auth/register",{...creds,name:"Pessoa Fictícia",password:pw,phone:"",city:""});
   // Já verificamos que somente nosso staging está recebendo POST.
   const first=await register(creds[0]);
-  pass("Cadastro público cria a primeira barbearia fictícia",first.status===201&&!!first.data?.company?.slug,"HTTP "+first.status+" "+String(first.data?.error||"").slice(0,120)+" [fase "+String(first.data?.staging_diagnostic?.step||"indefinida").slice(0,50)+", tipo "+String(first.data?.staging_diagnostic?.kind||"indefinido").slice(0,20)+"]");
+  pass("Cadastro público cria a primeira barbearia fictícia",first.status===201&&!!first.data?.company?.slug,"HTTP "+first.status+" "+String(first.data?.error||"").slice(0,120));
   const ownerCookie=first.headers.get("set-cookie")?.split(";")[0]||"";
   pass("Cookie HttpOnly e Secure",!!ownerCookie&&/httponly/i.test(first.headers.get("set-cookie")||"")&&
     /secure/i.test(first.headers.get("set-cookie")||""));

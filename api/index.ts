@@ -36,20 +36,9 @@ const app = new Hono<{ Bindings: Env }>();
 app.onError((e, c) => {
   const msg = e instanceof Error ? e.message : String(e);
   console.error(`[api-error] ${c.req.method} ${c.req.path}:`, msg, (e as Error).stack ?? "");
-  // Diagnóstico temporário SOMENTE no Worker de homologação e na rota de signup.
-  // Publica apenas o nome fixo de uma etapa, sem SQL, stack ou dados de clientes.
-  const isStagingSignup = c.env.TIGU_STAGING === "1" && c.req.path === "/api/auth/register";
-  const diagnosticStep = isStagingSignup ? c.get("signupDiagnosticStep") ?? "before-router" : undefined;
   return c.json({
     error: c.env.APP_ENV === "production" ? "Não foi possível concluir a solicitação. Tente novamente em instantes." : "Erro interno. Migrations aplicadas? (npm run db:migrate:local)",
     detail: c.env.APP_ENV !== "production" ? msg : undefined,
-    ...(isStagingSignup ? {
-      staging_diagnostic: {
-        step: diagnosticStep,
-        kind: /D1_ERROR|SQLITE|database|no such table|no such column/i.test(msg) ? "database" :
-          /crypto|PBKDF2|OperationError/i.test(msg) ? "cryptography" : "other",
-      },
-    } : {}),
   }, 500);
 });
 app.notFound((c) => c.json({ error: "Rota não encontrada", path: c.req.path }, 404));

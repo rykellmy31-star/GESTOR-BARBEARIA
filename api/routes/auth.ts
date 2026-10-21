@@ -20,7 +20,6 @@ export const authRouter = new Hono<{ Bindings: Env }>();
 // Mantemos o rate limit persistente para TODAS as mutações de autenticação.
 const authMutationLimit = authRateLimit(25, 5 * 60_000);
 authRouter.use("*", async (c, next) => {
-  if (c.env.TIGU_STAGING === "1" && c.req.path === "/api/auth/register") c.set("signupDiagnosticStep", "middleware-rate-limit");
   if (c.req.method === "GET" && c.req.path === "/api/auth/me") return next();
   return authMutationLimit(c, next);
 });
@@ -84,24 +83,21 @@ const registerSchema = z.object({
 
 /** Onboarding: cria usuário + empresa + settings + wallet + plano free. Tudo ou nada (por etapas idempotentes). */
 authRouter.post("/register", async (c) => {
-  const traceStage = (step: string) => { if (c.env.TIGU_STAGING === "1") c.set("signupDiagnosticStep", step); };
-  traceStage("signup-rate-limit");
+
   if (!(await rateAccount(c, `signup:${c.req.header("cf-connecting-ip") || "local"}`))) return err(c, "Muitos cadastros deste endereço. Tente mais tarde.", 429);
-  traceStage("signup-validate");
+
   const parsed = registerSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados incompletos (senha de no mínimo 10 caracteres)", 422, parsed.error.flatten().fieldErrors);
   const { company_name, name } = parsed.data;
   const email = parsed.data.email.trim().toLowerCase();
   const db = c.env.DB;
 
-  traceStage("signup-email-lookup");
   const dup = await db.prepare(`SELECT id FROM users WHERE email = ?1`).bind(email).first();
   if (dup) return err(c, "Este e-mail já possui conta — faça login.", 409);
 
-  traceStage("signup-password-hash");
   const passwordHash = await hashPassword(parsed.data.password);
   const base = slugify(company_name) || "barbearia";
-  traceStage("signup-unique-slug");
+
   const slug = await uniqueSlug(db, "companies", base);
   const at = nowIso();
   const settings = { ...DEFAULT_SETTINGS, shop_name: company_name.trim(), phone: parsed.data.phone ?? "" };
@@ -111,7 +107,7 @@ authRouter.post("/register", async (c) => {
   try {
     // Todas as inserções ficam em uma ÚNICA transação D1. Se alguma falhar,
     // o usuário e a empresa também são revertidos, liberando o e-mail.
-    traceStage("signup-insert-batch");
+
     const results = await db.batch([
       db.prepare(`INSERT INTO users (platform_role,name,email,password_hash,active,created_at)
                   VALUES ('user',?1,?2,?3,1,?4)`)
@@ -157,7 +153,7 @@ authRouter.post("/register", async (c) => {
   } catch (e) {
     console.error("[signup] Falha ao registrar auditoria", String(e).slice(0, 150));
   }
-  traceStage("signup-create-session");
+
   await createSession(c, userId);
   return json(c, { ok: true, company: { slug, name: company_name }, next: `/c/${slug}/admin` }, 201);
 });
