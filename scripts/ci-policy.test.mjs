@@ -123,6 +123,27 @@ test("Actions: jornadas autenticadas só no worker staging após CI e com commit
   assert.doesNotMatch(script,/mercadopago\.com|graph\.facebook\.com|api\.whatsapp\.com/);
 });
 
+test("Actions: restore D1/R2 remotos exigem commit único, staging e secrets",()=>{
+  for(const [title,marker,script,gateVar] of [
+    ["Recuperar D1 Cloudflare em banco separado","TIGU_D1_REMOTE_RESTORE_ONCE","staging-d1-remote-restore.mjs","TIGU_REMOTE_D1_RESTORE_APPROVED"],
+    ["Recuperar objeto R2 em bucket separado","TIGU_R2_REMOTE_RESTORE_ONCE","staging-r2-remote-restore.mjs","TIGU_REMOTE_R2_RESTORE_APPROVED"]
+  ]){
+    const at=content.indexOf("      - name: "+title);
+    assert.ok(at>=0,"Gate restore ausente: "+title);
+    const gate=content.slice(at,content.indexOf("\n        run: node scripts/"+script,at)+80);
+    assert.ok(gate.includes("github.event_name == 'push'"));
+    assert.ok(gate.includes("github.ref == 'refs/heads/audit/tigu-primeira-validacao'"));
+    assert.ok(gate.includes("github.event.head_commit.message == '"+marker+"'"));
+    assert.ok(gate.includes("secrets.CLOUDFLARE_STAGING_TOKEN"));
+    assert.ok(gate.includes(gateVar+": YES"));
+    assert.ok(gate.includes("run: node scripts/"+script));
+    const src=readFileSync(new URL("./"+script,import.meta.url),"utf8");
+    assert.ok(src.includes('GITHUB_REF!=="refs/heads/audit/tigu-primeira-validacao"'));
+    assert.ok(src.includes(gateVar+'!=="YES"'));
+    assert.doesNotMatch(src,/tigu-db(?!-)|tigu-platform|wrangler deploy|r2 object delete/i);
+  }
+});
+
 test("Painéis: consultas sensíveis usam cache separado por barbearia", () => {
   const cases = {
     "ServicesPage.tsx": ['"admin-services", siteBase()', '"admin-barbers", siteBase()'],
