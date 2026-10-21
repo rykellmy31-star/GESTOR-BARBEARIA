@@ -41,3 +41,33 @@
 **Nenhum recurso remoto, domínio, banco ou bucket de produção foi modificado nesta revisão.** Não houve pagamento real, publicação, migração remota, envio de WhatsApp real nem restauração Cloudflare. O status dos sistemas externos permanece **não verificado**, e a aprovação comercial depende também dos itens de conformidade acima.
 
 Esta passagem organiza as dependências em dois grandes marcos (homologação/aceite e backups), **sem confundir** "CI verde" com "pronto para comercializar".
+
+
+## Preparação adicional — verificação offline de evidências de backup
+
+O repositório inclui agora `npm run backup:evidence`, que recebe três artefatos **locais** e não possui qualquer integração de escrita com Cloudflare:
+
+```bash
+npm run backup:evidence -- \
+  --d1-sql /caminho-protegido/export-d1.sql \
+  --r2-dir /caminho-protegido/objetos-r2 \
+  --r2-manifest /caminho-protegido/manifesto-r2.json
+```
+
+O manifesto é um array JSON com uma entrada por **objeto copiado**, por exemplo:
+
+```json
+[
+  {
+    "key": "empresa-ficticia/foto.webp",
+    "size": 12345,
+    "sha256": "substituir_pelo_hash_sha256_de_64_digitos_hexadecimais"
+  }
+]
+```
+
+O comando recria o export SQL num banco SQLite **em memória**, checa integridade, chaves estrangeiras e tabelas essenciais; para cada objeto listado, compara tamanho e SHA-256 no diretório da cópia, recusando caminhos inseguros, duplicatas e links simbólicos. A saída mostra apenas indicadores agregados. Use exclusivamente exports obtidos de origem confiável, em ambiente restrito.
+
+**O comando não prova** que o manifesto contém todos os objetos que existiam no R2, que o arquivo SQL corresponde ao D1 de origem, que as cópias estão criptografadas/retenidas fora da conta ou que uma **restauração remota controlada** teria sucesso. É obrigatório obter também um inventário assinado ou protegido na origem, comparar a listagem completa e executar o restore separado com conferência de fotos, dados financeiros e disponibilidade. Não copiar artefatos reais para repositórios ou chats.
+
+Os testes do utilitário são executados pelo GitHub Actions com apenas dados fictícios. Ainda falta a homologação real dos backups D1 e R2 na Cloudflare.
