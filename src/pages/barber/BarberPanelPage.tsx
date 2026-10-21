@@ -3,11 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, CalendarClock, CheckCircle2, Clock3, LogOut, Phone, Star, UserX } from "lucide-react";
 import { clsx } from "clsx";
-import { api } from "@/lib/api";
+import { api, siteBase } from "@/lib/api";
 import { useAuth, useConfig } from "@/lib/hooks";
 import { NotificationsBell } from "@/components/layout/PanelLayout";
 import { Badge, Button, EmptyState, Field, Input, Modal, Spinner, Textarea, useToast } from "@/components/ui";
-import { fromMinutes, localToUtcIso, money, toMinutes } from "@/lib/format";
+import { fmtDayLong, fromMinutes, localDay, money, toMinutes } from "@/lib/format";
 
 const DAY_NAMES = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
@@ -21,13 +21,15 @@ export function BarberPanelPage() {
   const [tab, setTab] = useState(0);
   const [blockOpen, setBlockOpen] = useState(false);
 
-  const me = useQuery({ queryKey: ["barber-me"], queryFn: () => api.get<any>("/barber/me") });
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(Date.now() + i * 86400000);
-    return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(d);
-  }), [tz]);
+  const me = useQuery({ queryKey: ["barber-me", siteBase()], queryFn: () => api.get<any>("/barber/me") });
+  const days = useMemo(() => {
+    const start = localDay(tz);
+    return Array.from({ length: 7 }, (_, i) =>
+      new Date(Date.parse(`${start}T12:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10)
+    );
+  }, [tz]);
   const agenda = useQuery({
-    queryKey: ["barber-agenda"],
+    queryKey: ["barber-agenda", siteBase(), days[0]],
     queryFn: () => api.get<any>(`/barber/agenda?from=${days[0]}&days=7`),
     refetchInterval: 30_000,
   });
@@ -83,7 +85,7 @@ export function BarberPanelPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-zinc-400">
             <CalendarClock size={15} className="mr-1.5 inline text-[var(--c-gold)]" />
-            {new Date(`${day}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
+            {fmtDayLong(day)}
             {isBlocked ? <Badge tone="blue">dia bloqueado</Badge> : !worksToday ? <Badge tone="gray">fora do seu expediente</Badge> : null}
           </p>
           <div className="flex items-center gap-2 text-xs text-zinc-500">
@@ -113,13 +115,13 @@ export function BarberPanelPage() {
                     </div>
                     <Badge tone={it.status === "confirmado" ? "green" : it.status === "concluido" ? "gray" : it.status === "no_show" ? "red" : "amber"}>{it.status}</Badge>
                     {it.customer_phone && (
-                      <a href={`https://wa.me/55${String(it.customer_phone).replace(/\D/g, "")}`} target="_blank" rel="noreferrer" className="rounded-lg border border-line p-1.5 text-zinc-400 hover:border-[var(--c-gold)] hover:text-[var(--c-gold)]" aria-label="WhatsApp do cliente"><Phone size={14} /></a>
+                      <a href={`https://wa.me/${String(it.customer_phone).replace(/\D/g, "").replace(/^(?!55)/, "55")}`} target="_blank" rel="noreferrer" className="rounded-lg border border-line p-1.5 text-zinc-400 hover:border-[var(--c-gold)] hover:text-[var(--c-gold)]" aria-label="WhatsApp do cliente"><Phone size={14} /></a>
                     )}
                     {["pendente", "confirmado"].includes(it.status) && (
                       <span className="flex gap-1.5">
-                        {perms?.can_conclude && <Button size="sm" onClick={() => setStatus.mutate({ id: it.id, status: "concluido" })}><CheckCircle2 size={13} /> Concluir</Button>}
-                        {perms?.can_conclude && <Button size="sm" variant="dark" onClick={() => setStatus.mutate({ id: it.id, status: "no_show" })}><UserX size={13} /> Faltou</Button>}
-                        {perms?.can_cancel && <Button size="sm" variant="danger" onClick={() => setStatus.mutate({ id: it.id, status: "cancelado" })}>Cancelar</Button>}
+                        {perms?.can_conclude && <Button size="sm" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: it.id, status: "concluido" })}><CheckCircle2 size={13} /> Concluir</Button>}
+                        {perms?.can_conclude && <Button size="sm" variant="dark" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: it.id, status: "no_show" })}><UserX size={13} /> Faltou</Button>}
+                        {perms?.can_cancel && <Button size="sm" variant="danger" disabled={setStatus.isPending} onClick={() => { if (window.confirm("Cancelar este atendimento? O horário ficará disponível para outro cliente.")) setStatus.mutate({ id: it.id, status: "cancelado" }); }}>Cancelar</Button>}
                       </span>
                     )}
                   </div>
