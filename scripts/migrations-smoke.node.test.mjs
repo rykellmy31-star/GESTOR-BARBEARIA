@@ -20,8 +20,8 @@ function migrated(){
   return db;
 }
 
-test("a cadeia completa contém exatamente as 19 migrações sequenciais e é íntegra",()=>{
-  assert.equal(files.length,19);
+test("a cadeia completa contém exatamente as 20 migrações sequenciais e é íntegra",()=>{
+  assert.equal(files.length,20);
   files.forEach((f,i)=>assert.equal(Number(f.slice(0,4)),i+1));
   const db=migrated();
   try{
@@ -40,12 +40,15 @@ test("colunas de dinheiro e índices de auditoria/paginação foram criados",()=
     assert.ok(col("order_payments").has("lookup_token"));
     assert.ok(col("company_payment_integrations").has("access_token_enc"));
     assert.ok(col("bookings").has("payment_choice"));
+    assert.ok(col("bookings").has("scheduled_ends_at"));
+    assert.ok(col("bookings").has("actual_finished_at"));
+    assert.ok(col("bookings").has("fit_in_duration_min"));
     assert.ok(col("booking_payments").has("amount_cents"));
     assert.ok(col("topup_orders").has("notification_sent_at"));
     assert.ok(col("payment_webhook_events").has("attempt_count"));
     assert.ok(col("message_conflict_reviews").has("audit_snapshot_version"));
     const indexes=new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all().map(x=>x.name));
-    for(const name of ["idx_orders_company_paid_at","idx_topups_notification_reconcile","idx_payment_webhook_retry","idx_message_conflict_reviews_job","idx_audit_message_conflict_lookup","idx_message_jobs_meta_conflict_page","idx_message_jobs_status_page","idx_booking_payments_company_status","idx_order_payments_company_status","idx_orders_checkout_key"]){
+    for(const name of ["idx_orders_company_paid_at","idx_topups_notification_reconcile","idx_payment_webhook_retry","idx_message_conflict_reviews_job","idx_audit_message_conflict_lookup","idx_message_jobs_meta_conflict_page","idx_message_jobs_status_page","idx_booking_payments_company_status","idx_order_payments_company_status","idx_orders_checkout_key","idx_bookings_fit_in_company"]){
       assert.ok(indexes.has(name),"index missing: "+name);
     }
   }finally{db.close();}
