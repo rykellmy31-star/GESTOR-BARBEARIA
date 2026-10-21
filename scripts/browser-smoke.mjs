@@ -363,7 +363,39 @@ try{
   await until("empresa criada na interface",
     'document.body.innerText.includes("Barbearia criada")&&document.body.innerText.includes('+JSON.stringify(newSlug)+')');
   pass("Superadmin cadastra empresa e dono com teste grátis, sem cobrança");
-  console.log("20 verificações Chromium aprovadas: cliente, profissional, proprietário e Superadmin; sem cobranças reais.");
+  await go(base+"/superadmin/companies");
+  const newlyCreated=await js('fetch("/api/super/companies").then(async r=>{if(!r.ok)throw Error("empresas inacessíveis");'+
+    'const d=await r.json();return d.companies.find(x=>x.slug==='+JSON.stringify(newSlug)+')||null;})');
+  assert.ok(newlyCreated?.id,"Cadastro Superadmin deve persistir empresa no D1");
+  await go(base+"/superadmin/companies/"+newlyCreated.id);
+  await until("detalhe da nova barbearia",'document.body.innerText.includes("Nova Barbearia Chromium")'+
+    '&&document.body.innerText.includes("Ajuste manual de créditos")');
+  pass("Superadmin abre detalhes e configurações de barbearia");
+  await fill('input[placeholder^="ex.: 5000"]',"1250");
+  await fill('input[placeholder^="Justificativa"]',"Teste isolado de auditoria de créditos");
+  await click("Aplicar");
+  await until("carteira atualizada no painel",
+    'document.body.innerText.includes("R$ 12,50")');
+  const walletAdjusted=await js('fetch("/api/super/wallets/'+newlyCreated.id+
+    '").then(r=>r.json())');
+  assert.equal(walletAdjusted.wallet.balance_cents,1250,
+    "Ajuste manual deve registrar exatamente 1.250 centavos na carteira D1");
+  assert.ok(walletAdjusted.transactions.some(x=>Number(x.amount_cents)===1250),
+    "Ajuste deve criar lançamento de auditoria financeira");
+  pass("Superadmin faz ajuste financeiro auditável apenas na carteira local");
+  await go(base+"/superadmin/subscription-invoices");
+  await until("mensalidades sem pagamento de teste",
+    'document.body.innerText.includes("Mensalidades Pix")&&document.body.innerText.includes("Nenhuma fatura encontrada")');
+  pass("Superadmin consulta mensalidades sem ativação ou cobrança");
+  await go(base+"/superadmin/topups");
+  await until("painel de recargas",
+    'document.body.innerText.includes("Recargas Pix")');
+  pass("Superadmin consulta recargas sem crédito automático");
+  await go(base+"/superadmin/pricing");
+  await until("tabela de precificação",
+    'document.body.innerText.includes("Precificação de mensagens")');
+  pass("Superadmin consulta precificação vigente");
+  console.log("25 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){

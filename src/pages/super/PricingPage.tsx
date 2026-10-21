@@ -16,8 +16,13 @@ export function SuperPricing() {
     onSuccess: (r) => { toast.push("ok", r.message); qc.invalidateQueries({ queryKey: ["super-pricing"] }); },
     onError: (e: any) => toast.push("err", e.message),
   });
-  const off = useMutation({ mutationFn: (id: number) => api.del(`/super/pricing/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ["super-pricing"] }) });
+  const off = useMutation({
+    mutationFn: (id: number) => api.del(`/super/pricing/${id}`),
+    onSuccess: () => { toast.push("ok", "Regra desativada."); qc.invalidateQueries({ queryKey: ["super-pricing"] }); },
+    onError: (e: any) => toast.push("err", e.message),
+  });
   if (q.isLoading) return <Spinner />;
+  if (q.isError || !q.data) return <div role="alert" className="rounded-xl border border-amber-500/40 p-4 text-sm text-amber-200">Não foi possível carregar a precificação. <button className="ml-2 underline" onClick={() => void q.refetch()}>Tentar novamente</button></div>;
 
   return (
     <div>
@@ -33,7 +38,7 @@ export function SuperPricing() {
               <Field label="Custo (¢)"><Input type="number" value={f.cost_cents} onChange={(e) => setF({ ...f, cost_cents: e.target.value })} /></Field>
             </div>
             <p className="text-[11px] text-zinc-500">Margem: {money(Math.max(0, Number(f.price_cents) - Number(f.cost_cents)))} por mensagem.</p>
-            <Button className="btn-gold w-full justify-center py-2.5 text-sm" disabled={!Number(f.price_cents) || set.isPending} onClick={() => set.mutate()}><Plus size={14} /> Aplicar regra</Button>
+            <Button className="btn-gold w-full justify-center py-2.5 text-sm" disabled={!Number.isSafeInteger(Number(f.price_cents)) || Number(f.price_cents) < 0 || Number(f.price_cents) > 100000 || !Number.isSafeInteger(Number(f.cost_cents)) || Number(f.cost_cents) < 0 || Number(f.cost_cents) > 100000 || !f.price_cents.trim() || !f.cost_cents.trim() || set.isPending || off.isPending} onClick={() => set.mutate()}><Plus size={14} /> Aplicar regra</Button>
           </div>
         </div>
         <div>
@@ -44,7 +49,7 @@ export function SuperPricing() {
                 <Td><Badge tone="gray">{r.category}</Badge></Td>
                 <Td><Money cents={r.price_cents} /></Td><Td><Money cents={r.cost_cents} /></Td>
                 <Td className="text-emerald-300"><Money cents={r.price_cents - r.cost_cents} /></Td>
-                <Td className="text-right"><button className="text-zinc-500 hover:text-red-300" onClick={() => off.mutate(r.id)} title="desativar regra"><Trash2 size={13} /></button></Td>
+                <Td className="text-right"><button className="text-zinc-500 hover:text-red-300" disabled={off.isPending || set.isPending} onClick={() => { if (window.confirm("Desativar esta regra de precificação?")) off.mutate(r.id); }} title="desativar regra"><Trash2 size={13} /></button></Td>
               </Tr>
             ))}
           </Table>

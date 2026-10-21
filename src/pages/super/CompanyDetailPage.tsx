@@ -17,12 +17,17 @@ export function SuperCompanyDetail() {
   const mut = useMutation({ mutationFn: (fn: () => Promise<any>) => fn(), onSuccess: () => { toast.push("ok", "Atualizado."); qc.invalidateQueries({ queryKey: ["super-co", id] }); }, onError: (e: any) => toast.push("err", e.message) });
 
   if (q.isLoading) return <Spinner label="Abrindo empresa…" />;
-  if (!q.data) return <p>Empresa não encontrada.</p>;
+  if (q.isError || !q.data) return (
+    <div role="alert" className="rounded-xl border border-amber-500/40 p-4 text-sm text-amber-200">
+      Não foi possível carregar o cadastro desta barbearia.
+      <button className="ml-2 underline" onClick={() => void q.refetch()}>Tentar novamente</button>
+    </div>
+  );
   const { company: co, members, connection, wallet, jobs, settings } = q.data;
 
   return (
     <div>
-      <Link to="/superadmin/empresas" className="mb-3 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200"><ArrowLeft size={13} /> barbearias</Link>
+      <Link to="/superadmin/companies" className="mb-3 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200"><ArrowLeft size={13} /> barbearias</Link>
       <H title={co.name} sub={<>{co.slug} · criada {new Date(co.created_at).toLocaleDateString("pt-BR")} · {co.bookings_total} agendamentos no total</> as any} action={<a href={`/c/${co.slug}/admin`} target="_blank" className="rounded-lg border border-line px-3 py-1.5 text-xs text-zinc-300 hover:border-[var(--c-gold)]">abrir painel (assumido) ↗</a>} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi label="Saldo" value={<Money cents={wallet?.balance_cents} />} sub={`reservado ${money(wallet?.reserved_cents ?? 0)}`} tone="gold" />
@@ -51,7 +56,7 @@ export function SuperCompanyDetail() {
               <div className="mt-2 flex gap-2">
                 <Input placeholder="ex.: 5000 ou -1250 (centavos)" value={adj.delta} onChange={(e) => setAdj({ ...adj, delta: e.target.value })} className="w-40" />
                 <Input placeholder="Justificativa (10+ chars)" value={adj.why} onChange={(e) => setAdj({ ...adj, why: e.target.value })} className="flex-1" />
-                <Button className="btn-gold px-4 py-2 text-sm" disabled={!/^-?\d{3,}$/.test(adj.delta.trim()) || adj.why.trim().length < 10 || mut.isPending} onClick={async () => { await mut.mutateAsync(() => api.post(`/super/wallets/${co.id}/adjust`, { delta_cents: Number(adj.delta), justification: adj.why.trim() })); setAdj({ delta: "", why: "" }); }}>Aplicar</Button>
+                <Button className="btn-gold px-4 py-2 text-sm" disabled={!/^-?\d{3,}$/.test(adj.delta.trim()) || adj.why.trim().length < 10 || mut.isPending} onClick={async () => { try { await mut.mutateAsync(() => api.post(`/super/wallets/${co.id}/adjust`, { delta_cents: Number(adj.delta), justification: adj.why.trim() })); setAdj({ delta: "", why: "" }); } catch { /* onError já exibe falha; manter dados para correção */ } }}>Aplicar</Button>
               </div>
               <button className="mt-2 text-[11px] text-zinc-500 hover:text-zinc-300" onClick={() => mut.mutate(() => api.put(`/super/wallets/${co.id}/policy`, { allow_negative: !wallet?.allow_negative }))}>
                 {wallet?.allow_negative ? "Reverter política: bloquear saldo negativo" : "Liberar saldo negativo para esta empresa (uso raro)"}

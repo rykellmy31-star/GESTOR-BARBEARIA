@@ -20,7 +20,9 @@ export function SuperTopups() {
   return (
     <div>
       <H title="Recargas Pix" sub="Crédito manual só com comprovante verificado no gateway + justificativa — idempotente: nunca credita 2×." action={<Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-40"><option value="">todas</option><option value="pending">pendentes</option><option value="paid">pagas</option><option value="expired">expiradas</option><option value="cancelled">canceladas</option></Select>} />
-      {q.isLoading ? <Spinner /> : (
+      {q.isLoading ? <Spinner /> : q.isError ? (
+        <div role="alert" className="rounded-xl border border-amber-500/40 p-4 text-sm text-amber-200">Não foi possível consultar recargas. <button className="ml-2 underline" onClick={() => void q.refetch()}>Tentar novamente</button></div>
+      ) : (
         <Table head={["Código", "Empresa", "Valor", "Provedor", "Status", "Criada", "Ação"]}>
           {(q.data ?? []).map((t: any) => (
             <Tr key={t.id}>
@@ -60,7 +62,9 @@ export function SuperWallets() {
       <SuperTopups />
       <h2 className="mb-2 mt-8 font-display text-lg text-zinc-100">Estornos de mensagens cobradas</h2>
       <p className="mb-3 text-xs text-zinc-500">Crédito manual por envio específico (raro: falha pós-cobrança que o retry automático não resolveu). <Select value={status} onChange={(e) => setStatus(e.target.value)} className="ml-2 rounded-lg border border-line bg-panel px-2 py-1 text-xs"><option value="">fila completa</option><option value="failed">falhas</option><option value="scheduled">agendadas</option></Select></p>
-      {jobs.isLoading ? <Spinner /> : (
+      {jobs.isLoading ? <Spinner /> : jobs.isError ? (
+        <div role="alert" className="rounded-xl border border-amber-500/40 p-4 text-sm text-amber-200">Não foi possível consultar estornos. <button className="ml-2 underline" onClick={() => void jobs.refetch()}>Tentar novamente</button></div>
+      ) : (
         <Table head={["#", "Empresa", "Tipo", "Status", "Preço", "Custo", "Estornar"]}>
           {(jobs.data ?? []).filter((j: any) => j.captured_at || j.status === "failed").slice(0, 40).map((j: any) => (
             <Tr key={j.id}>
@@ -70,7 +74,7 @@ export function SuperWallets() {
               <Td>{j.captured_at && !j.demo ? (
                 <div className="flex items-center gap-1.5">
                   <Input placeholder="motivo…" value={just[j.id] ?? ""} onChange={(e) => setJust({ ...just, [j.id]: e.target.value })} className="w-36 py-1 text-xs" />
-                  <button className="inline-flex items-center gap-1 rounded-lg border border-amber-500/50 px-2 py-1 text-[11px] text-amber-300 hover:bg-amber-500/10" disabled={(just[j.id] ?? "").length < 10} onClick={() => { if (confirm(`Estornar ${j.id}?`)) refund.mutate({ id: j.id, why: just[j.id] }); }}><RotateCcw size={11} /> estornar</button>
+                  <button className="inline-flex items-center gap-1 rounded-lg border border-amber-500/50 px-2 py-1 text-[11px] text-amber-300 hover:bg-amber-500/10" disabled={(just[j.id] ?? "").trim().length < 10 || refund.isPending} onClick={() => { if (confirm(`Estornar ${j.id}?`)) refund.mutate({ id: j.id, why: just[j.id] }); }}><RotateCcw size={11} /> estornar</button>
                 </div>
               ) : <span className="text-xs text-zinc-600">{j.demo ? "demo (grátis)" : "não cobrada"}</span>}</Td>
             </Tr>

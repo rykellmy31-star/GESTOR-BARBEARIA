@@ -451,7 +451,7 @@ superRouter.patch("/leads/:id", async (c) => {
 
 // ── precificação (global e por empresa) ─────────────────────────────────────
 superRouter.get("/pricing", async (c) => {
-  const { results } = await c.env.DB.prepare(`SELECT pr.*, COALESCE(c.name,'(padrão global)') AS company_name FROM pricing_rules pr LEFT JOIN companies c ON c.id=pr.company_id ORDER BY pr.company_id IS NOT NULL, pr.id`).all();
+  const { results } = await c.env.DB.prepare(`SELECT pr.*, COALESCE(c.name,'(padrão global)') AS company_name FROM pricing_rules pr LEFT JOIN companies c ON c.id=pr.company_id WHERE pr.active=1 ORDER BY pr.company_id IS NOT NULL, pr.id`).all();
   const platform = await loadPlatformSettings(c.env.DB);
   return json(c, { rules: results, platform });
 });
