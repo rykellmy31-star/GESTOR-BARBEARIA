@@ -18,6 +18,9 @@ export function MyBookingsPage() {
   const [code, setCode] = useState(loc.state?.code || localStorage.getItem(`tigu_last_code:${siteBase()}`) || "");
   const [phone, setPhone] = useState(localStorage.getItem(`tigu_last_phone:${siteBase()}`) || "");
   const [busy, setBusy] = useState(false);
+  const [pixTarget,setPixTarget]=useState<number|null>(null);
+  const [pixInfo,setPixInfo]=useState<any|null>(null);
+  const [pixBusy,setPixBusy]=useState(false);
   const [rows, setRows] = useState<any[] | null>(null);
   const [cancelTarget, setCancelTarget] = useState<any | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -49,6 +52,19 @@ export function MyBookingsPage() {
     } finally { setBusy(false); }
   };
 
+  const consultPix = async (b:any) => {
+    const token=localStorage.getItem("tigu_token_"+b.code);
+    if(!token) return toast.push("err","O código de acesso ao Pix está neste aparelho apenas após a reserva. Consulte a barbearia.");
+    setPixBusy(true);
+    try {
+      const response=await api.post<{payment:any}>("/bookings/pix/status",{
+        code:b.code,phone:phone.replace(/\\D/g,""),cancel_token:token
+      });
+      setPixTarget(b.id);
+      setPixInfo(response.payment);
+    } catch(e:any) { toast.push("err",e.message); }
+    finally { setPixBusy(false); }
+  };
   const doCancel = async () => {
     if (!cancelTarget || cancelBusy) return;
     setCancelBusy(true);
@@ -135,6 +151,35 @@ export function MyBookingsPage() {
               </div>
               <p className="mt-1 text-sm text-zinc-400">{fmtDateTime(b.starts_at, tz)} · {b.barber_name} · {money(b.price_cents)}</p>
               <p className="mt-0.5 text-xs text-zinc-600">Protocolo {b.code}</p>
+              {b.payment_choice==="pix"&&(
+                <div className="mt-2 rounded-lg border border-line bg-ink-soft p-3 text-xs">
+                  <p className="text-zinc-300">Pix: {b.payment_status==="paid"?"pagamento confirmado":
+                    b.payment_status==="refund_required"?"estorno pendente":
+                    b.payment_status==="pending"?"aguardando pagamento":"ainda não confirmado"}</p>
+                  <Button size="sm" variant="ghost" className="mt-2" disabled={pixBusy}
+                    onClick={()=>void consultPix(b)}>{pixBusy?"Consultando…":"Ver Pix / verificar pagamento"}</Button>
+                  {pixTarget===b.id&&pixInfo&&(
+                    <div className="mt-3 space-y-2">
+                      <p className="text-zinc-300">{pixInfo.status==="paid"?"Pix confirmado":
+                        pixInfo.message||"Status: "+pixInfo.status}</p>
+                      {pixInfo.status==="pending"&&pixInfo.qr_code_base64&&
+                        <img className="mx-auto w-44 rounded-md bg-white p-2"
+                          src={"data:image/png;base64,"+pixInfo.qr_code_base64} alt="QR Code Pix do serviço" />}
+                      {pixInfo.status==="pending"&&pixInfo.qr_code_text&&(
+                        <>
+                          <p className="break-all rounded bg-black/30 p-2 text-zinc-200">{pixInfo.qr_code_text}</p>
+                          <Button variant="ghost" size="sm" onClick={()=>
+                            navigator.clipboard.writeText(pixInfo.qr_code_text)
+                              .then(()=>toast.push("ok","Pix copiado."))
+                              .catch(()=>toast.push("err","Não foi possível copiar."))
+                          }>Copiar Pix</Button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="mt-3 flex gap-2">
                 {b.can_reschedule && b.barber_id && <Button size="sm" variant="ghost" onClick={() => openResched(b)}>Remarcar</Button>}
                 {b.can_cancel && <Button size="sm" variant="danger" onClick={() => setCancelTarget(b)}><CalendarX2 size={13} /> Cancelar</Button>}
