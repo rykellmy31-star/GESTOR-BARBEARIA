@@ -112,7 +112,7 @@ test("CI roda Chromium real local e dashboard trata indisponibilidade",()=>{
   const smoke=readFileSync(new URL("../scripts/browser-smoke.mjs",import.meta.url),"utf8");
   const dashboard=readFileSync(new URL("../src/pages/admin/DashboardPage.tsx",import.meta.url),"utf8");
   assert.match(ci,/node scripts\/browser-smoke\.mjs/);
-  assert.match(smoke,/TIGU_STAGING: "1"/);
+  assert.match(smoke,/TIGU_STAGING:\s*"1"/);
   assert.match(smoke,/--headless=new/);
   assert.match(smoke,/Page\.navigate/);
   assert.match(smoke,/Runtime\.evaluate/);
