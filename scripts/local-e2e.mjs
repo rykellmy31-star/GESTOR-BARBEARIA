@@ -219,6 +219,25 @@ try {
     (await owner("GET",c+"/admin/products")).data.products.some(item=>item.id===empty.data.id&&item.active===0));
   const login=await superadmin("POST","/api/auth/login",{email:superEmail,password:superPassword});
   check("Superadmin local autentica",login.status===200&&login.data.user.platform_role==="superadmin");
+  const leadRequest=await visitor("POST","/api/marketing/leads",{
+    contact_name:"Contato Comercial",company_name:"Barbearia Comercial E2E",
+    email:"lead@local-e2e.test",phone:"(73) 99999-9999",
+    plan_code:"pro",message:"Quero conhecer o Pro",consent:true,website:""
+  });
+  const leads=await superadmin("GET","/api/super/leads?status=new&q=Comercial%20E2E");
+  check("Cliente envia interesse comercial e Superadmin o recebe sem cobrança",
+    leadRequest.status===201&&leads.status===200&&
+    leads.data.leads.some(item=>item.id===leadRequest.data.reference&&item.phone==="73999999999"));
+  check("Contatos comerciais só são visíveis ao Superadmin",
+    (await owner("GET","/api/super/leads")).status===403);
+  const leadUpdated=await superadmin("PATCH","/api/super/leads/"+leadRequest.data.reference,
+    {status:"contacted",internal_note:"Contato inicial por WhatsApp"});
+  check("Superadmin registra andamento comercial sem criar assinatura",
+    leadUpdated.status===200&&
+    (await superadmin("GET","/api/super/leads?status=contacted&q=Comercial%20E2E")).data.leads
+      .some(item=>item.id===leadRequest.data.reference&&item.status==="contacted"));
+  const badCursor=await superadmin("GET","/api/super/leads?beforeId=abc");
+  check("Paginação comercial recusa cursor inválido",badCursor.status===400);
   const assisted=await superadmin("POST","/api/super/companies",{name:"Assistida local",slug:"assistida-local",owner_name:"Dono assistido",owner_email:"assisted@local-e2e.test",plan_code:"pro"});
   check("Cadastro assistido entrega senha provisória e fim do teste",assisted.status===201&&!!assisted.data.generated_password&&!!assisted.data.trial_end);
   const expiring=await visitor("POST",c+"/bookings",{barberId:bid,serviceId:service.data.id,startsAt:free[0].t,name:"Cliente local",phone:"5573999990000",consent:true,whatsappOptin:false,idempotencyKey:randomBytes(16).toString("hex")});

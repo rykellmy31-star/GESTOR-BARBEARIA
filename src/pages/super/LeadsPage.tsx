@@ -29,7 +29,8 @@ function LeadCard({ lead, reload }: {lead:Lead;reload:()=>void}) {
     onSuccess:()=>{toast.push("ok","Dados pessoais do contato excluídos.");reload();},
     onError:(e:Error)=>toast.push("err",e.message)
   });
-  const phone=lead.phone.replace(/\D/g,"");
+  const digits=lead.phone.replace(/\D/g,"");
+  const phone=digits.startsWith("55") && digits.length >= 12 ? digits : `55${digits}`;
   return (
     <article className="rounded-2xl border border-[#33303a] bg-[#16161c] p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -132,9 +133,20 @@ export function SuperLeads() {
   const qc=useQueryClient();
   const [status,setStatus]=useState("");
   const [query,setQuery]=useState("");
+  const [cursor,setCursor]=useState<number|null>(null);
+  const [history,setHistory]=useState<(number|null)[]>([]);
+  const resetPage=()=>{setCursor(null);setHistory([]);};
+  const nextPage=(next:number)=>{setHistory(old=>[...old,cursor]);setCursor(next);};
+  const previousPage=()=>{
+    if (!history.length) return;
+    setCursor(history[history.length-1]);
+    setHistory(old=>old.slice(0,-1));
+  };
   const results=useQuery({
-    queryKey:["super-sales-leads",status,query],
-    queryFn:()=>api.get<{leads:Lead[]}>(`/super/leads?status=${encodeURIComponent(status)}&q=${encodeURIComponent(query)}`),
+    queryKey:["super-sales-leads",status,query,cursor],
+    queryFn:()=>api.get<{leads:Lead[];next_before_id:number|null}>(
+      `/super/leads?status=${encodeURIComponent(status)}&q=${encodeURIComponent(query)}${cursor ? `&beforeId=${cursor}` : ""}`
+    ),
   });
   return (
     <div>
@@ -143,9 +155,9 @@ export function SuperLeads() {
       <div className="mb-5 flex flex-wrap gap-3">
         <label className="relative min-w-[220px] flex-1 text-xs text-zinc-400">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"/>
-          <input className="input-dark w-full pl-9" aria-label="Buscar interessados" placeholder="Nome, barbearia ou e-mail…" value={query} onChange={e=>setQuery(e.target.value)}/>
+          <input className="input-dark w-full pl-9" aria-label="Buscar interessados" placeholder="Nome, barbearia ou e-mail…" value={query} onChange={e=>{setQuery(e.target.value);resetPage();}}/>
         </label>
-        <select aria-label="Filtrar por andamento" className="input-dark min-w-[180px]" value={status} onChange={e=>setStatus(e.target.value)}>
+        <select aria-label="Filtrar por andamento" className="input-dark min-w-[180px]" value={status} onChange={e=>{setStatus(e.target.value);resetPage();}}>
           <option value="">Todos os atendimentos</option>{(Object.keys(statuses) as Status[]).map(key=><option key={key} value={key}>{statuses[key]}</option>)}
         </select>
       </div>
@@ -155,6 +167,16 @@ export function SuperLeads() {
         </div> :
         (results.data?.leads.length ?? 0)===0 ? <p className="rounded-xl border border-[#33303a] p-5 text-sm text-zinc-400">Nenhuma solicitação encontrada para este filtro.</p> :
         <div className="space-y-3">{results.data!.leads.map(l=><LeadCard key={l.id} lead={l} reload={()=>{void qc.invalidateQueries({queryKey:["super-sales-leads"]});}}/>)}</div>}
+      {(history.length>0 || results.data?.next_before_id != null) && (
+        <nav aria-label="Paginação dos interessados" className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <button type="button" disabled={history.length===0 || results.isFetching}
+            onClick={previousPage} className="rounded-lg border border-[#38343c] px-4 py-2 text-sm text-zinc-200 disabled:opacity-40">Anterior</button>
+          <span className="text-xs text-zinc-400">Página {history.length+1} · até 50 contatos por página</span>
+          <button type="button" disabled={!results.data?.next_before_id || results.isFetching}
+            onClick={()=>results.data?.next_before_id && nextPage(results.data.next_before_id)}
+            className="rounded-lg border border-[#38343c] px-4 py-2 text-sm text-zinc-200 disabled:opacity-40">Próximos contatos</button>
+        </nav>
+      )}
       <p className="mt-5 text-xs text-zinc-500">Contatos são exibidos somente no Superadmin. O registro do andamento não gera cobrança e não altera o plano da barbearia.</p>
     </div>
   );

@@ -390,7 +390,10 @@ superRouter.get("/leads", async (c) => {
   const query = (c.req.query("q") || "").trim().slice(0, 80);
   if (status && !["new","contacted","negotiating","closed"].includes(status))
     return err(c, "Status inválido", 422);
-  return json(c, { leads: await listSalesLeads(c.env.DB, status, query) });
+  const cursor = c.req.query("beforeId");
+  if (cursor !== undefined && (!/^[1-9]\\d*$/.test(cursor) || !Number.isSafeInteger(Number(cursor))))
+    return err(c, "Cursor de interessados inválido.", 400);
+  return json(c, await listSalesLeads(c.env.DB, status, query, cursor ? Number(cursor) : null));
 });
 
 superRouter.get("/leads/privacy", async (c) =>

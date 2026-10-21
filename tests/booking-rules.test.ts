@@ -1112,6 +1112,41 @@ describe("Solicitações comerciais sem cobrança ou ativação", () => {
 });
 
 
+
+describe("funil comercial: paginação com cursor e autorização",()=>{
+  it("percorre mais de 150 contatos sem duplicar ou perder registros",async()=>{
+    const unique=crypto.randomUUID();
+    const statements=Array.from({length:160},(_,i)=>
+      db.prepare("INSERT INTO sales_leads(contact_name,company_name,email,phone,plan_code,price_snapshot_cents,consent_at,submission_bucket) VALUES (?1,?2,?3,'5573999999999','pro',4990,?4,?5)")
+        .bind("Interessado "+i,"Grupo-"+unique,\`lead-\${unique}-\${i}@tigu.test\`,new Date().toISOString(),i+1)
+    );
+    for(let i=0;i<statements.length;i+=40)await db.batch(statements.slice(i,i+40));
+    const adminEmail="paginar-"+unique+"@tigu.test";
+    await db.prepare("INSERT INTO users(platform_role,name,email,password_hash,active,created_at) VALUES('superadmin','Paginador',?1,?2,1,?3)")
+      .bind(adminEmail,await hashPassword(PW),new Date().toISOString()).run();
+    const login=await api("/api/auth/login",{method:"POST",body:JSON.stringify({email:adminEmail,password:PW})});
+    expect(login.status).toBe(200);
+    const seen=new Set<number>();
+    let cursor:number|null=null,rounds=0;
+    do{
+      const url="/api/super/leads?status=new&q="+encodeURIComponent("Grupo-"+unique)+(cursor?"&beforeId="+cursor:"");
+      const res=await api(url,{},login.cookie!);
+      expect(res.status).toBe(200);
+      const data=res.body as {leads:{id:number}[];next_before_id:number|null};
+      expect(data.leads.length).toBeLessThanOrEqual(50);
+      for(const lead of data.leads){expect(seen.has(lead.id)).toBe(false);seen.add(lead.id);}
+      cursor=data.next_before_id;rounds++;
+      expect(rounds).toBeLessThan(6);
+    }while(cursor!==null);
+    expect(seen.size).toBe(160);
+    expect(rounds).toBe(4);
+    for(const value of ["abc","-1","0","1.5","999999999999999999999"]){
+      expect((await api("/api/super/leads?beforeId="+value,{},login.cookie!)).status).toBe(400);
+    }
+    expect((await api("/api/super/leads?beforeId=123",{},cookieA)).status).toBe(403);
+  });
+});
+
 describe("Cloudflare Turnstile no atendimento comercial", () => {
   const data = (email: string, turnstile_token = "") => ({
     contact_name: "Joana Teste", company_name: "Barbearia Verificacao",

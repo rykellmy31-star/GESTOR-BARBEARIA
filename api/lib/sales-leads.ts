@@ -78,7 +78,8 @@ export async function createSalesLead(db: D1Database, data: LeadRequest, time = 
     : { status: "duplicate" as const };
 }
 
-export async function listSalesLeads(db: D1Database, status = "", query = "") {
+/** Paginação por ID: novos contatos não fazem os antigos saltarem entre páginas. */
+export async function listSalesLeads(db: D1Database, status = "", query = "", beforeId: number | null = null) {
   const prefix = query ? `%${query}%` : "";
   const { results } = await db.prepare(
     `SELECT id,contact_name,company_name,email,phone,plan_code,price_snapshot_cents,
@@ -86,9 +87,14 @@ export async function listSalesLeads(db: D1Database, status = "", query = "") {
      FROM sales_leads
      WHERE (?1='' OR status=?1)
        AND (?2='' OR company_name LIKE ?3 OR contact_name LIKE ?3 OR email LIKE ?3)
-     ORDER BY created_at DESC,id DESC LIMIT 150`
-  ).bind(status,query,prefix).all<SalesLeadRow>();
-  return results;
+       AND (?4 IS NULL OR id < ?4)
+     ORDER BY id DESC LIMIT 51`
+  ).bind(status,query,prefix,beforeId).all<SalesLeadRow>();
+  const leads = results.slice(0, 50);
+  return {
+    leads,
+    next_before_id: results.length > 50 ? leads[leads.length - 1].id : null,
+  };
 }
 
 export async function updateSalesLead(db: D1Database, id: number, values: z.infer<typeof leadUpdateSchema>) {
