@@ -24,6 +24,7 @@ export function AgendaPage() {
   const [openItem, setOpenItem] = useState<any | null>(null);
   const [blockOpen, setBlockOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [fitInPrefill,setFitInPrefill]=useState<{barberId:number;day:string;hhmm:string;availableMinutes:number}|null>(null);
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [reqOpen, setReqOpen] = useState(false);
 
@@ -73,7 +74,7 @@ export function AgendaPage() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="protocolo, nome ou telefone…" className="py-1.5 pl-8 text-sm" />
         </div>
-        <Button size="sm" onClick={() => setManualOpen(true)}><Plus size={14} /> Reserva manual</Button>
+        <Button size="sm" onClick={() => {setFitInPrefill(null);setManualOpen(true);}}><Plus size={14} /> Reserva manual / encaixe</Button>
         <Button size="sm" variant="dark" onClick={() => setBlockOpen(true)}><Ban size={14} /> Bloquear intervalo</Button>
         <Button size="sm" variant="dark" onClick={() => setBlockedOpen(true)}><CalendarX2 size={14} /> Folgas</Button>
         <Button size="sm" variant="dark" onClick={() => setReqOpen(true)}><Inbox size={14} /> Pedidos</Button>
@@ -141,9 +142,16 @@ export function AgendaPage() {
         </div>
       )}
 
-      {openItem && <BookingModal item={openItem} onClose={() => setOpenItem(null)} tz={tz} onChanged={() => { setOpenItem(null); invalidate(); }} />}
+      {openItem && <BookingModal item={openItem} onClose={() => setOpenItem(null)} tz={tz}
+        onChanged={() => { setOpenItem(null); invalidate(); }}
+        onFitIn={(releasedFrom:string,minutes:number,barberId:number)=>{
+          const local=utcToLocalParts(tz,releasedFrom);
+          setFitInPrefill({barberId,day:local.day,hhmm:local.hhmm,availableMinutes:minutes});
+          setOpenItem(null);invalidate();setManualOpen(true);
+        }}/>}
+
       {blockOpen && <BlockModal barbers={barbers.data ?? []} onClose={() => setBlockOpen(false)} onDone={() => { setBlockOpen(false); invalidate(); }} />}
-      {manualOpen && <ManualModal barbers={barbers.data ?? []} onClose={() => setManualOpen(false)} onDone={() => { setManualOpen(false); invalidate(); }} />}
+      {manualOpen && <ManualModal barbers={barbers.data ?? []} prefill={fitInPrefill} onClose={() => setManualOpen(false)} onDone={() => { setManualOpen(false); invalidate(); }} />}
       {blockedOpen && <BlockedDaysModal barbers={barbers.data ?? []} onClose={() => setBlockedOpen(false)} onChanged={invalidate} />}
       {reqOpen && <BlockRequestsModal onClose={() => setReqOpen(false)} onDone={() => { setReqOpen(false); invalidate(); }} />}
     </div>
@@ -151,12 +159,23 @@ export function AgendaPage() {
 }
 
 /* ── detalhe da reserva (usa o item já carregado pela agenda) ────────────── */
-function BookingModal({ item: b, onClose, onChanged, tz }: any) {
+function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
   const toast = useToast();
   const id = b.id as number;
   const [busy, setBusy] = useState(false);
   const [resched, setResched] = useState<{ day: string; hhmm: string } | null>(null);
 
+  const finishEarly = async () => {
+    try {
+      setBusy(true);
+      const result=await api.post<{releasedFrom:string;minutesAvailable:number}>(
+        `/admin/bookings/${id}/finish-early`,{}
+      );
+      toast.push("ok",`Atendimento concluído. ${result.minutesAvailable} min liberados para encaixe.`);
+      onFitIn(result.releasedFrom,result.minutesAvailable,b.barber_id);
+    } catch(e:any){toast.push("err",e.message);}
+    finally{setBusy(false);}
+  };
   const patch = async (status: string) => {
     try { setBusy(true); await api.patch(`/admin/bookings/${id}/status`, { status }); toast.push("ok", `Status: ${status}.`); onChanged(); }
     catch (e: any) { toast.push("err", e.message); }
@@ -199,6 +218,12 @@ function BookingModal({ item: b, onClose, onChanged, tz }: any) {
             <div className="flex flex-wrap gap-2 pt-1">
               {b.status === "pendente" && <Button size="sm" disabled={busy} onClick={() => patch("confirmado")}><CheckCircle2 size={13} /> Confirmar</Button>}
               {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="dark" disabled={busy} onClick={() => patch("concluido")}>Concluir</Button>}
+              {["pendente","confirmado"].includes(b.status) &&
+                Date.now()>=Date.parse(b.starts_at) && Date.now()+300000<Date.parse(b.ends_at) && (
+                <Button size="sm" disabled={busy} onClick={finishEarly}>
+                  Concluir antecipadamente e encaixar
+                </Button>
+              )}
               {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="dark" disabled={busy} onClick={() => patch("no_show")}>No-show</Button>}
               {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="danger" disabled={busy} onClick={() => patch("cancelado")}>Cancelar</Button>}
               {["pendente", "confirmado"].includes(b.status) && !resched && (
@@ -274,9 +299,13 @@ function BlockRequestsModal({ onClose, onDone }: any) {
 }
 
 /* ── criar reserva manual ────────────────────────────────────────────────── */
-function ManualModal({ barbers, onClose, onDone }: any) {
+function ManualModal({ barbers, onClose, onDone, prefill }: any) {
   const toast = useToast();
-  const [f, setF] = useState({ barberId: barbers[0]?.id ?? 0, serviceId: 0, day: new Date().toISOString().slice(0, 10), hhmm: "09:00", name: "", phone: "", notes: "", status: "confirmado" });
+  const [f, setF] = useState({ barberId: prefill?.barberId ?? barbers[0]?.id ?? 0,
+    serviceId: 0, day: prefill?.day ?? new Date().toISOString().slice(0, 10),
+    hhmm: prefill?.hhmm ?? "09:00", name: "", phone: "", notes: "", status: "confirmado" });
+  const [quick,setQuick]=useState(Boolean(prefill));
+  const [quickMinutes,setQuickMinutes]=useState(Math.min(180,prefill?.availableMinutes??15));
   const services = useQuery({ queryKey: ["admin-services", siteBase()], queryFn: () => api.get<any>("/admin/services").then((d: any) => d.services.filter((s: any) => s.active)) });
   const { data: cfg } = useConfig();
   const tz = cfg?.settings.timezone || "America/Bahia";
@@ -286,6 +315,7 @@ function ManualModal({ barbers, onClose, onDone }: any) {
         barberId: f.barberId, serviceId: f.serviceId, name: f.name, phone: f.phone.replace(/\D/g, ""),
         notes: f.notes, status: f.status, notify: true,
         startsAt: localToUtcIso(tz, f.day, f.hhmm),
+        ...(quick?{fitInDurationMin:quickMinutes}:{})
       });
       toast.push("ok", `Reserva ${res.code} criada.`);
       onDone();
@@ -302,10 +332,25 @@ function ManualModal({ barbers, onClose, onDone }: any) {
           <Field label="Data"><Input type="date" value={f.day} onChange={(e) => setF({ ...f, day: e.target.value })} /></Field>
           <Field label="Hora local"><Input type="time" step={300} value={f.hhmm} onChange={(e) => setF({ ...f, hhmm: e.target.value })} /></Field>
         </div>
+        <label className="flex items-center gap-2 rounded-lg border border-line bg-ink-soft px-3 py-2 text-sm text-zinc-200">
+          <input type="checkbox" checked={quick} onChange={e=>setQuick(e.target.checked)}/>
+          Encaixe rápido fora da grade de 30 minutos
+        </label>
+        {quick && <div className="space-y-2 rounded-lg border border-[var(--c-gold)]/30 bg-gold-soft p-3">
+          <Field label="Duração do encaixe (minutos, de 5 em 5)">
+            <Input type="number" min={5} max={prefill?.availableMinutes??180} step={5}
+              value={quickMinutes} onChange={e=>setQuickMinutes(Number(e.target.value))}/>
+          </Field>
+          <p className="text-xs text-zinc-400">
+            O tempo reduzido precisa ser suficiente para realizar o serviço.
+            O preço é o cadastrado; o servidor valida horários livres, folgas e colisões.
+            {prefill?` Foram liberados ${prefill.availableMinutes} minutos.`:""}
+          </p>
+        </div>}
         <Field label="Cliente" required><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="nome" /></Field>
         <Field label="Telefone/WhatsApp"><Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="(75) 9…" /></Field>
         <Field label="Observações"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
-        <Button className="w-full justify-center" disabled={!f.name || !f.serviceId || !f.barberId} onClick={create}>Criar na agenda (regras validadas no servidor)</Button>
+        <Button className="w-full justify-center" disabled={!f.name || !f.serviceId || !f.barberId || (quick && (!Number.isInteger(quickMinutes)||quickMinutes<5||quickMinutes%5!==0||(prefill&&quickMinutes>prefill.availableMinutes)))} onClick={create}>Criar na agenda (regras validadas no servidor)</Button>
       </div>
     </Modal>
   );
