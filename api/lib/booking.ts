@@ -30,6 +30,7 @@ export const createBookingSchema = z.object({
   whatsappOptin: z.boolean().default(false),
   consent: z.boolean().refine((v) => v === true, { message: "É necessário aceitar o uso dos dados (LGPD)" }),
   idempotencyKey: z.string().min(8).max(64),
+  paymentChoice: z.enum(["after_service","pix"]).optional(),
 });
 
 export interface BookingMutationCtx {
@@ -111,13 +112,13 @@ export async function createBooking(ctx: BookingMutationCtx, input: z.infer<type
       db
         .prepare(
           `INSERT INTO bookings (company_id, code, customer_id, barber_id, service_id, starts_at, ends_at, price_cents, status, origin,
-                                 customer_name, customer_phone, customer_email, notes, whatsapp_optin, cancel_token, allowed_cancel_until, idempotency_key, demo, created_at, updated_at,local_day)
-           VALUES (?1,?2,(SELECT id FROM customers WHERE company_id=?1 AND phone=?3),?4,?5,?6,?7,?8,'pendente',?9,?10,?3,?11,?12,?13,?14,?15,?16,?17,?18,?18,?19)`
+                                 customer_name, customer_phone, customer_email, notes, whatsapp_optin, cancel_token, allowed_cancel_until, idempotency_key, demo, created_at, updated_at,local_day,payment_choice)
+           VALUES (?1,?2,(SELECT id FROM customers WHERE company_id=?1 AND phone=?3),?4,?5,?6,?7,?8,'pendente',?9,?10,?3,?11,?12,?13,?14,?15,?16,?17,?18,?18,?19,?20)`
         )
         .bind(
           companyId, code, phone, barber.id, service.id, startsAt, check.endsAt, service.price_cents, ctx.origin,
           input.name.trim(), input.email || null, input.notes ?? "", input.whatsappOptin ? 1 : 0, cancelToken, allowedCancelUntil,
-          input.idempotencyKey, demo, nowIso(),utcToLocal(settings.timezone,startsAt).day
+          input.idempotencyKey, demo, nowIso(),utcToLocal(settings.timezone,startsAt).day,input.paymentChoice??"after_service"
         ),
       ...slotKeys.map((k) => db.prepare(`INSERT INTO booking_slots (company_id, booking_id, barber_id, slot) SELECT ?1, id, ?2, ?3 FROM bookings WHERE code = ?4`).bind(companyId, barber.id, k, code)),
       ...insertBookingNotifications(
