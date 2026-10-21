@@ -716,16 +716,80 @@ adminRouter.get("/customers", async (c) => {
 });
 adminRouter.post("/customers/:id/anonymize", async (c) => {
   const db = P(c); const id = cid(c);
-  const cust = await db.prepare(`SELECT id, phone FROM customers WHERE id=?1 AND company_id=?2`).bind(await bookingIdParam(c), id).first<{ id: number; phone: string }>();
+  const customerId = await bookingIdParam(c);
+  const cust = await db.prepare(`SELECT id, phone, anonymized_at FROM customers WHERE id=?1 AND company_id=?2`)
+    .bind(customerId, id).first<{ id: number; phone: string; anonymized_at: string | null }>();
   if (!cust) return err(c, "Cliente não encontrado", 404);
-  const anonName = `Cliente removido (${String(cust.id).padStart(4, "0")})`;
-  await db.batch([
-    db.prepare(`UPDATE customers SET name=?1, email=NULL, notes='Solicitou remoção (LGPD)', whatsapp_optin=0, anonymized_at=?2, lgpd_consent_at=NULL WHERE id=?3 AND company_id=?4`).bind(anonName, nowIso(), cust.id, id),
-    db.prepare(`UPDATE bookings SET customer_name=?1, customer_phone='0000000000000', customer_email=NULL, whatsapp_optin=0, notes=TRIM(notes || ' [anonimizado LGPD]') WHERE company_id=?2 AND customer_phone=?3 AND status IN ('concluido','cancelado','no_show')`).bind(anonName, id, cust.phone),
-    db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin','Dados de cliente anonimizados (LGPD)','Solicitação atendida; reservas futuras não receberão mensagens.','system')`).bind(id),
+  if (cust.anonymized_at) return err(c, "Este cliente já foi anonimizado", 409);
+
+  // A operação não deve quebrar o atendimento em aberto nem permitir envio
+  // já assumido por outro Worker; o titular precisa resolver essas pendências.
+  const blocking = await db.prepare(`SELECT
+    EXISTS(SELECT 1 FROM bookings WHERE company_id=?1 AND
+      (customer_id=?2 OR customer_phone=?3) AND status IN ('pendente','confirmado')) AS active_bookings,
+    EXISTS(SELECT 1 FROM orders WHERE company_id=?1 AND customer_phone=?3 AND status='novo') AS open_orders,
+    EXISTS(SELECT 1 FROM message_jobs j JOIN bookings b ON b.id=j.booking_id
+      WHERE j.company_id=?1 AND b.company_id=?1
+        AND (b.customer_id=?2 OR b.customer_phone=?3)
+        AND (j.status='sending' OR (j.status IN ('scheduled','blocked_funds') AND j.reserved_cents>0))) AS active_messages`)
+    .bind(id, cust.id, cust.phone)
+    .first<{ active_bookings: number; open_orders: number; active_messages: number }>();
+  if (blocking?.active_bookings || blocking?.open_orders || blocking?.active_messages)
+    return err(c, "Existem agendamentos, pedidos ou envios financeiros pendentes. Conclua ou cancele essas operações antes de anonimizar.", 409);
+
+  // Identificador sintético único por empresa e cliente; não é telefone válido.
+  // Permite manter a vinculação do histórico financeiro sem reter o contato.
+  const anonPhone = `anon-${id}-${cust.id}`;
+  const anonName = "Cliente anonimizado";
+  const at = nowIso();
+  // Proteções de concorrência na MESMA transação D1: se um agendamento,
+  // pedido ou envio surgir após a pré-checagem, nenhuma linha é alterada.
+  const changed = await db.batch([
+    db.prepare(`UPDATE customers SET name=?1, phone=?2, email=NULL, notes='',
+      whatsapp_optin=0, anonymized_at=?3, lgpd_consent_at=NULL
+      WHERE id=?4 AND company_id=?5 AND phone=?6 AND anonymized_at IS NULL
+        AND NOT EXISTS(SELECT 1 FROM bookings b WHERE b.company_id=?5
+          AND (b.customer_id=?4 OR b.customer_phone=?6) AND b.status IN ('pendente','confirmado'))
+        AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.company_id=?5 AND o.customer_phone=?6 AND o.status='novo')
+        AND NOT EXISTS(SELECT 1 FROM message_jobs j JOIN bookings b ON b.id=j.booking_id
+          WHERE j.company_id=?5 AND b.company_id=?5 AND (b.customer_id=?4 OR b.customer_phone=?6)
+            AND (j.status='sending' OR (j.status IN ('scheduled','blocked_funds') AND j.reserved_cents>0)))`)
+      .bind(anonName, anonPhone, at, cust.id, id, cust.phone),
+    db.prepare(`UPDATE bookings SET customer_name=?1, customer_phone=?2, customer_email=NULL,
+      whatsapp_optin=0, notes='', cancel_token=''
+      WHERE company_id=?3 AND (customer_id=?4 OR customer_phone=?5)
+        AND EXISTS(SELECT 1 FROM customers WHERE id=?4 AND company_id=?3 AND phone=?2 AND anonymized_at=?6)`)
+      .bind(anonName, anonPhone, id, cust.id, cust.phone, at),
+    db.prepare(`UPDATE orders SET customer_name=?1, customer_phone=?2 WHERE company_id=?3 AND customer_phone=?4
+      AND EXISTS(SELECT 1 FROM customers WHERE id=?5 AND company_id=?3 AND phone=?2 AND anonymized_at=?6)`)
+      .bind(anonName, anonPhone, id, cust.phone, cust.id, at),
+    db.prepare(`UPDATE reviews SET customer_name=?1, comment='' WHERE company_id=?2
+      AND booking_id IN (SELECT id FROM bookings WHERE company_id=?2 AND customer_phone=?3)
+      AND EXISTS(SELECT 1 FROM customers WHERE id=?4 AND company_id=?2 AND phone=?3 AND anonymized_at=?5)`)
+      .bind(anonName, id, anonPhone, cust.id, at),
+    db.prepare(`UPDATE message_jobs SET to_phone='',payload_json='{}',
+      status=CASE WHEN status IN ('scheduled','blocked_funds') THEN 'skipped' ELSE status END,
+      skip_reason=CASE WHEN status IN ('scheduled','blocked_funds') THEN 'anonimização LGPD' ELSE skip_reason END,
+      next_attempt_at=NULL
+      WHERE company_id=?1 AND booking_id IN
+        (SELECT id FROM bookings WHERE company_id=?1 AND customer_phone=?2)
+      AND EXISTS(SELECT 1 FROM customers WHERE id=?3 AND company_id=?1 AND phone=?2 AND anonymized_at=?4)`)
+      .bind(id, anonPhone, cust.id, at),
+    db.prepare(`UPDATE notifications SET body='' WHERE company_id=?1 AND
+      (booking_id IN (SELECT id FROM bookings WHERE company_id=?1 AND customer_phone=?2)
+       OR (kind='order' AND EXISTS(SELECT 1 FROM orders o WHERE o.company_id=?1
+          AND o.customer_phone=?2 AND instr(notifications.body,o.code)>0)))
+      AND EXISTS(SELECT 1 FROM customers WHERE id=?3 AND company_id=?1 AND phone=?2 AND anonymized_at=?4)`)
+      .bind(id, anonPhone, cust.id, at),
+    db.prepare(`INSERT INTO notifications(company_id,audience,title,body,kind)
+      SELECT ?1,'admin','Anonimização de cliente concluída','Registros operacionais descaracterizados; histórico financeiro preservado.','system'
+      WHERE EXISTS(SELECT 1 FROM customers WHERE id=?2 AND company_id=?1 AND phone=?3 AND anonymized_at=?4)`)
+      .bind(id, cust.id, anonPhone, at),
   ]);
+  if (changed[0].meta.changes !== 1)
+    return err(c, "Os dados ou operações do cliente mudaram. Recarregue o cadastro antes de anonimizar.", 409);
   await audit(db, c.get("user"), "customer.anonymize", "customer", cust.id, {}, { companyId: id });
-  return json(c, { ok: true, message: "Dados anonimizados. Agendamentos futuros deste número não receberão mensagens." });
+  return json(c, { ok: true, message: "Contato e dados operacionais anonimizados. Valores e histórico financeiro preservados." });
 });
 
 // ── configurações da barbearia ───────────────────────────────────────────────
