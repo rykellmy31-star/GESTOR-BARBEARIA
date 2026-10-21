@@ -20,8 +20,8 @@ function migrated(){
   return db;
 }
 
-test("a cadeia completa contém exatamente as 17 migrações sequenciais e é íntegra",()=>{
-  assert.equal(files.length,17);
+test("a cadeia completa contém exatamente as 18 migrações sequenciais e é íntegra",()=>{
+  assert.equal(files.length,18);
   files.forEach((f,i)=>assert.equal(Number(f.slice(0,4)),i+1));
   const db=migrated();
   try{
@@ -36,11 +36,13 @@ test("colunas de dinheiro e índices de auditoria/paginação foram criados",()=
   try{
     const col=t=>new Set(db.prepare("PRAGMA table_info("+t+")").all().map(x=>x.name));
     assert.ok(col("orders").has("paid_at"));
+    assert.ok(col("bookings").has("payment_choice"));
+    assert.ok(col("booking_payments").has("amount_cents"));
     assert.ok(col("topup_orders").has("notification_sent_at"));
     assert.ok(col("payment_webhook_events").has("attempt_count"));
     assert.ok(col("message_conflict_reviews").has("audit_snapshot_version"));
     const indexes=new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all().map(x=>x.name));
-    for(const name of ["idx_orders_company_paid_at","idx_topups_notification_reconcile","idx_payment_webhook_retry","idx_message_conflict_reviews_job","idx_audit_message_conflict_lookup","idx_message_jobs_meta_conflict_page","idx_message_jobs_status_page"]){
+    for(const name of ["idx_orders_company_paid_at","idx_topups_notification_reconcile","idx_payment_webhook_retry","idx_message_conflict_reviews_job","idx_audit_message_conflict_lookup","idx_message_jobs_meta_conflict_page","idx_message_jobs_status_page","idx_booking_payments_company_status"]){
       assert.ok(indexes.has(name),"index missing: "+name);
     }
   }finally{db.close();}
