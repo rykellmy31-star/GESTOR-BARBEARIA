@@ -30,6 +30,7 @@ export function SuperSettings() {
     onError: (e: any) => toast.push("err", e.message),
   });
   if (q.isLoading) return <Spinner />;
+  if (q.isError || !q.data) return <div role="alert" className="rounded-xl border border-amber-500/40 bg-[#16161c] p-5 text-sm text-amber-200">Não foi possível carregar as configurações financeiras. Nenhuma alteração foi enviada. <button className="underline" onClick={() => void q.refetch()}>Tentar novamente</button></div>;
   const s = { ...q.data.settings, ...draft };
   return (
     <div>
@@ -52,7 +53,7 @@ export function SuperSettings() {
                   )}
                 </Field>
               </div>
-              <Button className="btn-gold px-3 py-2 text-sm" disabled={!(k in draft) || save.isPending} onClick={async () => { await save.mutateAsync({ key: k as any, value: s[k] }); setDraft((d) => { const { [k]: _x, ...rest } = d; return rest; }); }}>{save.isPending ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}</Button>
+              <Button className="btn-gold px-3 py-2 text-sm" disabled={!(k in draft) || save.isPending} onClick={async () => { try { await save.mutateAsync({ key: k, value: s[k] }); setDraft((d) => { const { [k]: _x, ...rest } = d; return rest; }); } catch { /* onError informa o motivo; rascunho permanece */ } }}>{save.isPending ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}</Button>
             </div>
           );
         })}
