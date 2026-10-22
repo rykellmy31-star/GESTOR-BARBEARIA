@@ -617,9 +617,13 @@ try{
   await go(base+"/superadmin/overview");
   await until("menu móvel do Super Admin",
     'document.querySelector("button[aria-label=\\"Abrir menu do Super Admin\\"]")!==null');
-  const mobile=await js('(()=>({width:window.innerWidth,scroll:document.documentElement.scrollWidth,'+
+  const mobile=await js('(()=>({width:window.innerWidth,client:document.documentElement.clientWidth,'+
+    'scroll:document.documentElement.scrollWidth,bodyScroll:document.body.scrollWidth,'+
+    'visual:window.visualViewport?.width,meta:document.querySelector("meta[name=viewport]")?.content,'+
+    'wide:[...document.body.querySelectorAll("*")].filter(e=>e.getBoundingClientRect().width>400)'+
+    '.slice(0,8).map(e=>({tag:e.tagName,class:String(e.className).slice(0,60),width:Math.round(e.getBoundingClientRect().width)})),'+
     'menu:!!document.querySelector("button[aria-label=\\"Abrir menu do Super Admin\\"]")}))()');
-  assert.equal(mobile.width,390,"Viewport de telefone não aplicada");
+  assert.equal(mobile.width,390,"Viewport do telefone excedeu 390px: "+JSON.stringify(mobile));
   assert.ok(mobile.scroll<=mobile.width+2,
     "Super Admin excedeu largura do celular: "+JSON.stringify(mobile));
   assert.ok(mobile.menu,"Menu móvel ausente");
