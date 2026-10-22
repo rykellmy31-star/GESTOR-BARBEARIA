@@ -27,8 +27,10 @@ if(audit.error || audit.status!==0) {
   const detail=[audit.stdout,audit.stderr,audit.error?.message,
     auditJson?.error?.code,auditJson?.error?.summary,auditJson?.error?.detail].filter(Boolean).join("\n");
   const networkOutage=/(?:503|Service Unavailable|network timeout|EAI_AGAIN|ENOTFOUND|ETIMEDOUT|ECONNRESET|FETCH_ERROR|ERR_SOCKET_TIMEOUT)/i.test(detail);
-  if(process.env.TIGU_STAGING_AUDIT_OUTAGE_TOLERATED==="YES" && networkOutage) {
-    console.warn("ATENÇÃO: registro npm indisponível. Auditoria de dependências INCONCLUSIVA; testes locais prosseguem apenas para staging.");
+  const retiredAuditEndpoint=/This endpoint is being retired/i.test(detail) &&
+    /Invalid package tree/i.test(detail);
+  if(process.env.TIGU_STAGING_AUDIT_OUTAGE_TOLERATED==="YES" && (networkOutage || retiredAuditEndpoint)) {
+    console.warn("ATENÇÃO: serviço de auditoria npm indisponível ou endpoint obsoleto. Auditoria de dependências INCONCLUSIVA; somente testes locais de staging prosseguem.");
   }else{
     if(audit.stdout)process.stderr.write(audit.stdout.slice(-4000)+"\n");
     if(audit.stderr)process.stderr.write(audit.stderr.slice(-4000)+"\n");
