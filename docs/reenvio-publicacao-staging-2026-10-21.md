@@ -44,3 +44,13 @@ Solicitado pelo titular: adaptar Super Admin e painel do proprietário automatic
 Incluído teste automático real de Chromium em viewport móvel 390px, gaveta de navegação e mensagem de boas-vindas; testes unitários de omissão de senha em conta já existente. Homologação sem escrever dados remotamente concluiu com sucesso na verificação da branch.
 
 Solicitada atualização somente do Worker `tigu-staging`, mantendo D1/R2, secrets e produção existentes. Não habilitar Mercado Pago nem WhatsApp reais e não executar migrações ou cobranças.
+
+## 22/10/2026 — Segunda via de acesso + link de divulgação por barbearia
+
+Pedido do titular na página de detalhes do Super Admin: novo botão de cópia com nome do proprietário e barbearia, login, plano, situação e validade obtidos de `subscriptions`, link de login da plataforma e link público `/c/{slug}` para divulgar e receber agendamentos.
+
+Segurança: senhas antigas não são recuperáveis. Gerar uma nova senha é operação separada, confirmada explicitamente, autenticada como Super Admin, auditada, com hash em D1, sessões invalidadas e troca obrigatória no próximo login. Usuário global vinculado a várias barbearias é bloqueado para evitar revogação cruzada. O segredo só é enviado no corpo da resposta de redefinição, nunca em URL, logs ou armazenamento persistente no navegador.
+
+Testes concluídos com sucesso: 323 Vitest e 50 verificações Chromium; browser smoke confirmou cópia posterior do link público, login, plano e validade; testes de RBAC e bloqueio de outras empresas aprovados. Corrigido fixture local de fingerprint D1 com datas determinísticas, sem alterar ferramentas de backup ou dados reais.
+
+Esta alteração de documentação aciona apenas o deploy do Worker isolado `tigu-staging`, com D1/R2 e secrets preservados, sem migrações, sem produção e sem pagamentos/mensagens reais.
