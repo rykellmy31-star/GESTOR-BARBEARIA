@@ -116,7 +116,7 @@ export async function createBooking(ctx: BookingMutationCtx, input: z.infer<type
         .prepare(
           `INSERT INTO bookings (company_id, code, customer_id, barber_id, service_id, starts_at, ends_at, price_cents, status, origin,
                                  customer_name, customer_phone, customer_email, notes, whatsapp_optin, cancel_token, allowed_cancel_until, idempotency_key, demo, created_at, updated_at,local_day,payment_choice,fit_in_duration_min)
-           VALUES (?1,?2,(SELECT id FROM customers WHERE company_id=?1 AND phone=?3),?4,?5,?6,?7,?8,'pendente',?9,?10,?3,?11,?12,?13,?14,?15,?16,?17,?18,?18,?19,?20,?21)`
+           VALUES (?1,?2,(SELECT id FROM customers WHERE company_id=?1 AND phone=?3),?4,?5,?6,?7,?8,'confirmado',?9,?10,?3,?11,?12,?13,?14,?15,?16,?17,?18,?18,?19,?20,?21)`
         )
         .bind(
           companyId, code, phone, barber.id, service.id, startsAt, check.endsAt, service.price_cents, ctx.origin,
@@ -127,7 +127,7 @@ export async function createBooking(ctx: BookingMutationCtx, input: z.infer<type
       ...insertBookingNotifications(
         db,
         companyId,
-        { code, customer_name: input.name.trim(), customer_phone: phone, barber_id: barber.id, barber_name: barber.name, service_name: service.name, starts_at: startsAt, price_cents: service.price_cents, status: "pendente" },
+        { code, customer_name: input.name.trim(), customer_phone: phone, barber_id: barber.id, barber_name: barber.name, service_name: service.name, starts_at: startsAt, price_cents: service.price_cents, status: "confirmado" },
         settings.timezone,
         "Novo agendamento recebido"
       ),
@@ -161,7 +161,7 @@ export async function createBooking(ctx: BookingMutationCtx, input: z.infer<type
     barber_name: barber.name,
     service_name: service.name,
     starts_at: startsAt,
-    status: "pendente",
+    status: "confirmado",
     schedule_version: 1,
   };
   const messaging = await scheduleBookingMessage({ db, companyId, booking: bookingSnap, settings, kind: "reminder" });
