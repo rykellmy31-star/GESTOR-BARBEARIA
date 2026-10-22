@@ -105,6 +105,9 @@ export function AdminLayout() {
   const [menu, setMenu] = useState(false);
   const user = me.data;
   const activeCompany = user?.companies?.find(company => `/c/${company.slug}` === base);
+  // Super Admin sem vínculo empresarial está em modo suporte SOMENTE LEITURA.
+  const supportReadOnly = user?.platform_role === "superadmin" &&
+    !["owner", "manager"].includes(activeCompany?.role ?? "");
   const expires = activeCompany?.trial_end ? new Date(activeCompany.trial_end).getTime() : 0;
   const expired = Boolean(activeCompany &&
     (activeCompany.subscription_status === "trial" || activeCompany.subscription_status === "active") &&
@@ -182,6 +185,14 @@ export function AdminLayout() {
             </div>
           )}
           <main className="p-4 pb-20 sm:p-6">
+            {supportReadOnly && (
+              <div role="status" className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                <strong>Modo suporte TIGU — somente leitura.</strong> Você pode consultar os dados desta barbearia,
+                mas não alterar reservas, clientes, configurações ou realizar cobranças.
+                Para administrar uma empresa, use uma conta de proprietário/gerente vinculada.
+                {" "}<a href="/superadmin/companies" className="underline">Voltar ao Super Admin</a>.
+              </div>
+            )}
             {trial && <TrialStatusBanner end={trial.end} cents={trial.cents} />}
             {expired && (
               <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
