@@ -18,3 +18,6 @@ Este commit é o gatilho explícito da segunda tentativa. Nenhum recurso de prod
 
 ## Reenvio após timeout do registro npm
 Execução anterior encontrou a mensagem literal `network timeout` do endpoint de auditoria, não reconhecida pela primeira regra de indisponibilidade. A regra foi corrigida e preserva o bloqueio para vulnerabilidades identificadas. Nova tentativa solicitada pelo proprietário, exclusivamente staging.
+
+## Reenvio após mudança do endpoint npm
+O registro npm passou a rejeitar sua rota antiga de auditoria com 400 "This endpoint is being retired" e "Invalid package tree". Sob o gatilho explícito de publicação staging, essa condição será tratada como auditoria inconclusiva (não aprovada); os testes funcionais seguem e vulnerabilidades reportadas continuam bloqueantes. Publicação somente no Worker de homologação.
