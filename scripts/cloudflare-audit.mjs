@@ -20,10 +20,21 @@ export async function inspectCloudflare({ token, accountId, fetcher = fetch }) {
     throw Error("Variable CLOUDFLARE_ACCOUNT_ID ausente ou inválida: são 32 dígitos hexadecimais.");
   const auth = { Authorization: `Bearer ${token}`, Accept: "application/json" };
   async function get(path) {
-    const response = await fetcher(API + path, {
-      method: "GET", headers: auth, redirect: "error",
-      signal: AbortSignal.timeout(15_000),
-    });
+    // A API Cloudflare pode ter interrupções de rede transitórias.
+    // Repetir SOMENTE GET (jamais operações com efeitos colaterais).
+    let response;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await fetcher(API + path, {
+          method: "GET", headers: auth, redirect: "error",
+          signal: AbortSignal.timeout(20_000),
+        });
+        if (response.ok || ![429,502,503,504].includes(response.status) || attempt === 1) break;
+      } catch (e) {
+        if (attempt === 1) throw Error("Cloudflare indisponível após duas consultas de leitura.");
+      }
+    }
+    if (!response) throw Error("Diagnóstico Cloudflare não recebeu resposta.");
     if (!response.ok)
       throw Error(`Cloudflare negou consulta (${response.status}) em ${path.split("?")[0].split("/").slice(-2).join("/")}. Confira permissões do token e Account ID.`);
     let body;
