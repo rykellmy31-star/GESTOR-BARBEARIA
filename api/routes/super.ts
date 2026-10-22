@@ -102,15 +102,72 @@ superRouter.get("/companies/:id", async (c) => {
   const id = idParam(c);
   const co = await db.prepare(`SELECT c.*, (SELECT COUNT(*) FROM bookings b WHERE b.company_id=c.id) AS bookings_total FROM companies c WHERE c.id=?1`).bind(id).first();
   if (!co) return err(c, "Empresa não encontrada", 404);
-  const [settings, members, conn, wallet, jobs] = await Promise.all([
+  const [settings, members, conn, wallet, jobs, subscription] = await Promise.all([
     db.prepare(`SELECT data FROM company_settings WHERE company_id=?1`).bind(id).first<{ data: string }>(),
     db.prepare(`SELECT m.id, m.role, m.active, u.id AS user_id, u.name, u.email, u.last_login_at FROM company_memberships m JOIN users u ON u.id=m.user_id WHERE m.company_id=?1`).bind(id).all(),
     db.prepare(`SELECT provider, status, display_phone, business_name, waba_id, phone_number_id, coexistence, last_error, last_check_at FROM whatsapp_connections WHERE company_id=?1`).bind(id).first(),
     getWallet(db, id),
     db.prepare(`SELECT id, kind, status, price_cents, cost_cents, captured_at, refunded_at, created_at FROM message_jobs WHERE company_id=?1 ORDER BY id DESC LIMIT 25`).bind(id).all(),
+    db.prepare("SELECT plan_code,status,started_at,period_end FROM subscriptions WHERE company_id=?1").bind(id).first(),
   ]);
-  return json(c, { company: co, settings: safeParse(settings?.data), members: members.results, connection: conn ?? null, wallet, jobs: jobs.results });
+  c.header("Cache-Control", "no-store");
+  return json(c, { company: co, subscription, settings: safeParse(settings?.data), members: members.results, connection: conn ?? null, wallet, jobs: jobs.results });
 });
+/** O Super Admin pode emitir uma nova senha de acesso do proprietário.
+ * Nunca recupera hashes, nem altera contas vinculadas a múltiplas empresas
+ * sem um processo dedicado para evitar derrubar sessões de outros tenants.
+ * O segredo é retornado uma única vez, apenas na resposta autenticada. */
+superRouter.post("/companies/:id/owners/:userId/reset-access", async (c) => {
+  const id = idParam(c);
+  const idText=c.req.param("id") || "";
+  const userText=c.req.param("userId") || "";
+  if(!/^[1-9]\\d*$/.test(idText) || !/^[1-9]\\d*$/.test(userText))
+    return err(c,"Identificador inválido",400);
+  const userId=Number(userText);
+  if(!Number.isSafeInteger(id)||!Number.isSafeInteger(userId))
+    return err(c,"Identificador inválido",400);
+  const db=c.env.DB;
+  const membership=await db.prepare(`
+    SELECT u.id,u.platform_role,u.active, m.active AS membership_active
+    FROM company_memberships m JOIN users u ON u.id=m.user_id
+    WHERE m.company_id=?1 AND m.user_id=?2 AND m.role='owner'
+  `).bind(id,userId).first<{id:number;platform_role:string;active:number;membership_active:number}>();
+  if(!membership || membership.platform_role!=="user" ||
+     membership.active!==1 || membership.membership_active!==1)
+    return err(c,"Selecione um proprietário ativo desta barbearia.",403);
+  const linked=await db.prepare(
+    "SELECT COUNT(DISTINCT company_id) AS n FROM company_memberships WHERE user_id=?1"
+  ).bind(userId).first<{n:number}>();
+  if(Number(linked?.n)!==1)
+    return err(c,"Esta conta está vinculada a outras barbearias. Redefinição global bloqueada para proteger outros acessos.",409);
+  const temporaryPassword=`Tigu!${randomHex(18)}`;
+  const hash=await hashPassword(temporaryPassword);
+  const updated=await db.batch([
+    db.prepare(`UPDATE users SET password_hash=?1,must_change_password=1
+      WHERE id=?2 AND active=1 AND platform_role='user'
+        AND EXISTS (SELECT 1 FROM company_memberships
+          WHERE company_id=?3 AND user_id=?2 AND role='owner' AND active=1)
+        AND (SELECT COUNT(DISTINCT company_id) FROM company_memberships WHERE user_id=?2)=1`)
+      .bind(hash,userId,id),
+    db.prepare("DELETE FROM sessions WHERE user_id=?1").bind(userId),
+    db.prepare("UPDATE password_resets SET used_at=?1 WHERE user_id=?2 AND used_at IS NULL")
+      .bind(nowIso(),userId),
+  ]);
+  if(Number(updated[0].meta?.changes)!==1)
+    return err(c,"A conta foi modificada; nenhuma nova senha pode ser confirmada.",409);
+  try {
+    await audit(db,c.get("user"),"company.owner_password_reset","user",userId,
+      {owner_id:userId,revoked_sessions:true,requires_password_change:true},
+      {companyId:id,scope:"platform"});
+  } catch {
+    console.error("[super] Falha de auditoria de redefinição de senha, ação concluída");
+  }
+  c.header("Cache-Control","no-store, private");
+  c.header("Pragma","no-cache");
+  c.header("Referrer-Policy","no-referrer");
+  return json(c,{ok:true,generated_password:temporaryPassword,requires_password_change:true});
+});
+
 function safeParse(v?: string) { try { return v ? JSON.parse(v) : DEFAULT_SETTINGS; } catch { return DEFAULT_SETTINGS; } }
 
 const createCompanySchema = z.object({
