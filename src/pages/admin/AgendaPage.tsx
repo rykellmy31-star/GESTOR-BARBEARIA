@@ -216,7 +216,7 @@ function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
           </div>
           {b.status !== "bloqueio" && (
             <div className="flex flex-wrap gap-2 pt-1">
-              {b.status === "pendente" && <Button size="sm" disabled={busy} onClick={() => patch("confirmado")}><CheckCircle2 size={13} /> Confirmar</Button>}
+              
               {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="dark" disabled={busy} onClick={() => patch("concluido")}>Concluir</Button>}
               {["pendente","confirmado"].includes(b.status) &&
                 Date.now()>=Date.parse(b.starts_at) && Date.now()+300000<Date.parse(b.ends_at) && (
