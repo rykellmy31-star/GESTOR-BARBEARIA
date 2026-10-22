@@ -26,7 +26,7 @@ export function Kpi({ label, value, sub, tone }: { label: string; value: ReactNo
 
 export function Table({ head, children }: { head: string[]; children: ReactNode }) {
   return (
-    <div className="w-full max-w-full overflow-x-auto rounded-2xl border border-[#26262f] bg-[#16161c]" role="region" aria-label="Tabela com rolagem horizontal quando necessário" tabIndex={0}>
+    <div className="min-w-0 w-full max-w-full overflow-x-auto rounded-2xl border border-[#26262f] bg-[#16161c]" role="region" aria-label="Tabela com rolagem horizontal quando necessário" tabIndex={0}>
       <table className="min-w-[640px] w-full text-sm"><thead><tr className="border-b border-[#26262f] text-left text-[11px] uppercase tracking-wide text-zinc-500">{head.map((h, i) => <th key={i} className="px-4 py-2.5 font-semibold">{h}</th>)}</tr></thead><tbody>{children}</tbody></table>
     </div>
   );
