@@ -137,7 +137,7 @@ export async function authenticatedStagingChecks({ url,fetcher=fetch,makeBytes=n
     name:"Próximo Cliente Fictício",phone:"5573888877777"
   });
   pass("Próximo horário permanece reservado sem sobreposição",adjacent.status===201&&Number(adjacent.data?.id)>0);
-  const fitBlocked=await response("POST",c+"/admin/bookings",{
+  const fitBlocked=await o("POST",c+"/admin/bookings",{
     barberId:barber.data.id,serviceId:service.data.id,startsAt:fitIso(45),
     name:"Encaixe Longo Bloqueado",phone:"5573888877778",fitInDurationMin:20
   });
