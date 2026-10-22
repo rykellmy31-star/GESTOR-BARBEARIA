@@ -130,6 +130,31 @@ export async function authenticatedStagingChecks({ url,fetcher=fetch,makeBytes=n
     code:book.data.booking.code,phone})).status===404);
   const cancelled=await o("POST",c+"/admin/bookings/"+book.data.booking.id+"/cancel",{reason:"Fim da homologação com dados fictícios"});
   pass("Reserva fictícia cancelada ao final do teste",cancelled.status===200);
+  // Encaixe fora da grade: 09:45-10h pode coexistir com reserva das 10h.
+  const fitIso=min=>new Date(Date.parse(free[0].t)+min*60000).toISOString().replace(/\.\d{3}Z$/,"Z");
+  const adjacent=await o("POST",c+"/admin/bookings",{
+    barberId:barber.data.id,serviceId:service.data.id,startsAt:fitIso(60),
+    name:"Próximo Cliente Fictício",phone:"5573888877777"
+  });
+  pass("Próximo horário permanece reservado sem sobreposição",adjacent.status===201&&Number(adjacent.data?.id)>0);
+  const fitBlocked=await response("POST",c+"/admin/bookings",{
+    barberId:barber.data.id,serviceId:service.data.id,startsAt:fitIso(45),
+    name:"Encaixe Longo Bloqueado",phone:"5573888877778",fitInDurationMin:20
+  });
+  pass("Encaixe longo que invade a próxima reserva é recusado",fitBlocked.status===409);
+  const fit=await o("POST",c+"/admin/bookings",{
+    barberId:barber.data.id,serviceId:service.data.id,startsAt:fitIso(45),
+    name:"Encaixe Rápido Fictício",phone:"5573888877779",fitInDurationMin:15
+  });
+  pass("Encaixe de 15 minutos fora da grade é registrado no D1 remoto",
+    fit.status===201&&Number(fit.data?.id)>0);
+  const fitCancel=await o("POST",c+"/admin/bookings/"+fit.data.id+"/cancel",
+    {reason:"Fim da homologação de encaixe"});
+  const adjacentCancel=await o("POST",c+"/admin/bookings/"+adjacent.data.id+"/cancel",
+    {reason:"Fim da homologação de encaixe"});
+  pass("Encaixe e próximo horário fictícios cancelados com segurança",
+    fitCancel.status===200&&adjacentCancel.status===200);
+
   const product=await o("POST",c+"/admin/products",{name:"Pomada Fictícia",price_cents:2500,stock:3});
   pass("Painel cadastra produto fictício",product.status===200&&Number(product.data?.id)>0);
   const blockedOrder=await response("POST",c+"/orders",{name:"Cliente Pix Fictício",phone,
