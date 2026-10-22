@@ -683,3 +683,27 @@ superRouter.post("/users/:id/erase", async (c) => {
   await audit(db, c.get("user"), "user.erase_lgpd", "user", uid, { justification: parsed.data.justification }, { companyId: null, scope: "platform" });
   return json(c, { ok: true, message: "Conta descaracterizada. Histórico operacional permanece por obrigação fiscal, sem PII." });
 });
+
+ 
+// Status não sensível das integrações globais. Segredos permanecem no Cloudflare.
+superRouter.get("/integrations/status", async (c) => {
+  const e = c.env;
+  return json(c, {
+    staging: e.TIGU_STAGING === "1",
+    payment: {
+      access_token_set: Boolean(e.MP_ACCESS_TOKEN),
+      webhook_secret_set: Boolean(e.MP_WEBHOOK_SECRET),
+      public_url_set: Boolean(e.PUBLIC_URL),
+      enabled_in_environment: e.TIGU_STAGING !== "1" && Boolean(e.MP_ACCESS_TOKEN && e.MP_WEBHOOK_SECRET && e.PUBLIC_URL),
+      purposes: ["recargas", "assinaturas"],
+    },
+    whatsapp: {
+      app_id_set: Boolean(e.WHATSAPP_APP_ID),
+      app_secret_set: Boolean(e.WHATSAPP_APP_SECRET),
+      webhook_verify_token_set: Boolean(e.WHATSAPP_WEBHOOK_VERIFY_TOKEN),
+      encryption_key_set: Boolean(e.MSG_ENC_KEY),
+      embedded_signup_set: Boolean(e.WHATSAPP_EMBEDDED_CONFIG_ID),
+      provider_disabled_in_staging: e.TIGU_STAGING === "1",
+    },
+  });
+});
