@@ -28,3 +28,6 @@ Os testes da reserva antiga esperavam `pendente` e confirmar manualmente; agora 
 ## Reenvio após corrigir o teste de remarcação no Chromium
 
 A suíte de navegador tentava reservar o dia seguinte mesmo sem horário aberto (por exemplo, domingo); agora consulta até dez dias e seleciona um horário realmente disponível. A alteração de código não muda política comercial de agendamentos. Os testes unitários e HTTP locais da execução anterior já estavam aprovados. Este commit aciona apenas `tigu-staging`; nenhuma operação em produção.
+
+## Atualização da vitrine pública
+Removidos do cabeçalho e do destaque da landing page os links “Prévia visual” e “Explorar prévia visual”, juntamente com o aviso sobre dados fictícios. Mantidos “Começar grátis”, login, planos e cadastro. Não houve alteração nos dados de clientes, bancos ou segredos. Publicação solicitada exclusivamente no Worker de homologação.
