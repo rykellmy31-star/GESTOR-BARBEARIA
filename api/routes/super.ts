@@ -746,8 +746,24 @@ superRouter.post("/users/:id/erase", async (c) => {
 // Status não sensível das integrações globais. Segredos permanecem no Cloudflare.
 superRouter.get("/integrations/status", async (c) => {
   const e = c.env;
+  const sales=await loadSalesContact(e.DB);
+  const turnstileSite=Boolean(e.SALES_TURNSTILE_SITE_KEY);
+  const turnstileSecret=Boolean(e.SALES_TURNSTILE_SECRET);
+  c.header("Cache-Control","no-store");
   return json(c, {
     staging: e.TIGU_STAGING === "1",
+    readiness: {
+      d1_set: Boolean(e.DB),
+      r2_set: Boolean(e.MEDIA),
+      session_secret_ready: Boolean(e.SESSION_SECRET && e.SESSION_SECRET.length >= 32),
+      encryption_key_ready: Boolean(e.MSG_ENC_KEY && e.MSG_ENC_KEY.length >= 32),
+      turnstile_site_key_set: turnstileSite,
+      turnstile_secret_set: turnstileSecret,
+      leads_form_ready: turnstileSite && turnstileSecret,
+      sales_contact_enabled: sales.enabled,
+      sales_contact_channel_ready: Boolean(sales.email || sales.whatsapp),
+      production_site_ready: e.TIGU_STAGING !== "1",
+    },
     payment: {
       access_token_set: Boolean(e.MP_ACCESS_TOKEN),
       webhook_secret_set: Boolean(e.MP_WEBHOOK_SECRET),
