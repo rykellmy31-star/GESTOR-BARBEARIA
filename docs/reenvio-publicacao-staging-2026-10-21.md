@@ -36,3 +36,11 @@ Removidos do cabeçalho e do destaque da landing page os links “Prévia visual
 Captura recebida: `https://agendamentos.crjornada.com/c/bim-brasil/admin/carteira`, com mensagem de falha no carregamento. O domínio responde `staging:true`, com D1/R2 operacionais. Causa identificada no código: Gate React autorizava Super Admin sem vínculo a abrir o painel, mas tenantMiddleware exigia company_membership e negava todas as consultas. Implementado suporte estritamente READ-ONLY para Super Admin autenticado em rotas /admin/ sob tenant existente/ativo, sem privilégios de escrita e sem alterar o isolamento dos usuários normais. O cabeçalho do painel explica a limitação e o botão do Super Admin foi corrigido.
 
 Testes adicionados para leitura do painel, carteira, acesso comum de proprietário, bloqueio de escrita, negação a usuário comum e empresa suspensa. Validação pré-deploy da branch concluiu com sucesso no GitHub Actions. Publicação requerida SOMENTE no Worker `tigu-staging`; sem migrações, sem recriar bancos ou girar segredos, sem habilitar provedores reais.
+
+## Publicação da navegação responsiva e onboarding do proprietário — 2026-10-22
+
+Solicitado pelo titular: adaptar Super Admin e painel do proprietário automaticamente à largura mobile/desktop, sem causar rolagem horizontal da página; gerar uma mensagem pronta para copiar ao cadastrar nova barbearia, com dono, nome da empresa, login, senha temporária disponível somente no instante do cadastro, plano selecionado e data final dos 15 dias gratuitos.
+
+Incluído teste automático real de Chromium em viewport móvel 390px, gaveta de navegação e mensagem de boas-vindas; testes unitários de omissão de senha em conta já existente. Homologação sem escrever dados remotamente concluiu com sucesso na verificação da branch.
+
+Solicitada atualização somente do Worker `tigu-staging`, mantendo D1/R2, secrets e produção existentes. Não habilitar Mercado Pago nem WhatsApp reais e não executar migrações ou cobranças.
