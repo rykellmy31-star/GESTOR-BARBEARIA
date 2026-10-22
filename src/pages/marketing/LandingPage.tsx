@@ -22,7 +22,6 @@ export function LandingPage() {
         <nav className="ml-auto hidden items-center gap-6 text-sm text-zinc-400 md:flex">
           <a href="#recursos" className="hover:text-[var(--c-gold)]">Recursos</a>
           <a href="#planos" className="hover:text-[var(--c-gold)]">Planos</a>
-          <Link to="/preview" className="hover:text-[var(--c-gold)]">Prévia visual</Link>
         </nav>
         <div className="ml-auto flex items-center gap-2 md:ml-6">
           <Link to="/login" className="rounded-xl border border-[#26262f] px-4 py-2 text-sm text-zinc-200 hover:border-[var(--c-gold)] hover:text-[var(--c-gold)]">Entrar</Link>
@@ -41,9 +40,7 @@ export function LandingPage() {
         </p>
         <div className="reveal mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link to="/comecar" className="btn-gold inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold">Começar grátis <ArrowRight size={16} /></Link>
-          <Link to="/preview" className="inline-flex items-center gap-2 rounded-xl border border-[#26262f] px-6 py-3 text-sm text-zinc-200 hover:border-[var(--c-gold)] hover:text-[var(--c-gold)]">Explorar prévia visual</Link>
         </div>
-        <p className="reveal mt-4 text-[11px] text-zinc-500">A prévia visual usa dados fictícios e não realiza cadastro, agendamento, cobrança ou envio de WhatsApp.</p>
       </section>
 
       <section id="recursos" className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
