@@ -28,7 +28,7 @@ export function SuperCompanyDetail() {
   return (
     <div>
       <Link to="/superadmin/companies" className="mb-3 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200"><ArrowLeft size={13} /> barbearias</Link>
-      <H title={co.name} sub={<>{co.slug} · criada {new Date(co.created_at).toLocaleDateString("pt-BR")} · {co.bookings_total} agendamentos no total</> as any} action={<a href={`/c/${co.slug}/admin`} target="_blank" className="rounded-lg border border-line px-3 py-1.5 text-xs text-zinc-300 hover:border-[var(--c-gold)]">abrir painel (assumido) ↗</a>} />
+      <H title={co.name} sub={<>{co.slug} · criada {new Date(co.created_at).toLocaleDateString("pt-BR")} · {co.bookings_total} agendamentos no total</> as any} action={<a href={`/c/${co.slug}/admin`} target="_blank" className="rounded-lg border border-line px-3 py-1.5 text-xs text-zinc-300 hover:border-[var(--c-gold)]">Consultar painel (somente leitura) ↗</a>} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi label="Saldo" value={<Money cents={wallet?.balance_cents} />} sub={`reservado ${money(wallet?.reserved_cents ?? 0)}`} tone="gold" />
         <Kpi label="Plano" value={co.plan_code} sub={`status: ${co.status}`} />
