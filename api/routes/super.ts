@@ -707,3 +707,40 @@ superRouter.get("/integrations/status", async (c) => {
     },
   });
 });
+
+/** Exclusão restrita a cadastros demonstrativos; nunca apaga clientes reais. */
+superRouter.delete("/companies/:id/demo", async (c) => {
+  const id = idParam(c);
+  if (!Number.isSafeInteger(id) || id <= 0) return err(c, "Identificador inválido", 400);
+  const db = c.env.DB;
+  const company = await db.prepare("SELECT id,name,demo FROM companies WHERE id=?1").bind(id)
+    .first<{id:number;name:string;demo:number}>();
+  if (!company) return err(c, "Barbearia não encontrada", 404);
+  const fixture = /^Tigu (Teste|Isolamento) [a-f0-9]{8}$/i.test(company.name);
+  const testOwner = await db.prepare(`SELECT COUNT(*) AS n FROM company_memberships m
+    JOIN users u ON u.id=m.user_id WHERE m.company_id=?1 AND m.role='owner'
+      AND u.platform_role='user'
+      AND (u.email GLOB 'tigu-test-owner-*@example.test' OR u.email GLOB 'tigu-test-other-*@example.test')`)
+    .bind(id).first<{n:number}>();
+  if (company.demo !== 1 && !(fixture && Number(testOwner?.n) > 0))
+    return err(c, "Somente barbearias comprovadamente fictícias podem ser excluídas aqui.", 403);
+  const finance = await db.prepare(`SELECT
+    (SELECT COUNT(*) FROM wallet_transactions WHERE company_id=?1) AS tx,
+    (SELECT COUNT(*) FROM topup_orders WHERE company_id=?1) AS topups,
+    (SELECT COUNT(*) FROM subscription_invoices WHERE company_id=?1) AS invoices`)
+    .bind(id).first<{tx:number;topups:number;invoices:number}>();
+  if (Number(finance?.tx) || Number(finance?.topups) || Number(finance?.invoices))
+    return err(c, "Existem movimentações financeiras: exclusão bloqueada para preservar registros.", 409);
+  // Nunca remover vínculo de outro usuário/empresa sem confirmação.
+  const members=await db.prepare(`SELECT COUNT(*) AS n FROM company_memberships m JOIN users u ON u.id=m.user_id
+    WHERE m.company_id=?1 AND u.platform_role='superadmin'`).bind(id).first<{n:number}>();
+  if (Number(members?.n)) return err(c,"Barbearia com Super Admin vinculado: exclusão bloqueada.",409);
+  try {
+    const deleted = await db.prepare("DELETE FROM companies WHERE id=?1 AND (demo=1 OR name GLOB 'Tigu Teste *' OR name GLOB 'Tigu Isolamento *')").bind(id).run();
+    if (deleted.meta?.changes !== 1) return err(c,"Cadastro alterado; atualize e tente novamente.",409);
+  } catch {
+    return err(c,"Não foi possível excluir com segurança: existem registros vinculados. Nada foi apagado.",409);
+  }
+  await audit(db,c.get("user"),"company.demo_delete","company",id,{demo:company.demo===1},{companyId:null,scope:"platform"});
+  return json(c,{ok:true});
+});
