@@ -69,7 +69,25 @@ export const tenantMiddleware =
     if (opts.auth !== "none") {
       if (!user) return err(c, "Não autenticado. Faça login para continuar.", 401);
       if (user.must_change_password) return err(c, "Altere sua senha provisória antes de acessar a barbearia.", 403);
-      const m = await getMembership(c.env.DB, user.id, company.id);
+      let m = await getMembership(c.env.DB, user.id, company.id);
+
+      // O painel Super Admin oferece "abrir painel (assumido)" por empresa.
+      // Sem vínculo, um Super Admin só pode CONSULTAR os endpoints administrativos
+      // daquele slug; qualquer escrita exige vínculo owner/manager real.
+      // O usuário comum nunca recebe esta exceção.
+      if (!m && user.platform_role === "superadmin" && opts.auth === "admin") {
+        if (c.req.method !== "GET" && c.req.method !== "HEAD")
+          return err(c, "Modo suporte: somente consulta. Para alterar dados, utilize as ações auditadas do Super Admin ou uma conta vinculada à barbearia.", 403);
+        const plan = await c.env.DB.prepare(
+          `SELECT s.plan_code, p.whatsapp_enabled, p.max_barbers, p.max_messages_month
+           FROM subscriptions s JOIN plans p ON p.code=s.plan_code WHERE s.company_id=?1`
+        ).bind(company.id).first<Pick<MembershipRow,
+          "plan_code" | "whatsapp_enabled" | "max_barbers" | "max_messages_month">>();
+        if (!plan) return err(c, "Plano da barbearia não encontrado. Verifique o cadastro em Super Admin.", 409);
+        m = { ...plan, role: "owner", barber_id: null };
+        c.header("X-Tigu-Support-Mode", "read-only");
+        c.header("Cache-Control", "no-store");
+      }
       if (!m) return err(c, "Você não tem acesso a esta barbearia.", 403);
       if (opts.auth === "admin" && !["owner", "manager"].includes(m.role)) return err(c, "Apenas proprietário/gerente acessam este recurso.", 403);
       if (opts.auth === "barber" && m.role !== "barber") return err(c, "Área exclusiva do profissional.", 403);
