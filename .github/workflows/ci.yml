@@ -195,3 +195,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_FULL_R2_RECOVERY_APPROVED: YES
         run: node scripts/staging-r2-full-recovery-ci.mjs
+
+      # Criação/redefinição somente do superadmin autorizado no D1 de homologação.
+      # Nunca publica senha, hash, SQL ou segredo em logs. Exige commit de gatilho exato.
+      - name: Criar primeiro Super Admin TIGU somente em staging (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_CREATE_SUPER_STAGING_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_SUPERADMIN_INITIAL_PASSWORD: ${{ secrets.TIGU_SUPERADMIN_INITIAL_PASSWORD }}
+          TIGU_SUPER_STAGING_APPROVED: YES
+        run: node scripts/staging-super-bootstrap-once.mjs
