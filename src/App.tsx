@@ -39,6 +39,7 @@ import { SuperTopups } from "./pages/super/TopupsPage";
 import { SuperMessages } from "./pages/super/MessagesPage";
 import { SuperAudit } from "./pages/super/AuditPage";
 import { SuperSettings } from "./pages/super/SettingsPage";
+import { SuperIntegrations } from "./pages/super/IntegrationsPage";
 import { SuperLeads } from "./pages/super/LeadsPage";
 import { SuperSubscriptionInvoices } from "./pages/super/SubscriptionInvoicesPage";
 import { useAuth, useCompanyRole } from "./lib/hooks";
@@ -142,6 +143,7 @@ export default function App() {
         <Route path="messages" element={<SuperMessages />} />
         <Route path="audit" element={<SuperAudit />} />
         <Route path="settings" element={<SuperSettings />} />
+        <Route path="integrations" element={<SuperIntegrations />} />
         <Route path="leads" element={<SuperLeads />} />
       </Route>
 
