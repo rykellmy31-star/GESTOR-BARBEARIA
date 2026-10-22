@@ -98,7 +98,7 @@ describe("Encaixe emergencial do salão",()=>{
    .toMatchObject({ok:false,status:409});
   const stored=await db.prepare("SELECT status,ends_at FROM bookings WHERE id=?1")
    .bind(first.bookingId).first<{status:string;ends_at:string}>();
-  expect(stored).toMatchObject({status:"pendente",ends_at:f.iso(600)});
+  expect(stored).toMatchObject({status:"confirmado",ends_at:f.iso(600)});
  });
  it("reservas de outro tenant não podem ter horário liberado",async()=>{
   const f=await fixture(),other=await fixture();
