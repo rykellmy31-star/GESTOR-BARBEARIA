@@ -21,3 +21,6 @@ Execução anterior encontrou a mensagem literal `network timeout` do endpoint d
 
 ## Reenvio após mudança do endpoint npm
 O registro npm passou a rejeitar sua rota antiga de auditoria com 400 "This endpoint is being retired" e "Invalid package tree". Sob o gatilho explícito de publicação staging, essa condição será tratada como auditoria inconclusiva (não aprovada); os testes funcionais seguem e vulnerabilidades reportadas continuam bloqueantes. Publicação somente no Worker de homologação.
+
+## Reenvio após atualizar testes de confirmação automática
+Os testes da reserva antiga esperavam `pendente` e confirmar manualmente; agora validam `confirmado` ao criar e preservação após fechamento da agenda. A execução continua restrita ao Worker de homologação.
