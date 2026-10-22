@@ -161,7 +161,8 @@ superRouter.post("/companies", async (c) => {
   } catch { console.error("[company.create] Falha de auditoria após cadastro concluído"); }
   c.header("Cache-Control","no-store");
   return json(c,{ok:true,id:companyId,slug,owner_user_id:userId,created_user:createdUser,
-    generated_password:generatedPassword,trial_end:trialEnd},201);
+    generated_password:generatedPassword,trial_end:trialEnd,trial_started_at:at,
+    trial_days:15,company_name:d.name.trim(),plan_code:d.plan_code,owner_name:d.owner_name.trim()},201);
 });
 
 superRouter.post("/companies/:id/suspend", async (c) => {
