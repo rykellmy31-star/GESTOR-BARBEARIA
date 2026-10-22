@@ -141,7 +141,7 @@ export function AdminLayout() {
   );
   return (
     <div className="texture min-h-screen">
-      <div className="mx-auto flex max-w-[1500px]">
+      <div className="mx-auto flex min-w-0 max-w-[1500px]">
         <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-ink-soft p-4 lg:flex">
           <div className="mb-6 flex items-center gap-2.5 px-1">
             <Scissors className="h-6 w-6 text-[var(--c-gold)]" />
@@ -164,10 +164,10 @@ export function AdminLayout() {
             </button>
           </div>
         </aside>
-        <div className="flex-1">
-          <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-line bg-ink px-4 backdrop-blur">
+        <div className="min-w-0 flex-1">
+          <header className="sticky top-0 z-40 flex h-14 min-w-0 items-center gap-3 border-b border-line bg-ink px-3 backdrop-blur sm:px-4">
             <button className="rounded-lg border border-line p-2 text-zinc-300 lg:hidden" onClick={() => setMenu(true)}><Menu size={17} /></button>
-            <p className="font-display text-base text-zinc-100">{cfg?.settings.shop_name} <span className="text-zinc-500">· Admin</span></p>
+            <p className="min-w-0 truncate font-display text-sm text-zinc-100 sm:text-base">{cfg?.settings.shop_name} <span className="text-zinc-500">· Admin</span></p>
             <div className="ml-auto flex items-center gap-2">
               <NotificationsBell panel="admin" />
               <button className="rounded-lg border border-line p-2 text-zinc-400 lg:hidden" onClick={() => logout.mutateAsync().then(() => navigate("/login"))}><LogOut size={16} /></button>
@@ -184,7 +184,7 @@ export function AdminLayout() {
               </div>
             </div>
           )}
-          <main className="p-4 pb-20 sm:p-6">
+          <main className="min-w-0 p-3 pb-20 sm:p-6">
             {supportReadOnly && (
               <div role="status" className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
                 <strong>Modo suporte TIGU — somente leitura.</strong> Você pode consultar os dados desta barbearia,
