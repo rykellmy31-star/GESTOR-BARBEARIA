@@ -3,7 +3,7 @@ import { beforeAll,describe,expect,it } from "vitest";
 import { env } from "cloudflare:test";
 import schema from "../migrations/0001_init.sql";
 import { applyBookingMigrations } from "./helpers/booking-migrations";
-import { createBooking,rescheduleBooking,setBookingStatus,type BookingMutationCtx } from "../api/lib/booking";
+import { createBooking,rescheduleBooking,type BookingMutationCtx } from "../api/lib/booking";
 import { createAdminDayBlock,createAdminIntervalBlock } from "../api/lib/admin-blocks";
 import { resolveBlockRequest } from "../api/lib/block-requests";
 import { DEFAULT_SETTINGS } from "../api/lib/settings";
@@ -60,10 +60,10 @@ describe("folgas concorrentes com a reserva",()=>{
     expect((await db.prepare("SELECT slot FROM booking_slots WHERE booking_id=?1 ORDER BY slot").bind(created.bookingId).all()).results).toEqual(slots);
     expect(await f.count("notifications")).toBe(1);
   });
-  it("fechar dia com atendimento existente preserva o atendimento e permite confirmá-lo",async()=>{
+  it("fechar dia com atendimento já confirmado preserva o atendimento",async()=>{
     const f=await fixture(),created=await f.book();if(!created.ok)throw Error(created.message);
     expect((await f.block()).ok).toBe(true);
-    expect((await setBookingStatus(f.ctx,created.bookingId,"confirmado")).ok).toBe(true);
+    expect(await db.prepare("SELECT status FROM bookings WHERE id=?1").bind(created.bookingId).first("status")).toBe("confirmado");
     expect((await f.book(db,day,600)).ok).toBe(false);
     expect(await f.count("bookings")).toBe(1);
   });
