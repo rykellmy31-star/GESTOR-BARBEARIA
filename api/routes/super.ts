@@ -121,7 +121,7 @@ superRouter.post("/companies/:id/owners/:userId/reset-access", async (c) => {
   const id = idParam(c);
   const idText=c.req.param("id") || "";
   const userText=c.req.param("userId") || "";
-  if(!/^[1-9]\\d*$/.test(idText) || !/^[1-9]\\d*$/.test(userText))
+  if(!/^[1-9]\d*$/.test(idText) || !/^[1-9]\d*$/.test(userText))
     return err(c,"Identificador inválido",400);
   const userId=Number(userText);
   if(!Number.isSafeInteger(id)||!Number.isSafeInteger(userId))
