@@ -448,12 +448,18 @@ try{
   pass("cliente consulta a própria reserva pelo protocolo e telefone");
   await click("Remarcar");
   await until("modal de remarcação",'document.body.innerText.includes("Novo horário — Profissional Navegador")');
-  const reschedDay=new Date(Date.parse(bookingDay+"T12:00:00Z")+86400000).toISOString().slice(0,10);
-  const available=await api(base,"/api/c/"+slug+"/availability?barberId="+barber.data.id+
-    "&serviceId="+service.data.id+"&date="+reschedDay);
-  assert.equal(available.status,200);
-  const newSlot=available.data.slots.find(x=>x.available!==false);
-  assert.ok(newSlot,"Horário para remarcação está indisponível");
+  // O dia imediatamente seguinte pode ser domingo/folga: procurar um dia
+  // realmente disponível em vez de presumir uma vaga no dia consecutivo.
+  let reschedDay,newSlot;
+  for(let offset=1;offset<=10;offset++){
+    const day=new Date(Date.parse(bookingDay+"T12:00:00Z")+offset*86400000).toISOString().slice(0,10);
+    const available=await api(base,"/api/c/"+slug+"/availability?barberId="+barber.data.id+
+      "&serviceId="+service.data.id+"&date="+day);
+    if(available.status!==200||!available.data?.ok)continue;
+    const slot=available.data.slots?.find(x=>x.available!==false);
+    if(slot){reschedDay=day;newSlot=slot;break;}
+  }
+  assert.ok(reschedDay&&newSlot,"Nenhuma data de remarcação disponível nos próximos dez dias");
   await fill('input[type="date"]',reschedDay);
   await until("slots da nova data",'[...document.querySelectorAll("button")].some(x=>x.textContent.trim()==='+JSON.stringify(newSlot.label)+')');
   await click(newSlot.label);
