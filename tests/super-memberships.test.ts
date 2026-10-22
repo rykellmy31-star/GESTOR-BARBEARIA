@@ -125,3 +125,70 @@ describe("Superadmin: consulta de painéis de empresas sem vínculo explícito",
     expect(response.status).toBe(403);
   });
 });
+
+
+describe("Super Admin: reenviar dados de acesso e renovar senha do proprietário",()=>{
+  const reset=(companyId:number,userId:number,cookie:string)=>
+    app.request(`/api/super/companies/${companyId}/owners/${userId}/reset-access`,
+      {method:"POST",headers:{cookie,"content-type":"application/json"},body:"{}"},e,ctx);
+
+  it("devolve dados reais do plano e sua validade, sem expor o hash de senha",async()=>{
+    const f=await fixture();
+    await f.request({company_id:f.a.id,user_id:f.target.id,role:"owner"});
+    const res=await app.request(`/api/super/companies/${f.a.id}`,
+      {headers:{cookie:f.actor.cookie}},e,ctx);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const body=await res.json() as {
+      subscription:{plan_code:string;status:string;period_end:string},
+      members:Array<{user_id:number;email:string;role:string}>
+    };
+    expect(body.subscription.plan_code).toBe("pro");
+    expect(body.subscription.status).toBe("active");
+    expect(body.subscription.period_end).toBeTruthy();
+    expect(body.members.some(m=>m.user_id===f.target.id&&m.role==="owner")).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("original-hash");
+  });
+
+  it("gera senha aleatória temporária somente para dono ativo, expira sessões e exige troca",async()=>{
+    const f=await fixture();
+    await f.request({company_id:f.a.id,user_id:f.target.id,role:"owner"});
+    const response=await reset(f.a.id,f.target.id,f.actor.cookie);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toContain("no-store");
+    const payload=await response.json() as {generated_password:string;requires_password_change:boolean};
+    expect(payload.generated_password).toMatch(/^Tigu![a-f0-9]{36}$/);
+    expect(payload.requires_password_change).toBe(true);
+    const stored=await db.prepare("SELECT password_hash,must_change_password FROM users WHERE id=?1")
+      .bind(f.target.id).first<{password_hash:string;must_change_password:number}>();
+    expect(stored?.password_hash).not.toContain(payload.generated_password);
+    expect(stored?.password_hash).not.toBe("original-hash");
+    expect(stored?.must_change_password).toBe(1);
+    const sessionCount=await db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE user_id=?1")
+      .bind(f.target.id).first<{n:number}>();
+    expect(sessionCount?.n).toBe(0);
+    const tenantDenied=await app.request(`/api/c/${f.a.slug}/admin/services`,
+      {headers:{cookie:f.target.cookie}},e,ctx);
+    expect(tenantDenied.status).toBe(401);
+  });
+
+  it("nega redefine de outro tenant, usuário comum e usuário sem papel de owner",async()=>{
+    const f=await fixture();
+    await f.request({company_id:f.b.id,user_id:f.target.id,role:"owner"});
+    expect((await reset(f.a.id,f.target.id,f.actor.cookie)).status).toBe(403);
+    expect((await reset(f.b.id,f.target.id,f.target.cookie)).status).toBe(403);
+    await f.request({company_id:f.a.id,user_id:f.target.id,role:"manager"});
+    expect((await reset(f.a.id,f.target.id,f.actor.cookie)).status).toBe(403);
+    const stored=await db.prepare("SELECT password_hash FROM users WHERE id=?1").bind(f.target.id).first<{password_hash:string}>();
+    expect(stored?.password_hash).toBe("original-hash");
+  });
+
+  it("não reseta login compartilhado por várias empresas",async()=>{
+    const f=await fixture();
+    await f.request({company_id:f.a.id,user_id:f.target.id,role:"owner"});
+    await f.request({company_id:f.b.id,user_id:f.target.id,role:"owner"});
+    expect((await reset(f.a.id,f.target.id,f.actor.cookie)).status).toBe(409);
+    expect((await db.prepare("SELECT password_hash FROM users WHERE id=?1").bind(f.target.id)
+      .first<{password_hash:string}>())?.password_hash).toBe("original-hash");
+  });
+});
