@@ -4,6 +4,7 @@ import { configureTurnstileStaging } from "./staging-turnstile-setup.mjs";
 
 const id="b".repeat(32);
 const token="fictional-cloudflare-secret-for-test-only";
+const turnstileToken="fictional-least-privilege-turnstile-token";
 const prefix="https://api.cloudflare.com/client/v4/accounts/"+id;
 const widgetName="TIGU Leads Homologacao 2026";
 function makeFixture({oldSecret=false,denyWidgets=false,badEnvironment=false,emptyBindings=false}={}){
@@ -14,6 +15,10 @@ function makeFixture({oldSecret=false,denyWidgets=false,badEnvironment=false,emp
  const fetcher=async (url,options={})=>{
    const method=options.method??"GET";
    calls.push({url,method});
+   if(url.startsWith(prefix)){
+     assert.equal(options.headers?.Authorization,
+       "Bearer "+(url.includes("/challenges/widgets")?turnstileToken:token));
+   }
    if(url==="https://tigu-staging.netssh3-0.workers.dev/api/health")
      return {ok:true,json:async()=>({ok:true,staging:true,d1:true,r2:true})};
    if(url==="https://tigu-staging.netssh3-0.workers.dev/api/marketing/lead-config")
@@ -59,7 +64,7 @@ function makeFixture({oldSecret=false,denyWidgets=false,badEnvironment=false,emp
 
 test("configura dois segredos novos sem permitir vazamento ou recurso de produção",async()=>{
  const f=makeFixture();
- const result=await configureTurnstileStaging({token,accountId:id,fetcher:f.fetcher,putSecret:f.putSecret});
+ const result=await configureTurnstileStaging({token,turnstileToken,accountId:id,fetcher:f.fetcher,putSecret:f.putSecret});
  assert.equal(result.turnstile_configured,true);
  assert.equal(result.staging_health_verified,true);
  assert.equal(result.credentials_exposed,false);
@@ -72,10 +77,16 @@ test("configura dois segredos novos sem permitir vazamento ou recurso de produç
  assert.ok(!JSON.stringify(result).includes(token));
 });
 
+test("sem token de Turnstile não executa operações",async()=>{
+ const f=makeFixture();
+ await assert.rejects(configureTurnstileStaging({
+   token,accountId:id,fetcher:f.fetcher,putSecret:f.putSecret}),/CLOUDFLARE_TURNSTILE_TOKEN ausente/);
+ assert.equal(f.calls.length,0);
+});
 test("segredo existente falha antes de criar widget ou alterar segredo",async()=>{
  const f=makeFixture({oldSecret:true});
  await assert.rejects(configureTurnstileStaging({
-   token,accountId:id,fetcher:f.fetcher,putSecret:f.putSecret}),/já possui bindings/);
+   token,turnstileToken,accountId:id,fetcher:f.fetcher,putSecret:f.putSecret}),/já possui bindings/);
  assert.ok(f.calls.every(x=>x.method!=="POST"));
  assert.equal(f.puts.length,0);
 });
@@ -83,7 +94,7 @@ test("segredo existente falha antes de criar widget ou alterar segredo",async()=
 test("sem permissão Account:Turnstile:Edit, termina sem qualquer escrita",async()=>{
  const f=makeFixture({denyWidgets:true});
  await assert.rejects(configureTurnstileStaging({
-   token,accountId:id,fetcher:f.fetcher,putSecret:f.putSecret}),/HTTP 403/);
+   token,turnstileToken,accountId:id,fetcher:f.fetcher,putSecret:f.putSecret}),/HTTP 403/);
  assert.ok(f.calls.every(x=>x.method!=="POST"));
  assert.equal(f.puts.length,0);
 });
@@ -92,7 +103,7 @@ test("worker não isolado e bindings ausentes impedem qualquer alteração",asyn
  for(const config of [{badEnvironment:true},{emptyBindings:true}]){
    const f=makeFixture(config);
    await assert.rejects(configureTurnstileStaging({
-     token,accountId:id,fetcher:f.fetcher,putSecret:f.putSecret}),/isolamento staging/);
+     token,turnstileToken,accountId:id,fetcher:f.fetcher,putSecret:f.putSecret}),/isolamento staging/);
    assert.ok(f.calls.every(x=>x.method!=="POST"));
    assert.equal(f.puts.length,0);
  }
