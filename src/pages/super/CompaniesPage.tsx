@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { buildOwnerWelcomeMessage, formatTrialEnd, type OwnerWelcomeDetails } from "@/lib/owner-welcome";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Badge, Button, Field, Input, Modal, Select, Spinner, useToast } from "@/components/ui";
@@ -12,14 +13,21 @@ export function SuperCompanies() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
-  const [access,setAccess]=useState<{email:string;slug:string;password?:string;trialEnd:string;createdUser:boolean}|null>(null);
+  const [access,setAccess]=useState<OwnerWelcomeDetails|null>(null);
   const [f, setF] = useState({ name: "", slug: "", plan_code: "pro", owner_name: "", owner_email: "", owner_password: "" });
   const list = useQuery({ queryKey: ["super-companies", q], queryFn: () => api.get<any>(`/super/companies?q=${encodeURIComponent(q)}`).then((d) => d.companies as any[]) });
   const create = useMutation({
     mutationFn: () => api.post<any>("/super/companies", { ...f, owner_password: f.owner_password || undefined, slug: f.slug || undefined }),
     gcTime: 0,
     onSuccess: (r) => {
-      setAccess({email:f.owner_email,slug:r.slug,password:r.generated_password,trialEnd:r.trial_end,createdUser:r.created_user});
+      setAccess({
+        companyName:r.company_name ?? f.name.trim(),ownerName:r.owner_name ?? f.owner_name.trim(),
+        ownerEmail:f.owner_email,slug:r.slug,planCode:r.plan_code ?? f.plan_code,
+        trialEnd:r.trial_end,trialDays:r.trial_days ?? 15,
+        // Somente na memória desta janela. Nunca persistir a senha em claro.
+        initialPassword:r.created_user ? (r.generated_password ?? f.owner_password) : undefined,
+        createdUser:r.created_user === true,origin:location.origin,
+      });
       toast.push("ok", "Barbearia criada com teste gratuito de 15 dias.");
       qc.invalidateQueries({queryKey:["super-companies"]});
       setOpen(false);
@@ -71,27 +79,45 @@ export function SuperCompanies() {
           ))}
         </Table>
       )}
-      <Modal open={Boolean(access)} onClose={()=>{setAccess(null);create.reset();}} title="Barbearia criada">
-        {access&&<div className="space-y-4 text-sm text-zinc-300">
-          <p>Endereço: <span className="font-mono">/c/{access.slug}</span></p>
-          <p>Teste gratuito até {new Date(access.trialEnd).toLocaleDateString("pt-BR")}. Nenhuma cobrança foi criada.</p>
-          <p>E-mail do dono: {access.email}</p>
-          {access.password?<>
-            <p>Guarde a senha provisória agora. Ela não será exibida novamente após fechar esta janela.</p>
-            <Input aria-label="Senha provisória do dono" readOnly value={access.password} className="font-mono" />
-            <Button variant="dark" onClick={async()=>{
-              try {await navigator.clipboard.writeText(access.password!);toast.push("ok","Senha copiada.");}
-              catch {toast.push("err","Selecione e copie a senha exibida.");}
-            }}>Copiar senha provisória</Button>
-          </>:<p>{access.createdUser?"Use a senha inicial informada. O dono precisará alterá-la no primeiro acesso.":"O dono continua usando a senha da conta existente."}</p>}
-          <Button className="w-full justify-center" onClick={()=>{setAccess(null);create.reset();}}>Concluir</Button>
+      <Modal open={Boolean(access)} onClose={()=>{setAccess(null);create.reset();}} title="Barbearia criada — mensagem para o proprietário">
+        {access && <div className="min-w-0 space-y-3 text-sm text-zinc-300">
+          <p className="text-zinc-200">Cadastro realizado. Confira os dados e copie a mensagem para o dono da barbearia.</p>
+          <div className="grid gap-2 rounded-xl border border-line bg-ink-soft p-3 sm:grid-cols-2">
+            <p className="break-words"><span className="text-zinc-500">Barbearia:</span> {access.companyName}</p>
+            <p className="break-words"><span className="text-zinc-500">Proprietário:</span> {access.ownerName}</p>
+            <p className="break-all"><span className="text-zinc-500">Login:</span> {access.ownerEmail}</p>
+            <p><span className="text-zinc-500">Plano:</span> {access.planCode.toUpperCase()}</p>
+            <p><span className="text-zinc-500">Teste:</span> {access.trialDays} dias grátis</p>
+            <p><span className="text-zinc-500">Válido até:</span> {formatTrialEnd(access.trialEnd)}</p>
+          </div>
+          <p className="text-xs text-amber-200">O plano está selecionado, mas não foi pago. A data acima é do teste gratuito.</p>
+          <label htmlFor="tigu-welcome-message" className="block text-sm font-semibold text-zinc-200">Mensagem pronta para copiar e enviar</label>
+          <textarea id="tigu-welcome-message" readOnly aria-label="Mensagem de acesso para o proprietário"
+            className="min-h-64 w-full max-w-full resize-y rounded-xl border border-line bg-[#0a0a0c] p-3 font-mono text-xs leading-relaxed text-zinc-100"
+            value={buildOwnerWelcomeMessage(access)} onFocus={(e) => e.target.select()} />
+          <Button className="btn-gold w-full justify-center py-3" onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(buildOwnerWelcomeMessage(access));
+              toast.push("ok", "Mensagem copiada! Envie diretamente ao proprietário.");
+            } catch {
+              const textarea = document.getElementById("tigu-welcome-message") as HTMLTextAreaElement | null;
+              textarea?.focus(); textarea?.select();
+              toast.push("err", "Selecione a mensagem e use Copiar no dispositivo.");
+            }
+          }}><Copy size={16} /> Copiar mensagem completa</Button>
+          <p className="text-xs leading-relaxed text-zinc-500">
+            {access.createdUser
+              ? "A senha provisória aparece apenas nesta mensagem. No primeiro login, o usuário será obrigado a alterá-la. Depois de fechar, não é possível recuperar a senha em texto aberto."
+              : "Este e-mail já tinha uma conta TIGU. A senha antiga não foi redefinida e não pode ser exibida."}
+          </p>
+          <Button variant="dark" className="w-full justify-center" onClick={()=>{setAccess(null);create.reset();}}>Concluir e apagar a prévia</Button>
         </div>}
       </Modal>
       <Modal open={open} onClose={() => setOpen(false)} title="Cadastrar barbearia (onboarding assistido)">
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">O cadastro inicia um teste gratuito de 15 dias. Não gera cobrança nem confirma pagamento.</p>
           <Field label="Nome"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Slug do link (opcional)"><Input value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-") })} placeholder="navalha-de-ouro" /></Field>
             <Field label="Plano"><Select value={f.plan_code} onChange={(e) => setF({ ...f, plan_code: e.target.value })}><option value="free">free</option><option value="pro">pro</option><option value="scale">scale</option></Select></Field>
           </div>
