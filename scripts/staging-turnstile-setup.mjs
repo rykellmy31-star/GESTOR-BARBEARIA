@@ -22,7 +22,7 @@ const SECRET_KEYS=["SALES_TURNSTILE_SECRET","SALES_TURNSTILE_SITE_KEY"];
 const STAGING_URL="https://tigu-staging.netssh3-0.workers.dev";
 
 export async function configureTurnstileStaging({
- token,accountId,fetcher=fetch,
+ token,turnstileToken,accountId,fetcher=fetch,
  putSecret=async(key,value,{token,accountId,root})=>{
    const proc=spawnSync("npx",
      ["wrangler","secret","put",key,"--name",SCRIPT],
@@ -39,16 +39,18 @@ export async function configureTurnstileStaging({
  if(typeof token!=="string"||token.length<15||
    !/^[0-9a-f]{32}$/i.test(accountId||""))
    throw Error("Credenciais TIGU staging ausentes ou inválidas.");
+ if(typeof turnstileToken!=="string"||turnstileToken.length<15)
+   throw Error("CLOUDFLARE_TURNSTILE_TOKEN ausente. Crie um token separado Account:Turnstile:Edit e configure como segredo no GitHub.");
  await inspectExportTarget({token,accountId,fetcher});
  const base=API+accountId;
  async function call(method,path,payload){
    const response=await fetcher(base+path,{
      method,redirect:"error",signal:AbortSignal.timeout(25000),
-     headers:{Authorization:"Bearer "+token,Accept:"application/json",
+     headers:{Authorization:"Bearer "+(path.startsWith("/challenges/widgets")?turnstileToken:token),Accept:"application/json",
        ...(payload?{"Content-Type":"application/json"}:{})},
      ...(payload?{body:JSON.stringify(payload)}:{})
    });
-   if(!response.ok)throw Error("Cloudflare não autorizou etapa Turnstile "+method+" (HTTP "+response.status+"). Verifique Account:Turnstile:Edit.");
+   if(!response.ok)throw Error("Cloudflare não autorizou etapa Turnstile "+method+" (HTTP "+response.status+"). Confira CLOUDFLARE_TURNSTILE_TOKEN e a permissão Account:Turnstile:Edit.");
    const body=await response.json();
    if(body?.success!==true)throw Error("Cloudflare recusou etapa Turnstile "+method+".");
    return body.result;
@@ -116,6 +118,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
      throw Error("Turnstile staging exige commit de autorização isolada.");
    const out=await configureTurnstileStaging({
      token:process.env.CLOUDFLARE_STAGING_TOKEN,
+     turnstileToken:process.env.CLOUDFLARE_TURNSTILE_TOKEN,
      accountId:process.env.CLOUDFLARE_ACCOUNT_ID,
    });
    console.log("TIGU Turnstile staging: "+JSON.stringify(out));
