@@ -26,7 +26,7 @@ if(criticalOrModerate)
 if(audit.error || audit.status!==0) {
   const detail=[audit.stdout,audit.stderr,audit.error?.message,
     auditJson?.error?.code,auditJson?.error?.summary,auditJson?.error?.detail].filter(Boolean).join("\n");
-  const networkOutage=/(?:503|Service Unavailable|EAI_AGAIN|ENOTFOUND|ETIMEDOUT|ECONNRESET|FETCH_ERROR|ERR_SOCKET_TIMEOUT)/i.test(detail);
+  const networkOutage=/(?:503|Service Unavailable|network timeout|EAI_AGAIN|ENOTFOUND|ETIMEDOUT|ECONNRESET|FETCH_ERROR|ERR_SOCKET_TIMEOUT)/i.test(detail);
   if(process.env.TIGU_STAGING_AUDIT_OUTAGE_TOLERATED==="YES" && networkOutage) {
     console.warn("ATENÇÃO: registro npm indisponível. Auditoria de dependências INCONCLUSIVA; testes locais prosseguem apenas para staging.");
   }else{
