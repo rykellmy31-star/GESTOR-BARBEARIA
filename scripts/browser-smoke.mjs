@@ -691,6 +691,20 @@ try{
   await until("detalhe da nova barbearia",'document.body.innerText.includes("Nova Barbearia Chromium")'+
     '&&document.body.innerText.includes("AJUSTE MANUAL DE CRÉDITOS")');
   pass("Superadmin abre detalhes e configurações de barbearia");
+  await click("Copiar informações de login");
+  await until("modal de dados para proprietário",
+    'document.querySelector("#tigu-owner-details-message")!==null');
+  const secondCopy=await js('document.querySelector("#tigu-owner-details-message")?.value || ""');
+  assert.ok(secondCopy.includes("Nova Barbearia Chromium"),"Nome da barbearia não exibido na segunda via");
+  assert.ok(secondCopy.includes(newOwner),"E-mail do proprietário não exibido na segunda via");
+  assert.ok(secondCopy.includes("/c/"+newSlug),"Link de divulgação não exibido");
+  assert.ok(secondCopy.includes("/login"),"Link de login não exibido");
+  assert.ok(secondCopy.includes("Plano: PRO"),"Plano do D1 não exibido");
+  assert.ok(secondCopy.includes("Validade do período atual:"),"Vencimento do D1 não exibido");
+  assert.ok(secondCopy.includes("senha antiga não pode ser recuperada"),"Não deve revelar senha antiga");
+  await click("Fechar");
+  await until("modal de segundo acesso encerrado",'document.querySelector("#tigu-owner-details-message")===null');
+  pass("Superadmin copia uma segunda via segura dos dados e link público da barbearia");
   await fill('input[placeholder^="ex.: 5000"]',"1250");
   await fill('input[placeholder^="Justificativa"]',"Teste isolado de auditoria de créditos");
   await click("Aplicar");
