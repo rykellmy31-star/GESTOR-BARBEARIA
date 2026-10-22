@@ -33,7 +33,7 @@ export function SuperCompanies() {
     onError: (e: any) => toast.push("err", e.message),
   });
   const removeDemo = useMutation({
-    mutationFn: (id: number) => api.delete(`/super/companies/${id}/demo`),
+    mutationFn: (id: number) => api.del(`/super/companies/${id}/demo`),
     onSuccess: () => { toast.push("ok","Barbearia fictícia excluída."); qc.invalidateQueries({queryKey:["super-companies"]}); },
     onError: (e: any) => toast.push("err", e.message),
   });
