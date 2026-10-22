@@ -198,7 +198,7 @@ function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
         <div className="space-y-3 text-sm">
           <div className="flex items-center justify-between">
             <p className="font-mono text-[13px] text-[var(--c-gold)]">{b.code}</p>
-            <Badge tone={TONE[b.status] || "gray"}>{b.status}</Badge>
+            <Badge tone={TONE[b.status] || "gray"}>{b.status === "no_show" ? "Não compareceu" : b.status}</Badge>
           </div>
           <p className="text-zinc-200">{b.service_name} <span className="text-zinc-500">({b.duration_min} min)</span> com <b className="text-zinc-100">{b.barber_name}</b></p>
           <p className="text-zinc-300">{new Date(b.starts_at).toLocaleString("pt-BR", { timeZone: tz })} → {new Date(b.ends_at).toLocaleString("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit" })}</p>
@@ -224,7 +224,7 @@ function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
                   Concluir antecipadamente e encaixar
                 </Button>
               )}
-              {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="dark" disabled={busy} onClick={() => patch("no_show")}>No-show</Button>}
+              {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="dark" disabled={busy} onClick={() => patch("no_show")}>Não compareceu</Button>}
               {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="danger" disabled={busy} onClick={() => patch("cancelado")}>Cancelar</Button>}
               {["pendente", "confirmado"].includes(b.status) && !resched && (
                 <Button size="sm" variant="ghost" onClick={() => { const p = utcToLocalParts(tz, b.starts_at); setResched(p); }}>Remarcar…</Button>
