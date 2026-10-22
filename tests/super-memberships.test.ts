@@ -192,3 +192,52 @@ describe("Super Admin: reenviar dados de acesso e renovar senha do proprietário
       .first<{password_hash:string}>())?.password_hash).toBe("original-hash");
   });
 });
+
+
+describe("Super Admin: diagnóstico sem exposição de segredos",()=>{
+  it("exige sessão de superadmin mesmo para consultar o estado das integrações", async()=>{
+    const withoutSession=await app.request("/api/super/integrations/status",{},e,ctx);
+    expect(withoutSession.status).toBe(401);
+    const f=await fixture();
+    const ordinary=await app.request("/api/super/integrations/status",
+      {headers:{cookie:f.target.cookie}},e,ctx);
+    expect(ordinary.status).toBe(403);
+  });
+
+  it("mostra Turnstile, contato e bloqueio de staging sem divulgar credenciais",async()=>{
+    const f=await fixture();
+    const envWithSecrets={
+      ...e,
+      TIGU_STAGING:"1",
+      SALES_TURNSTILE_SITE_KEY:"public-sitekey-for-test",
+      SALES_TURNSTILE_SECRET:"private-turnstile-secret-must-not-appear",
+      MP_ACCESS_TOKEN:"private-mercadopago-secret-must-not-appear",
+      MP_WEBHOOK_SECRET:"private-webhook-secret-must-not-appear",
+      WHATSAPP_APP_SECRET:"private-whatsapp-secret-must-not-appear",
+      MSG_ENC_KEY:"private-messaging-encryption-secret-must-not-appear",
+    } as Env;
+    const response=await app.request("/api/super/integrations/status",
+      {headers:{cookie:f.actor.cookie}},envWithSecrets,ctx);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const body=await response.json() as {
+      staging:boolean;
+      readiness:{turnstile_site_key_set:boolean;turnstile_secret_set:boolean;
+        leads_form_ready:boolean;production_site_ready:boolean;sales_contact_enabled:boolean};
+      payment:{access_token_set:boolean;enabled_in_environment:boolean};
+    };
+    expect(body.staging).toBe(true);
+    expect(body.readiness.turnstile_site_key_set).toBe(true);
+    expect(body.readiness.turnstile_secret_set).toBe(true);
+    expect(body.readiness.leads_form_ready).toBe(true);
+    expect(body.readiness.production_site_ready).toBe(false);
+    expect(body.readiness.sales_contact_enabled).toBe(false);
+    expect(body.payment.access_token_set).toBe(true);
+    expect(body.payment.enabled_in_environment).toBe(false);
+    const json=JSON.stringify(body);
+    for(const secret of ["private-turnstile-secret-must-not-appear",
+      "private-mercadopago-secret-must-not-appear","private-webhook-secret-must-not-appear",
+      "private-whatsapp-secret-must-not-appear","private-messaging-encryption-secret-must-not-appear"])
+      expect(json).not.toContain(secret);
+  });
+});
