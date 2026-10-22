@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Bot, Building2, Coins, FileClock, LayoutDashboard, LogOut, Tag, Receipt, Scissors, Settings, Users, Handshake, CreditCard } from "lucide-react";
+import { Bot, Building2, Coins, FileClock, LayoutDashboard, LogOut, Tag, Receipt, Scissors, Settings, Users, Handshake, CreditCard, Plug } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
 
 const links = [
@@ -14,6 +14,7 @@ const links = [
   { to: "messages", label: "Fila global", icon: Bot },
   { to: "audit", label: "Auditoria", icon: FileClock },
   { to: "settings", label: "Config. plataforma", icon: Settings },
+  { to: "integrations", label: "Integrações", icon: Plug },
 ];
 
 export function SuperLayout() {
