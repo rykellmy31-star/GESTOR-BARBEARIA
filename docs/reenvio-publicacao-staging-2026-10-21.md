@@ -15,3 +15,6 @@ Esta alteração é documentação e aciona o gatilho de atualização de stagin
 As execuções anteriores sofreram atraso de 7 minutos no npm ci e falha 503 no npm audit (registro npm indisponível). O CI agora usa cache preferencial e limites de rede; o bloqueio de vulnerabilidades conhecidas permanece obrigatório. Quando o audit está indisponível por erro de rede, a homologação informa auditoria inconclusiva e segue somente com os demais testes de staging.
 
 Este commit é o gatilho explícito da segunda tentativa. Nenhum recurso de produção é alterado.
+
+## Reenvio após timeout do registro npm
+Execução anterior encontrou a mensagem literal `network timeout` do endpoint de auditoria, não reconhecida pela primeira regra de indisponibilidade. A regra foi corrigida e preserva o bloqueio para vulnerabilidades identificadas. Nova tentativa solicitada pelo proprietário, exclusivamente staging.
