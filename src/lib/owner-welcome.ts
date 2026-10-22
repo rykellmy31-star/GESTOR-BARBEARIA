@@ -48,3 +48,57 @@ export function buildOwnerWelcomeMessage(d: OwnerWelcomeDetails): string {
     "Equipe TIGU",
   ].join("\n");
 }
+
+
+/** Segunda via do convite após o cadastro: nunca recupera a senha antiga.
+ * A senha provisória só é incluída após o Super Admin confirmar uma redefinição.
+ * Datas e status vêm do D1, sem presumir que o plano esteja pago. */
+export interface OwnerAccessDetails {
+  companyName: string;
+  ownerName: string;
+  ownerEmail: string;
+  slug: string;
+  planCode: string;
+  subscriptionStatus: string | null;
+  periodEnd: string | null;
+  origin: string;
+  temporaryPassword?: string;
+}
+export function buildOwnerAccessMessage(d: OwnerAccessDetails): string {
+  const root=d.origin.replace(/\/$/, "");
+  const status:Record<string,string>={
+    trial:"Teste gratuito (sem cobrança confirmada)",
+    active:"Ativo (consulte as condições financeiras do contrato)",
+    past_due:"Pagamento ou renovação pendente",
+    cancelled:"Cancelado",
+  };
+  const situation=status[d.subscriptionStatus??""]??"Não informado";
+  const expiry=d.periodEnd
+    ? `Validade do período atual: ${formatTrialEnd(d.periodEnd)} (horário de Brasília/Bahia).`
+    : "Validade: não informada. Consulte o administrador da plataforma.";
+  const credentials=d.temporaryPassword
+    ? [`Nova senha provisória: ${d.temporaryPassword}`,
+       "ATENÇÃO: a senha anterior foi substituída e as sessões anteriores foram encerradas.",
+       "Você deverá trocar essa senha no primeiro acesso."]
+    : ["Senha: utilize a senha atual da sua conta TIGU.",
+       "A senha antiga não pode ser recuperada ou consultada. Para substituí-la, solicite uma nova senha provisória."];
+  return [
+    "✂️ TIGU — DADOS DE ACESSO DA BARBEARIA",
+    "",
+    `Proprietário(a): ${d.ownerName.trim()}`,
+    `Barbearia: ${d.companyName.trim()}`,
+    `Usuário para login (e-mail): ${d.ownerEmail.trim().toLowerCase()}`,
+    ...credentials,
+    "",
+    `Plano: ${d.planCode.toUpperCase()}`,
+    `Situação do plano: ${situation}`,
+    expiry,
+    "",
+    `LINK PARA ENTRAR NO PAINEL: ${root}/login`,
+    `LINK PARA DIVULGAR A BARBEARIA E RECEBER AGENDAMENTOS: ${root}/c/${encodeURIComponent(d.slug)}`,
+    "",
+    "Compartilhe o link de divulgação com os clientes.",
+    "Envie os dados de acesso somente ao proprietário, em canal privado.",
+    "Equipe TIGU",
+  ].join("\n");
+}
