@@ -31,3 +31,8 @@ A suíte de navegador tentava reservar o dia seguinte mesmo sem horário aberto 
 
 ## Atualização da vitrine pública
 Removidos do cabeçalho e do destaque da landing page os links “Prévia visual” e “Explorar prévia visual”, juntamente com o aviso sobre dados fictícios. Mantidos “Começar grátis”, login, planos e cadastro. Não houve alteração nos dados de clientes, bancos ou segredos. Publicação solicitada exclusivamente no Worker de homologação.
+
+## Correção 2026-10-22 — painéis de barbearias acessados pelo Super Admin
+Captura recebida: `https://agendamentos.crjornada.com/c/bim-brasil/admin/carteira`, com mensagem de falha no carregamento. O domínio responde `staging:true`, com D1/R2 operacionais. Causa identificada no código: Gate React autorizava Super Admin sem vínculo a abrir o painel, mas tenantMiddleware exigia company_membership e negava todas as consultas. Implementado suporte estritamente READ-ONLY para Super Admin autenticado em rotas /admin/ sob tenant existente/ativo, sem privilégios de escrita e sem alterar o isolamento dos usuários normais. O cabeçalho do painel explica a limitação e o botão do Super Admin foi corrigido.
+
+Testes adicionados para leitura do painel, carteira, acesso comum de proprietário, bloqueio de escrita, negação a usuário comum e empresa suspensa. Validação pré-deploy da branch concluiu com sucesso no GitHub Actions. Publicação requerida SOMENTE no Worker `tigu-staging`; sem migrações, sem recriar bancos ou girar segredos, sem habilitar provedores reais.
