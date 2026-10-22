@@ -75,3 +75,53 @@ describe("Superadmin: isolamento de vínculos de acesso",()=>{
     expect(await f.member()).toBeNull();
   });
 });
+
+
+describe("Superadmin: consulta de painéis de empresas sem vínculo explícito", () => {
+  it("carrega abas administrativas e carteira exclusivamente no tenant solicitado", async () => {
+    const f = await fixture();
+    for (const company of [f.a, f.b]) {
+      const response = await app.request(`/api/c/${company.slug}/admin/services`,
+        { headers: { cookie: f.actor.cookie } }, e, ctx);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("X-Tigu-Support-Mode")).toBe("read-only");
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      const json = await response.json() as { services: Array<{company_id?:number}> };
+      expect(Array.isArray(json.services)).toBe(true);
+    }
+    const wallet = await app.request(`/api/c/${f.a.slug}/admin/wallet`,
+      { headers: { cookie: f.actor.cookie } }, e, ctx);
+    expect(wallet.status).toBe(200);
+    expect((await wallet.json() as {topups:unknown[]}).topups).toEqual([]);
+  });
+  it("impede qualquer alteração via painel assumido e mantém RBAC para contas comuns", async () => {
+    const f = await fixture();
+    const endpoint=`/api/c/${f.a.slug}/admin/notifications/read`;
+    const supportWrite=await app.request(endpoint,
+      {method:"POST",headers:{cookie:f.actor.cookie}},e,ctx);
+    expect(supportWrite.status).toBe(403);
+    const noMembership=await app.request(`/api/c/${f.a.slug}/admin/services`,
+      {headers:{cookie:f.target.cookie}},e,ctx);
+    expect(noMembership.status).toBe(403);
+    const noBarberBypass=await app.request(`/api/c/${f.a.slug}/barber/me`,
+      {headers:{cookie:f.actor.cookie}},e,ctx);
+    expect(noBarberBypass.status).toBe(403);
+    // Um proprietário REAL continua apto a gerir sua empresa.
+    const link=await f.request({company_id:f.a.id,user_id:f.target.id,role:"owner"});
+    expect(link.status).toBe(200);
+    const ownerRead=await app.request(`/api/c/${f.a.slug}/admin/services`,
+      {headers:{cookie:f.target.cookie}},e,ctx);
+    expect(ownerRead.status).toBe(200);
+    expect(ownerRead.headers.get("X-Tigu-Support-Mode")).toBeNull();
+    const ownerWrite=await app.request(endpoint,
+      {method:"POST",headers:{cookie:f.target.cookie}},e,ctx);
+    expect(ownerWrite.status).toBe(200);
+  });
+  it("não contorna bloqueio da empresa suspensa", async () => {
+    const f=await fixture();
+    await db.prepare("UPDATE companies SET status='suspended' WHERE id=?1").bind(f.a.id).run();
+    const response=await app.request(`/api/c/${f.a.slug}/admin/services`,
+      {headers:{cookie:f.actor.cookie}},e,ctx);
+    expect(response.status).toBe(403);
+  });
+});
