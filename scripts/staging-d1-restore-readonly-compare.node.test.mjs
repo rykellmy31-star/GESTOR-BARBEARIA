@@ -10,7 +10,11 @@ const sourceId="12345678-1234-4234-8234-123456789012";
 const targetId="92345678-1234-4234-8234-123456789012";
 const root=resolve(import.meta.dirname,"..");
 const sql=readdirSync(join(root,"migrations")).filter(n=>/^\d{4}_.*\.sql$/.test(n)).sort()
- .map(n=>readFileSync(join(root,"migrations",n),"utf8")).join("\n");
+ .map(n=>readFileSync(join(root,"migrations",n),"utf8")).join("\n")
+ // Fixe as datas DEFAULT neste snapshot de teste. Duas instâncias SQLite
+ // aplicando o mesmo SQL perto da virada de segundo podem produzir hashes
+ // diferentes, apesar de a cópia fictícia ser idêntica. Código real intacto.
+ .replaceAll("strftime('%Y-%m-%dT%H:%M:%SZ','now')","'2026-10-01T00:00:00Z'");
 function fake({exists=true,unauthorized=false,requests=[]}={}){
  const host="https://api.cloudflare.com/client/v4/accounts/"+accountId;
  return async(url,opt)=>{
