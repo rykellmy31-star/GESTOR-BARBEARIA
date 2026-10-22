@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Plus, Search } from "lucide-react";
+import { Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Badge, Button, Field, Input, Modal, Select, Spinner, useToast } from "@/components/ui";
@@ -32,6 +32,11 @@ export function SuperCompanies() {
     onSuccess: () => { toast.push("ok", "Dados de demonstração semeados (demo=1, apagáveis)."); qc.invalidateQueries({ queryKey: ["super-companies"] }); },
     onError: (e: any) => toast.push("err", e.message),
   });
+  const removeDemo = useMutation({
+    mutationFn: (id: number) => api.delete(`/super/companies/${id}/demo`),
+    onSuccess: () => { toast.push("ok","Barbearia fictícia excluída."); qc.invalidateQueries({queryKey:["super-companies"]}); },
+    onError: (e: any) => toast.push("err", e.message),
+  });
   const valid = f.name.trim().length >= 3 && f.owner_name.trim().length >= 2 && /\S+@\S+\.\w+/.test(f.owner_email) && (!f.slug || /^[a-z0-9-]{3,80}$/.test(f.slug)) && (!f.owner_password || f.owner_password.length >= 10);
 
   return (
@@ -54,7 +59,14 @@ export function SuperCompanies() {
               <Td><Money cents={c.balance_cents} /></Td>
               <Td>{c.msgs_this_month}{c.upcoming > 0 && <span className="ml-1.5 text-[10px] text-zinc-500">{c.upcoming} reservas</span>}</Td>
               <Td>{c.members}</Td>
-              <Td className="text-right"><button disabled={seed.isPending} className="text-xs text-[var(--c-gold)] hover:underline disabled:opacity-40" onClick={(e) => { e.stopPropagation(); if (confirm(`Semear dados de demonstração em ${c.name}?`)) seed.mutate(c.id); }}>{seed.isPending ? "…" : "seed demo"}</button></Td>
+              <Td className="text-right"><div className="flex items-center justify-end gap-3">
+                {(c.demo === 1 || (/^Tigu (Teste|Isolamento) [a-f0-9]{8}$/i.test(c.name))) &&
+                  <button title="Excluir apenas barbearia fictícia" disabled={removeDemo.isPending}
+                    className="inline-flex items-center gap-1 text-xs text-red-300 hover:underline disabled:opacity-40"
+                    onClick={(e) => {e.stopPropagation(); if(confirm(`Excluir definitivamente a barbearia fictícia "${c.name}"? Operação irreversível, permitida apenas sem movimentação financeira.`)) removeDemo.mutate(c.id);}}>
+                    <Trash2 size={13}/> Excluir
+                  </button>}
+                <button disabled={seed.isPending} className="text-xs text-[var(--c-gold)] hover:underline disabled:opacity-40" onClick={(e) => { e.stopPropagation(); if (confirm(`Semear dados de demonstração em ${c.name}?`)) seed.mutate(c.id); }}>{seed.isPending ? "…" : "seed demo"}</button></div></Td>
             </Tr>
           ))}
         </Table>
