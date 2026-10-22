@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, CalendarX2, CheckCircle2, ChevronLeft, ChevronRight, Clock, Inbox, Link2, Plus, Search, User } from "lucide-react";
+import { Ban, CalendarX2, ChevronLeft, ChevronRight, Clock, Inbox, Link2, Plus, Search, User } from "lucide-react";
 import { clsx } from "clsx";
 import { api, siteBase } from "@/lib/api";
 import { useConfig } from "@/lib/hooks";
