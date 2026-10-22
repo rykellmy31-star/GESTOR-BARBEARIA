@@ -609,6 +609,30 @@ try{
   await until("Superadmin abre visão geral",
     'document.body.innerText.includes("BARBEARIAS ATIVAS")');
   pass("Superadmin autentica e consulta indicadores globais");
+  // Responsividade real: em 390px o Super Admin deve usar menu móvel
+  // e não ampliar toda a página além da viewport.
+  await cmd("Emulation.setDeviceMetricsOverride", {
+    width:390,height:844,deviceScaleFactor:1,mobile:true
+  });
+  await go(base+"/superadmin/overview");
+  await until("menu móvel do Super Admin",
+    'document.querySelector("button[aria-label=\\"Abrir menu do Super Admin\\"]")!==null');
+  const mobile=await js('(()=>({width:window.innerWidth,scroll:document.documentElement.scrollWidth,'+
+    'menu:!!document.querySelector("button[aria-label=\\"Abrir menu do Super Admin\\"]")}))()');
+  assert.equal(mobile.width,390,"Viewport de telefone não aplicada");
+  assert.ok(mobile.scroll<=mobile.width+2,
+    "Super Admin excedeu largura do celular: "+JSON.stringify(mobile));
+  assert.ok(mobile.menu,"Menu móvel ausente");
+  const opened=await js('(()=>{document.querySelector('+
+    '"button[aria-label=\\"Abrir menu do Super Admin\\"]")?.click();return !!document.querySelector('+
+    '"[role=dialog][aria-label=\\"Menu do Super Admin\\"]")})()');
+  assert.ok(opened,"Botão móvel deve abrir navegação em gaveta");
+  const closed=await js('(()=>{document.querySelector('+
+    '"button[aria-label=\\"Fechar menu\\"]")?.click();return true})()');
+  assert.ok(closed);
+  await until("menu móvel recolhido",'document.querySelector("[role=dialog]")===null');
+  pass("Super Admin adapta navegação para celular sem rolagem horizontal na página");
+  await cmd("Emulation.clearDeviceMetricsOverride");
   await go(base+"/superadmin/companies");
   await until("Superadmin enxerga empresa existente",
     'document.body.innerText.includes("Barbearia Chromium Local")');
@@ -636,6 +660,18 @@ try{
   await click("Criar");
   await until("empresa criada na interface",
     'document.body.innerText.includes("Barbearia criada")&&document.body.innerText.includes('+JSON.stringify(newSlug)+')');
+  const welcome = await js('document.querySelector("#tigu-welcome-message")?.value || ""');
+  assert.ok(welcome.includes("Barbearia: Nova Barbearia Chromium"));
+  assert.ok(welcome.includes("Proprietário(a): Proprietário da nova barbearia"));
+  assert.ok(welcome.includes("E-mail de login: "+newOwner));
+  assert.ok(welcome.includes("Senha provisória:"));
+  assert.ok(welcome.includes("Plano selecionado: PRO") && welcome.includes("15 dias"));
+  assert.ok(welcome.includes("Validade do acesso de teste: até"));
+  assert.ok(welcome.includes("/c/"+newSlug));
+  assert.ok(welcome.includes("sem cobrança iniciada"));
+  assert.ok(await js('!![...document.querySelectorAll("button")].find('+
+    'x=>x.textContent.includes("Copiar mensagem completa"))'));
+  pass("Superadmin gera mensagem pronta para copiar com senha provisória e teste de 15 dias");
   pass("Superadmin cadastra empresa e dono com teste grátis, sem cobrança");
   await go(base+"/superadmin/companies");
   const newlyCreated=await js('fetch("/api/super/companies").then(async r=>{if(!r.ok)throw Error("empresas inacessíveis");'+
