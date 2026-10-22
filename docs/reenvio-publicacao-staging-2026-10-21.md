@@ -24,3 +24,7 @@ O registro npm passou a rejeitar sua rota antiga de auditoria com 400 "This endp
 
 ## Reenvio após atualizar testes de confirmação automática
 Os testes da reserva antiga esperavam `pendente` e confirmar manualmente; agora validam `confirmado` ao criar e preservação após fechamento da agenda. A execução continua restrita ao Worker de homologação.
+
+## Reenvio após corrigir o teste de remarcação no Chromium
+
+A suíte de navegador tentava reservar o dia seguinte mesmo sem horário aberto (por exemplo, domingo); agora consulta até dez dias e seleciona um horário realmente disponível. A alteração de código não muda política comercial de agendamentos. Os testes unitários e HTTP locais da execução anterior já estavam aprovados. Este commit aciona apenas `tigu-staging`; nenhuma operação em produção.
