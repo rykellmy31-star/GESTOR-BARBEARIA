@@ -141,7 +141,7 @@ export async function authenticatedStagingChecks({ url,fetcher=fetch,makeBytes=n
     barberId:barber.data.id,serviceId:service.data.id,startsAt:fitIso(45),
     name:"Encaixe Longo Bloqueado",phone:"5573888877778",fitInDurationMin:20
   });
-  pass("Encaixe longo que invade a próxima reserva é recusado",fitBlocked.status===409);
+  pass("Encaixe longo que invade a próxima reserva é recusado [HTTP "+fitBlocked.status+", erro: "+String(fitBlocked.data?.error||fitBlocked.data?.message||"").slice(0,90)+"]",fitBlocked.status===409);
   const fit=await o("POST",c+"/admin/bookings",{
     barberId:barber.data.id,serviceId:service.data.id,startsAt:fitIso(45),
     name:"Encaixe Rápido Fictício",phone:"5573888877779",fitInDurationMin:15
