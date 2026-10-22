@@ -206,3 +206,12 @@ jobs:
           TIGU_SUPERADMIN_INITIAL_PASSWORD: ${{ secrets.TIGU_SUPERADMIN_INITIAL_PASSWORD }}
           TIGU_SUPER_STAGING_APPROVED: YES
         run: node scripts/staging-super-bootstrap-once.mjs
+
+      # Inventário SOMENTE leitura de contas/barbearias com assinatura explícita dos
+      # testes remotos. Não retorna PII nem altera registros, pagamentos ou R2.
+      - name: Inventariar usuários e barbearias fictícias do staging
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_AUDIT_TEST_ACCOUNTS_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/staging-test-accounts-inventory.mjs
