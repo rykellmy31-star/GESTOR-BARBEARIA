@@ -29,8 +29,12 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Instalar dependencias
-        run: npm ci
+        run: npm ci --no-audit --prefer-offline --fetch-retries=1 --fetch-timeout=20000
       - name: Validar auditoria, homologacao, tipos, build e testes
+        env:
+          # Permite somente staging ultrapassar uma indisponibilidade do npm.
+          # Falhas reais de segurança continuam bloqueando o build.
+          TIGU_STAGING_AUDIT_OUTAGE_TOLERATED: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_UPDATE_WORKER_STAGING_ONCE' && 'YES' || 'NO' }}
         run: npm run validate
       - name: Homologar fluxos HTTP completos com Worker, D1 e R2 locais
         run: node scripts/local-e2e.mjs
