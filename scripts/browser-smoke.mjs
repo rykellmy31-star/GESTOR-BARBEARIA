@@ -627,10 +627,12 @@ try{
   assert.ok(mobile.scroll<=mobile.width+2,
     "Super Admin excedeu largura do celular: "+JSON.stringify(mobile));
   assert.ok(mobile.menu,"Menu móvel ausente");
-  const opened=await js('(()=>{document.querySelector('+
-    '"button[aria-label=\\"Abrir menu do Super Admin\\"]")?.click();return !!document.querySelector('+
-    '"[role=dialog][aria-label=\\"Menu do Super Admin\\"]")})()');
-  assert.ok(opened,"Botão móvel deve abrir navegação em gaveta");
+  const opened=await js('(()=>{const button=document.querySelector('+
+    '"button[aria-label=\\"Abrir menu do Super Admin\\"]");'+
+    'if(!button)return false;button.click();return true})()');
+  assert.ok(opened,"Botão móvel ausente ou não clicável");
+  await until("gaveta do menu aberta",
+    'document.querySelector("[role=dialog][aria-label=\\"Menu do Super Admin\\"]")!==null');
   const closed=await js('(()=>{document.querySelector('+
     '"button[aria-label=\\"Fechar menu\\"]")?.click();return true})()');
   assert.ok(closed);
