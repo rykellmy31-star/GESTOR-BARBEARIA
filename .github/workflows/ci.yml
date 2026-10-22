@@ -175,3 +175,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_REMOTE_R2_RESTORE_APPROVED: YES
         run: node scripts/staging-r2-new-isolated-recovery.mjs
+
+      # Consultar quantidade e tamanho total dos arquivos R2 por GET paginado.
+      # Nenhuma chave, metadado pessoal ou objeto é exibido nos logs.
+      - name: Inventariar objetos R2 de staging e recuperação (somente leitura)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_R2_READONLY_INVENTORY_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_R2_INVENTORY_APPROVED: YES
+        run: node scripts/staging-r2-inventory-readonly.mjs
