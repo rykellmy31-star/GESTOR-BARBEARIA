@@ -27,7 +27,7 @@ export function SuperOverview() {
     <div>
       <H title="Visão geral" sub={`Últimos ${d.days} dias · receita de mensagens líquida do custo do provedor`} action={
         <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="rounded-lg border border-line bg-panel px-3 py-1.5 text-xs text-zinc-300"><option value={7}>7 dias</option><option value={30}>30 dias</option><option value={90}>90 dias</option></select>} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi label="Barbearias ativas" value={d.counts.active} sub={`${d.counts.suspended} suspensas · ${d.counts.created_period} criadas no período`} tone="gold" />
         <Kpi label="Receita de mensagens" value={d.finance.consumption_cents != null ? <Money cents={d.finance.consumption_cents} /> : 0} sub={`${d.topups.n} recargas pagas · ${money0(d.topups.cents)} no período`} />
         <Kpi label="Custo provedor" value={<Money cents={d.finance.provider_cost_cents} />} sub={`Refunds: ${money0(d.finance.refund_cents)}`} />
@@ -45,15 +45,15 @@ export function SuperOverview() {
           {usage.length === 0 && <p className="text-xs text-zinc-500">Sem cobranças capturadas no período.</p>}
         </div>
       </div>
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <div>
+      <div className="mt-6 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="min-w-0">
           <h2 className="mb-2 font-display text-base text-zinc-100">Top barbearias por receita de mensagens</h2>
           <Table head={["Empresa", "Msgs/mês", "Saldo carteira"]}>
             {(d.usageTop ?? []).map((r: any) => <Tr key={r.id}><Td>{r.name}</Td><Td><Money cents={r.revenue_cents} /></Td><Td><Money cents={r.balance_cents} /></Td></Tr>)}
           </Table>
           <p className="mt-1.5 text-[10px] text-zinc-600">Detalhamento por empresa está em Barbearias › (clique).</p>
         </div>
-        <div>
+        <div className="min-w-0">
           <h2 className="mb-2 font-display text-base text-zinc-100">Saúde operacional</h2>
           <div className="rounded-2xl border border-[#26262f] bg-[#16161c] p-5 text-sm text-zinc-300">
             <p>Mensagens entregues (histórico): <b>{d.counts.msgs_total}</b></p>
