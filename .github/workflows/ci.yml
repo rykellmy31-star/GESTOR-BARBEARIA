@@ -219,3 +219,17 @@ jobs:
           CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: node scripts/staging-test-accounts-inventory.mjs
+
+      # Ativação exclusivamente em staging, após testes locais. Exige permissão
+      # Account:Turnstile:Edit no token Cloudflare; nunca atualiza secrets antigos.
+      # Falha fechada antes de qualquer alteração se o Worker não for isolado.
+      - name: Instalar Turnstile de interessados somente no TIGU staging
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_TURNSTILE_STAGING_SETUP_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_TURNSTILE_STAGING_APPROVED: YES
+        run: |
+          node --check scripts/staging-turnstile-setup.mjs
+          node --test scripts/staging-turnstile-setup.node.test.mjs
+          node scripts/staging-turnstile-setup.mjs
