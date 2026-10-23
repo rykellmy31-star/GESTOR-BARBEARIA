@@ -10,6 +10,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      production_readonly_inventory:
+        description: 'Inspecionar somente metadados de D1, R2 e Workers de produção (sem alterações)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -247,7 +253,7 @@ jobs:
       # Run em push único após CI inteiro, usando token de staging para
       # listar metadados da mesma conta Cloudflare.
       - name: Inspecionar isolamento da futura produção TIGU (somente leitura)
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_PRODUCTION_READONLY_PREFLIGHT_ONCE' }}
+        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_PRODUCTION_READONLY_PREFLIGHT_ONCE') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && inputs.production_readonly_inventory == true) }}
         env:
           CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
