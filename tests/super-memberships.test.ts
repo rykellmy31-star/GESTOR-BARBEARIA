@@ -241,3 +241,15 @@ describe("Super Admin: diagnóstico sem exposição de segredos",()=>{
       expect(json).not.toContain(secret);
   });
 });
+
+describe("redirecionamento por função no login",()=>{
+  it("barbeiro abre /painel, não o painel administrativo",async()=>{
+    const {companyPanelPath}=await import("../api/routes/auth");
+    expect(companyPanelPath({slug:"barbearia-oceano",role:"barber"}))
+      .toBe("/c/barbearia-oceano/painel");
+    expect(companyPanelPath({slug:"barbearia-oceano",role:"owner"}))
+      .toBe("/c/barbearia-oceano/admin");
+    expect(companyPanelPath({slug:"barbearia-oceano",role:"manager"}))
+      .toBe("/c/barbearia-oceano/admin");
+  });
+});
