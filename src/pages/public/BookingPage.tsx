@@ -241,19 +241,19 @@ export function BookingPage() {
                 <input type="radio" name="paychoice" checked={paymentChoice==="after_service"} onChange={()=>setPaymentChoice("after_service")} />
                 <span><b>Pagar após o serviço</b><span className="block text-xs text-zinc-400">Reserve agora, pague no atendimento.</span></span>
               </label>
-              <label className={clsx("flex gap-3 rounded-xl border border-line bg-panel p-3 text-sm text-zinc-100",cfg?.payment_options?.pix_enabled?"cursor-pointer":"opacity-60")}>
-                <input type="radio" name="paychoice" checked={paymentChoice==="pix"} disabled={!cfg?.payment_options?.pix_enabled} onChange={()=>setPaymentChoice("pix")} />
+              <label className={clsx("flex gap-3 rounded-xl border border-line bg-panel p-3 text-sm text-zinc-100",barberProfile.data?.pix_available?"cursor-pointer":"opacity-60")}>
+                <input type="radio" name="paychoice" checked={paymentChoice==="pix"} disabled={!barberProfile.data?.pix_available} onChange={()=>setPaymentChoice("pix")} />
                 <span><b>Pagar agora com Pix · {money(service.price_cents)}</b>
-                  <span className="block text-xs text-zinc-400">{cfg?.payment_options?.pix_enabled
-                    ?"O sistema gera o QR Code e o Pix copia e cola."
-                    :"Disponível após configurar a integração de pagamento da barbearia."}</span>
+                  <span className="block text-xs text-zinc-400">{barberProfile.data?.pix_available
+                    ?"O Pix será recebido diretamente na conta Mercado Pago deste profissional."
+                    :"O profissional precisa conectar sua conta Mercado Pago para receber Pix."}</span>
                 </span>
               </label>
               {paymentChoice==="pix"&&!form.email.trim()&&<p className="text-xs text-amber-400">Volte e informe um e-mail para gerar o Pix.</p>}
             </div>
             <div className="mt-5 flex items-center justify-between gap-2">
               <BackBtn onClick={() => setStep(4)} />
-              <Button className="flex-1 justify-center py-3.5" disabled={confirming || (paymentChoice==="pix" && (!cfg?.payment_options?.pix_enabled || !form.email.trim()))} onClick={confirm}>
+              <Button className="flex-1 justify-center py-3.5" disabled={confirming || (paymentChoice==="pix" && (!barberProfile.data?.pix_available || !form.email.trim()))} onClick={confirm}>
                 {confirming ? <><Loader2 size={16} className="animate-spin" /> Reservando…</> : <><CalendarCheck2 size={17} /> Confirmar agendamento</>}
               </Button>
             </div>
