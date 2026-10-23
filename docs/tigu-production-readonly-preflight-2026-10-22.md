@@ -25,3 +25,11 @@ O banco atual do staging contém dados e contas do usuário; a futura produção
 ## Validação anterior
 
 GitHub Actions de confirmação de código: `39878946232`, sucesso. Mais de 300 testes de aplicação e a jornada Chromium de homologação aprovados. A verificação remota foi mantida como etapa independente e sem escrita.
+
+## Segunda execução — correção do contrato de homologação
+
+Na primeira execução `39879248151`, os testes locais passaram, mas a etapa `staging-smoke.mjs` recusou `payments.mercadopago=true`. Esse valor é **somente presença do segredo** (MP_ACCESS_TOKEN, definido pelo titular), não significa Pix habilitado. Código existente em `api/lib/payments.ts` e `api/routes/webhooks.ts` impede transação/webhook real quando `TIGU_STAGING=1`. O mesmo vale para o provedor Meta.
+
+Corrigidos `staging-smoke.mjs` e `staging-update-ci.mjs` para aceitarem presença/ausência de credenciais **enquanto comprovam staging:true, mock Pix:false, mock WhatsApp:true e dados e secrets fortes**; adicionados testes de RBAC/provedores para impedir a remoção acidental dos bloqueios.
+
+Repetir o mesmo gatilho **`TIGU_PRODUCTION_READONLY_PREFLIGHT_ONCE`**, sem qualquer criação/deploy/migração/cobrança, para obter a evidência do inventário Cloudflare dos nomes de produção.
