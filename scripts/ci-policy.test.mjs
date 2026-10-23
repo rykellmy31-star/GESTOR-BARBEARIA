@@ -342,7 +342,7 @@ test("OAuth Marketplace mantém credenciais de vendedor isoladas dos recebimento
  assert.match(env,/MP_MARKETPLACE_REDIRECT_URI\?: string/);
  assert.match(source,/barberRouter\.get\("\/mercadopago"/);
  assert.match(source,/app_configured: configured/);
- assert.match(source,/connected: false/);
- assert.match(source,/can_connect: false/);
+ assert.match(source,/connected: Boolean\(account\)/);
+ assert.match(source,/can_connect: sellerOauthEnabled\(c.env\)/);
  assert.doesNotMatch(source.slice(source.indexOf('barberRouter.get("/mercadopago"'),source.indexOf('barberRouter.get("/me"')),/MP_ACCESS_TOKEN|secret\s*:/);
 });
