@@ -113,7 +113,7 @@ sellerMpCallbackRouter.get("/callback",async c=>{
    SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?8
    WHERE EXISTS (SELECT 1 FROM seller_mp_oauth_pending
      WHERE state_hash=?9 AND company_id=?1 AND barber_id=?2
-       AND user_id=?7 AND used_at IS NOT NULL)
+       AND user_id=?7 AND used_at IS NOT NULL AND expires_at>?8)
    ON CONFLICT(company_id,barber_id) DO UPDATE SET
    mp_user_id=excluded.mp_user_id,access_ciphertext=excluded.access_ciphertext,
    refresh_ciphertext=excluded.refresh_ciphertext,expires_at=excluded.expires_at,
