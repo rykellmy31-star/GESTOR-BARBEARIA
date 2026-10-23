@@ -8,7 +8,9 @@ import {productionConfigIssues,inspectProductionConfig} from "./production-prefl
 
 const current=JSON.parse(readFileSync(new URL("../wrangler.jsonc",import.meta.url),"utf8"));
 const good=()=>({...structuredClone(current),vars:{APP_ENV:"production",GRAPH_API_VERSION:"v23.0"},
-  d1_databases:[{binding:"DB",database_name:"tigu-db",database_id:"12345678-1234-4234-9234-123456789012",migrations_dir:"migrations"}]});
+  name:"tigu-production",
+  d1_databases:[{binding:"DB",database_name:"tigu-production-db",database_id:"12345678-1234-4234-9234-123456789012",migrations_dir:"migrations"}],
+  r2_buckets:[{binding:"MEDIA",bucket_name:"tigu-production-media"}]});
 
 test("a configuracao publica atual de desenvolvimento impede deploy remoto",()=>{
   assert.ok(productionConfigIssues(current).some(e=>e.includes("APP_ENV")));
