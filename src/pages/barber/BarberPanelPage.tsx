@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, CalendarClock, CheckCircle2, Clock3, LogOut, Phone, Star, UserX } from "lucide-react";
@@ -20,6 +20,18 @@ export function BarberPanelPage() {
   const toast = useToast();
   const [tab, setTab] = useState(0);
   const [blockOpen, setBlockOpen] = useState(false);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const outcome = url.searchParams.get("mp");
+    if (outcome !== "connected" && outcome !== "failed") return;
+    toast.push(outcome === "connected" ? "ok" : "err",
+      outcome === "connected"
+        ? "Conta Mercado Pago autorizada. Os pagamentos serão liberados após homologação."
+        : "Não foi possível autorizar a conta Mercado Pago. Tente conectar novamente.");
+    url.searchParams.delete("mp");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    void qc.invalidateQueries({ queryKey: ["barber-mercadopago", siteBase()] });
+  }, [qc, toast]);
 
   const me = useQuery({ queryKey: ["barber-me", siteBase()], queryFn: () => api.get<any>("/barber/me") });
   const marketplace = useQuery({ queryKey: ["barber-mercadopago", siteBase()], queryFn: () => api.get<{ connected:boolean; enabled:boolean; can_connect:boolean; notice:string }>("/barber/mercadopago") });
