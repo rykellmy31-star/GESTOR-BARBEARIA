@@ -226,13 +226,21 @@ barberRouter.get("/mercadopago", async (c) => {
   const m = me(c);
   if (!m.barber_id) return err(c, "Profissional não vinculado", 403);
   c.header("Cache-Control", "no-store");
+  const configured = Boolean(
+    c.env.MP_MARKETPLACE_CLIENT_ID?.trim() &&
+    c.env.MP_MARKETPLACE_CLIENT_SECRET?.trim() &&
+    c.env.MP_MARKETPLACE_REDIRECT_URI?.startsWith("https://")
+  );
   return json(c, {
     connected: false,
     enabled: false,
     integration_mode: "oauth",
+    app_configured: configured,
     can_connect: false,
-    stage: c.env.TIGU_STAGING === "1" ? "homologacao" : "configuracao_pendente",
-    notice: "Integração Mercado Pago individual em preparação. O token da plataforma não é utilizado para seus serviços.",
+    stage: c.env.TIGU_STAGING === "1" ? "homologacao" : "oauth_pendente",
+    notice: configured
+      ? "Aplicação Marketplace reconhecida; conexão individual aguarda a implementação e homologação de OAuth e pagamentos."
+      : "Aplicação Marketplace ainda não configurada neste Worker. A conta da plataforma não é usada para recebimentos individuais.",
   });
 });
 
