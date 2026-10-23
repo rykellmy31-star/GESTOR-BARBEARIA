@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { generateBookingPix, lookupBookingPix } from "../lib/booking-payments";
 import { merchantPixReady } from "../lib/merchant-payments";
+import { sellerPixReady } from "../lib/seller-payments";
 import { generateOrderPix, lookupOrderPix } from "../lib/order-payments";
 import type { Env } from "../types";
 import { err, json, normalizePhone, nowIso, brl } from "../lib/utils";
@@ -53,7 +54,7 @@ publicRouter.get("/barbers/:id", async (c) => {
        FROM barbers WHERE id=?1 AND company_id=?2 AND active=1`
   ).bind(Number(rawId), cid(c)).first();
   if (!barber) return err(c, "Profissional não encontrado", 404);
-  return json(c, { barber });
+  return json(c, { barber, pix_available: await sellerPixReady(c.env,cid(c),Number(rawId)) });
 });
 publicRouter.get("/services", async (c) => {
   const companyId = cid(c);
@@ -146,8 +147,8 @@ publicRouter.post("/bookings", async (c) => {
   const parsed = createBookingSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
   const s = ctxSettings(c);
-  if (parsed.data.paymentChoice === "pix" && !(await merchantPixReady(c.env,cid(c))))
-    return err(c,"Pix indisponível nesta barbearia. Escolha pagar após o serviço.",503);
+  if (parsed.data.paymentChoice === "pix" && !(await sellerPixReady(c.env,cid(c),parsed.data.barberId)))
+    return err(c,"Profissional ainda não conectou seu Mercado Pago para receber Pix. Escolha pagar após o serviço.",503);
   if (parsed.data.paymentChoice === "pix" && !parsed.data.email)
     return err(c,"Informe um e-mail para gerar o Pix.",422);
   const company = c.get("company") as { id: number };
