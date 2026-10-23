@@ -77,8 +77,11 @@ export function inspectResources(dbsStaging,dbsProduction,r2Staging,r2Production
     throw Error("Recursos duplicados de produção. Não prosseguir.");
   if(prodDb.length===1&&!UUID.test(prodDb[0]?.uuid||""))
     throw Error("D1 de produção com identificação inesperada.");
-  if(prodDb.length+prodR2.length+prodWorker.length>0)
-    throw Error("Já existem recursos de produção: requer inspeção antes de qualquer provisionamento.");
+  if(prodDb.length+prodR2.length+prodWorker.length>0){
+    const kinds=[prodDb.length>0&&"D1",prodR2.length>0&&"R2",prodWorker.length>0&&"Worker"].filter(Boolean);
+    // Reporta somente categorias esperadas; não revela IDs, dados, segredos ou endpoints.
+    throw Error("Já existem recursos de produção ("+kinds.join(", ")+"): requer inspeção antes de qualquer provisionamento.");
+  }
   return {staging_verified:true,production_targets_absent:true,
     safe_to_prepare:true,production_activated:false};
 }
