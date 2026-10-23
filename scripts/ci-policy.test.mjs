@@ -384,3 +384,14 @@ test("callback OAuth não restaura conta após desconexão concorrente",()=>{
  assert.match(oauth,/state_hash=\?9 AND company_id=\?1 AND barber_id=\?2/);
  assert.match(oauth,/if\(saved\.meta\.changes!==1\)return response\(pending\.slug,"failed"\)/);
 });
+
+test("Inventário Cloudflare permite despacho manual explicitamente autorizado, nunca PR",()=>{
+ const yml=readFileSync(new URL("../.github/workflows/ci.yml",import.meta.url),"utf8");
+ assert.match(yml,/production_readonly_inventory:\s*\n\s*description:[^\n]*\n\s*required: false\s*\n\s*type: boolean\s*\n\s*default: false/);
+ const section=yml.slice(yml.indexOf("- name: Inspecionar isolamento da futura produção TIGU"),yml.indexOf("- name: Criar D1 e R2 novos para produção TIGU"));
+ assert.match(section,/github\.event_name == 'workflow_dispatch'/);
+ assert.match(section,/github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
+ assert.match(section,/inputs\.production_readonly_inventory == true/);
+ assert.doesNotMatch(section,/github\.event_name == 'pull_request'/);
+ assert.match(section,/run: node scripts\/production-inventory-readonly\.mjs/);
+});
