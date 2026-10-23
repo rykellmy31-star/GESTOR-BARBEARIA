@@ -333,3 +333,16 @@ test("API TIGU: credenciais presentes no staging não habilitam Pix nem mensagen
  assert.match(smoke,/health\.body\?\.payments\?\.mock === false/);
  assert.match(smoke,/health\.body\?\.whatsapp\?\.mock === true/);
 });
+
+test("OAuth Marketplace mantém credenciais de vendedor isoladas dos recebimentos TIGU",()=>{
+ const source=readFileSync(new URL("../api/routes/barber.ts",import.meta.url),"utf8");
+ const env=readFileSync(new URL("../api/types.ts",import.meta.url),"utf8");
+ assert.match(env,/MP_MARKETPLACE_CLIENT_ID\?: string/);
+ assert.match(env,/MP_MARKETPLACE_CLIENT_SECRET\?: string/);
+ assert.match(env,/MP_MARKETPLACE_REDIRECT_URI\?: string/);
+ assert.match(source,/barberRouter\.get\("\/mercadopago"/);
+ assert.match(source,/app_configured: configured/);
+ assert.match(source,/connected: false/);
+ assert.match(source,/can_connect: false/);
+ assert.doesNotMatch(source.slice(source.indexOf('barberRouter.get("/mercadopago"'),source.indexOf('barberRouter.get("/me"')),/MP_ACCESS_TOKEN|secret\s*:/);
+});
