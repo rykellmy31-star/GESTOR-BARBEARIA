@@ -172,7 +172,7 @@ async function myCompanies(db: D1Database, userId: number) {
        WHERE m.user_id = ?1 AND m.active = 1 ORDER BY c.name`
     )
     .bind(userId)
-    .all();
+    .all<{ slug: string; name: string; status: string; role: string; plan: string; subscription_status: string; trial_end: string | null; price_cents_month: number }>();
   return results;
 }
 
