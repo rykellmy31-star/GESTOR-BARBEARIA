@@ -246,3 +246,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           TIGU_PRODUCTION_READONLY_APPROVED: YES
         run: node scripts/production-inventory-readonly.mjs
+
+      # Apenas provisiona D1 e R2 NOVOS e vazios para produção.
+      # Só após validação local, inventário GET e autorização explícita.
+      # Nunca altera o domínio, staging, users, secrets nem roda pagamento.
+      - name: Criar D1 e R2 novos para produção TIGU (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_CREATE_PRODUCTION_RESOURCES_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_PRODUCTION_RESOURCES_APPROVED: YES
+        run: node scripts/production-create-resources-once.mjs
