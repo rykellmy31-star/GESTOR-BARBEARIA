@@ -20,9 +20,10 @@ function migrated(){
   return db;
 }
 
-test("a cadeia completa contém exatamente as 21 migrações sequenciais e é íntegra",()=>{
-  assert.equal(files.length,21);
-  files.forEach((f,i)=>assert.equal(Number(f.slice(0,4)),i+1));
+test("a cadeia base tem 21 migrações sequenciais e inclui a migração OAuth 0099",()=>{
+  assert.equal(files.length,22);
+  files.slice(0,21).forEach((f,i)=>assert.equal(Number(f.slice(0,4)),i+1));
+  assert.equal(files[21],"0099_seller_mercadopago_oauth.sql");
   const db=migrated();
   try{
     assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check,"ok");
