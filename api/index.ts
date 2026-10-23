@@ -16,6 +16,7 @@ import { authRouter } from "./routes/auth";
 import { publicRouter } from "./routes/public";
 import { adminRouter } from "./routes/admin";
 import { barberRouter } from "./routes/barber";
+import { sellerMpCallbackRouter } from "./lib/seller-mercadopago-oauth";
 import { superRouter } from "./routes/super";
 import { webhooksRouter } from "./routes/webhooks";
 import { billingRouter } from "./routes/billing";
@@ -110,6 +111,7 @@ app.post("/api/marketing/leads", async (c) => {
 });
 
 
+app.route("/api/oauth/mercadopago", sellerMpCallbackRouter);
 app.route("/api/auth", authRouter);
 app.route("/api/super", superRouter);
 app.route("/api/webhooks", webhooksRouter);
