@@ -20,10 +20,11 @@ function migrated(){
   return db;
 }
 
-test("a cadeia base tem 21 migrações sequenciais e inclui a migração OAuth 0099",()=>{
-  assert.equal(files.length,22);
+test("a cadeia base inclui o OAuth e o vínculo de recebedor 0100",()=>{
+  assert.equal(files.length,23);
   files.slice(0,21).forEach((f,i)=>assert.equal(Number(f.slice(0,4)),i+1));
   assert.equal(files[21],"0099_seller_mercadopago_oauth.sql");
+  assert.equal(files[22],"0100_seller_pix.sql");
   const db=migrated();
   try{
     assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check,"ok");
@@ -45,6 +46,8 @@ test("colunas de dinheiro e índices de auditoria/paginação foram criados",()=
     assert.ok(col("bookings").has("actual_finished_at"));
     assert.ok(col("bookings").has("fit_in_duration_min"));
     assert.ok(col("booking_payments").has("amount_cents"));
+    assert.ok(col("booking_payments").has("receiver_barber_id"));
+    assert.ok(col("booking_payments").has("receiver_mp_user_id"));
     assert.ok(col("topup_orders").has("notification_sent_at"));
     assert.ok(col("payment_webhook_events").has("attempt_count"));
     assert.ok(col("message_conflict_reviews").has("audit_snapshot_version"));
