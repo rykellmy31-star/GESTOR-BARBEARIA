@@ -22,6 +22,7 @@ export function BarberPanelPage() {
   const [blockOpen, setBlockOpen] = useState(false);
 
   const me = useQuery({ queryKey: ["barber-me", siteBase()], queryFn: () => api.get<any>("/barber/me") });
+  const marketplace = useQuery({ queryKey: ["barber-mercadopago", siteBase()], queryFn: () => api.get<{ connected:boolean; enabled:boolean; can_connect:boolean; notice:string }>("/barber/mercadopago") });
   const days = useMemo(() => {
     const start = localDay(tz);
     return Array.from({ length: 7 }, (_, i) =>
@@ -74,6 +75,19 @@ export function BarberPanelPage() {
       </header>
 
       <main className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+        <section className="rounded-xl border border-line bg-panel p-4" aria-label="Recebimentos Mercado Pago do profissional">
+          <h2 className="font-display text-lg text-zinc-100">Meus recebimentos — Mercado Pago</h2>
+          <p className="mt-1 text-xs text-zinc-400">
+            Sua conta pessoal será usada para receber pelos próprios cortes. Pagamentos de planos e créditos do TIGU pertencem à plataforma e ficam separados.
+          </p>
+          <p role="status" className="mt-3 text-sm text-amber-200">
+            {marketplace.isError ? "Não foi possível consultar a integração." : marketplace.isLoading ? "Consultando sua integração…" : marketplace.data?.notice}
+          </p>
+          <button disabled className="mt-3 rounded-lg border border-line px-4 py-2 text-sm text-zinc-500" type="button">
+            Conectar minha conta Mercado Pago — em homologação
+          </button>
+          <p className="mt-2 text-xs text-zinc-500">Não informe sua senha nem cole um Access Token no painel. A futura conexão usará a autorização oficial do Mercado Pago.</p>
+        </section>
         {/* dias */}
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {days.map((d, i) => {
