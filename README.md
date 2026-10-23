@@ -112,3 +112,9 @@ scripts/        create-super · setup-demo · smoke · smoke-money · reset-loca
 Uso comercial da Tigu exige: política de privacidade própria por barbearia (o consentimento LGPD é
 registrado na reserva), e o custo de conversas do WhatsApp é da barbearia (via créditos). Todos os dados
 de demonstração do repositório são fictícios e apagáveis (botão no painel › Demonstração).
+
+## Estado da homologação financeira (23/10/2026)
+
+A suíte de CI do commit `57109f97549832ae5bdb791c0918a729b9eab9d3` foi aprovada (GitHub Actions `39949740681`). Essa aprovação cobre validações automatizadas, Worker/D1/R2 locais e fluxo em navegador; **não** representa ativação de cobrança, Pix individual, webhooks financeiros reais ou WhatsApp Meta em produção.
+
+O inventário Cloudflare da futura produção pode ser executado pelo gatilho de GitHub Actions `TIGU_PRODUCTION_READONLY_PREFLIGHT_ONCE`, estritamente de leitura. Recursos, segredos, DNS e pagamentos de produção permanecem sujeitos a homologação independente.
