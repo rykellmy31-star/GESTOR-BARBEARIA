@@ -60,7 +60,9 @@ sellerMpCallbackRouter.get("/callback",async c=>{
  const state=c.req.query("state")||"";
  const code=c.req.query("code")||"";
  const cookieHeader=c.req.header("cookie")||"";
- const cookieState=cookieHeader.split(";").map(s=>s.trim()).find(s=>s.startsWith(COOKIE+"="))?.slice(COOKIE.length+1)||"";
+ const stateCookies=cookieHeader.split(";").map(s=>s.trim()).filter(s=>s.startsWith(COOKIE+"="));
+ if(stateCookies.length!==1)return c.json({error:"Estado de autorização inválido."},400,noStore);
+ const cookieState=stateCookies[0].slice(COOKIE.length+1);
  if(!/^[a-f0-9]{64}$/.test(state)||state!==cookieState||!isEnabled(c.env))
   return c.json({error:"Autorização expirada ou inválida."},400,noStore);
  const hash=await sha256hex(state);
