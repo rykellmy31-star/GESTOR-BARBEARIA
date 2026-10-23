@@ -401,7 +401,8 @@ try{
     'return inputs.length})()');
   assert.equal(passwords,3);
   await click("Salvar nova senha");
-  await until("nova senha aceita",'location.pathname==="/selecionar"');
+  await until("nova senha aceita e abre agenda do profissional",
+    'location.pathname.endsWith("/painel") && !document.body.innerText.includes("Acesso negado")');
   const proSession=await api(base,"/api/auth/login","POST",{email:proEmail,password:replacement});
   assert.equal(proSession.status,200,"Nova senha do profissional deve autenticar");
   assert.equal(proSession.data.next,"/c/"+slug+"/painel",
