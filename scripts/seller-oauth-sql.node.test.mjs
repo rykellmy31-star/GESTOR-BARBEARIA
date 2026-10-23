@@ -29,3 +29,9 @@ d.prepare("INSERT INTO seller_mp_oauth_pending VALUES (?,?,?,?,?)").run("state-3
 assert.equal(d.prepare(sql).run(...bind("state-3")).changes,0);
 assert.equal(d.prepare("SELECT count(*) AS n FROM seller_mp_accounts").get().n,0);
 }finally{d.close();}});
+test("OAuth não sobrescreve vínculo existente com state de outro profissional",()=>{const d=setup();try{
+d.prepare("INSERT INTO seller_mp_accounts VALUES (?,?,?,?,?,?,?,?,?)").run(10,20,"345","original-access","original-refresh","2026-10-30T00:00:00Z",30,"2026-10-23T00:00:00Z","2026-10-23T00:00:00Z");
+d.prepare("INSERT INTO seller_mp_oauth_pending VALUES (?,?,?,?,?)").run("state-foreign",10,21,31,"2026-10-23T00:00:00Z");
+assert.equal(d.prepare(sql).run(...bind("state-foreign")).changes,0);
+assert.equal(d.prepare("SELECT access_ciphertext FROM seller_mp_accounts WHERE company_id=10 AND barber_id=20").get().access_ciphertext,"original-access");
+}finally{d.close();}});
