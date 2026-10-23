@@ -371,5 +371,7 @@ test("Mercado Pago individual recusa tokens malformados e desconexão respeita e
  assert.match(disconnect,/company_id=\?1 AND barber_id=\?2/);
  assert.match(disconnect,/\.bind\(companyId, m\.barber_id\)/);
  assert.match(disconnect,/TIGU_STAGING === "1"/);
+ assert.match(disconnect,/DELETE FROM seller_mp_oauth_pending WHERE company_id=\\?1 AND barber_id=\\?2/);
+ assert.doesNotMatch(disconnect,/seller_mp_oauth_pending WHERE[^\n]*user_id/);
  assert.doesNotMatch(disconnect,/MP_ACCESS_TOKEN/);
 });
