@@ -652,6 +652,39 @@ try{
   assert.ok(closed);
   await until("menu móvel recolhido",'document.querySelector("[role=dialog]")===null');
   pass("Super Admin adapta navegação para celular sem rolagem horizontal na página");
+  // Regressão mobile: iPhone SE (320), iPhone (390) e tela maior (430).
+  // Safari iOS força zoom ao focar input/textarea/select com fonte <16px.
+  // O Chromium verifica a fonte real e a largura; teste WebKit real é separado.
+  for(const width of [320,390,430]){
+    await cmd("Emulation.setDeviceMetricsOverride",{
+      width,height:844,deviceScaleFactor:2,mobile:true
+    });
+    for(const [route,label,readyExpr] of [
+      ["/","página comercial",'document.body.innerText.includes("Criar barbearia")'],
+      ["/login","login",'document.querySelector("input[type=email]")!==null'],
+      ["/contratar","formulário comercial",'document.querySelector("form")!==null'],
+      ["/c/"+slug,"site da barbearia",'document.body.innerText.includes("Barbearia Chromium Local")'],
+      ["/c/"+slug+"/agendar","agendamento",'document.body.innerText.includes("Agendamento")'],
+      ["/superadmin/overview","superadmin",'document.body.innerText.includes("BARBEARIAS ATIVAS")']
+    ]){
+      await go(base+route);
+      await until("mobile "+label+" em "+width+"px",readyExpr);
+      const check=await js('(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,'+
+        'body:document.body.scrollWidth,'+
+        'meta:document.querySelector("meta[name=viewport]")?.content,'+
+        'small:[...document.querySelectorAll("input,textarea,select")].filter(el=>'+
+        'el.getClientRects().length>0&&!["checkbox","radio","range","file","color","hidden"].includes(el.type)'+
+        '&&parseFloat(getComputedStyle(el).fontSize)<16).map(el=>el.tagName+":"+el.type)}))()');
+      assert.equal(check.width,width,"Viewport mobile inesperada: "+label+" "+JSON.stringify(check));
+      assert.ok(check.scroll<=width+2&&check.body<=width+2,
+        "Página ultrapassou largura do celular: "+label+" "+JSON.stringify(check));
+      assert.ok(check.meta.includes("width=device-width")&&!/user-scalable\s*=\s*no|maximum-scale\s*=\s*1/i.test(check.meta),
+        "Viewport deve preservar zoom por acessibilidade: "+label);
+      assert.deepEqual(check.small,[],
+        "Campo pode causar zoom automático no Safari iOS: "+label+" "+JSON.stringify(check));
+    }
+    pass("Mobile "+width+"px sem overflow/autozoom: vendas, login, formulário, site, agenda e Super Admin");
+  }
   await cmd("Emulation.clearDeviceMetricsOverride");
   await go(base+"/superadmin/companies");
   await until("Superadmin enxerga empresa existente",
