@@ -236,15 +236,19 @@ barberRouter.get("/mercadopago", async (c) => {
   const account = c.env.TIGU_STAGING === "1" ? null
     : await c.env.DB.prepare(`SELECT mp_user_id, expires_at FROM seller_mp_accounts
  WHERE company_id=?1 AND barber_id=?2`).bind(cid(c),m.barber_id).first<{mp_user_id:string;expires_at:string}>();
+  const expired = Boolean(account && Date.parse(account.expires_at) <= Date.now());
   return json(c, {
     connected: Boolean(account),
+    token_expired: expired,
     enabled: false,
     integration_mode: "oauth",
     app_configured: configured,
     can_connect: sellerOauthEnabled(c.env),
     stage: c.env.TIGU_STAGING === "1" ? "homologacao" : "oauth_disponivel",
     notice: account
-      ? "Conta Mercado Pago conectada. Os pagamentos individuais serão liberados após homologação do checkout e webhooks."
+      ? expired
+        ? "Sua autorização Mercado Pago expirou. Reconecte a conta para atualizar a autorização."
+        : "Conta Mercado Pago conectada. Os pagamentos individuais serão liberados após homologação do checkout e webhooks."
       : sellerOauthEnabled(c.env)
         ? "Conecte sua conta no Mercado Pago para preparar seus recebimentos."
         : "Conexão ainda indisponível neste ambiente. As mensalidades do TIGU permanecem separadas.",
