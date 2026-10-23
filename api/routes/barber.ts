@@ -232,7 +232,9 @@ barberRouter.get("/mercadopago", async (c) => {
     c.env.MP_MARKETPLACE_CLIENT_SECRET?.trim() &&
     c.env.MP_MARKETPLACE_REDIRECT_URI?.startsWith("https://")
   );
-  const account = await c.env.DB.prepare(`SELECT mp_user_id, expires_at FROM seller_mp_accounts
+  // Staging não deve exigir migração de produção apenas para mostrar o painel.
+  const account = c.env.TIGU_STAGING === "1" ? null
+    : await c.env.DB.prepare(`SELECT mp_user_id, expires_at FROM seller_mp_accounts
  WHERE company_id=?1 AND barber_id=?2`).bind(cid(c),m.barber_id).first<{mp_user_id:string;expires_at:string}>();
   return json(c, {
     connected: Boolean(account),
