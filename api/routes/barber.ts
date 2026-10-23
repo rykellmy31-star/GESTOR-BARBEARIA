@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { Env } from "../types";
 import { err, json, nowIso } from "../lib/utils";
 import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
+import { beginSellerOauth, sellerOauthEnabled } from "../lib/seller-mercadopago-oauth";
 import { calendarDaySchema } from "../lib/admin-blocks";
 import { setBookingStatus, cancelBooking, rescheduleBooking, finishBookingEarly } from "../lib/booking";
 import { todayLocal, addDays, localToUtc } from "../lib/time";
@@ -231,17 +232,31 @@ barberRouter.get("/mercadopago", async (c) => {
     c.env.MP_MARKETPLACE_CLIENT_SECRET?.trim() &&
     c.env.MP_MARKETPLACE_REDIRECT_URI?.startsWith("https://")
   );
+  const account = await c.env.DB.prepare(`SELECT mp_user_id, expires_at FROM seller_mp_accounts
+ WHERE company_id=?1 AND barber_id=?2`).bind(cid(c),m.barber_id).first<{mp_user_id:string;expires_at:string}>();
   return json(c, {
-    connected: false,
+    connected: Boolean(account),
     enabled: false,
     integration_mode: "oauth",
     app_configured: configured,
-    can_connect: false,
-    stage: c.env.TIGU_STAGING === "1" ? "homologacao" : "oauth_pendente",
-    notice: configured
-      ? "Aplicação Marketplace reconhecida; conexão individual aguarda a implementação e homologação de OAuth e pagamentos."
-      : "Aplicação Marketplace ainda não configurada neste Worker. A conta da plataforma não é usada para recebimentos individuais.",
+    can_connect: sellerOauthEnabled(c.env),
+    stage: c.env.TIGU_STAGING === "1" ? "homologacao" : "oauth_disponivel",
+    notice: account
+      ? "Conta Mercado Pago conectada. Os pagamentos individuais serão liberados após homologação do checkout e webhooks."
+      : sellerOauthEnabled(c.env)
+        ? "Conecte sua conta no Mercado Pago para preparar seus recebimentos."
+        : "Conexão ainda indisponível neste ambiente. As mensalidades do TIGU permanecem separadas.",
   });
+});
+
+barberRouter.post("/mercadopago/connect", async c=>{
+  const m=me(c);
+  if(!m.barber_id)return err(c,"Profissional não vinculado",403);
+  const result=await beginSellerOauth(c.env,{companyId:cid(c),barberId:m.barber_id,userId:m.id});
+  if(!result.ok)return err(c,result.error,503);
+  c.header("Set-Cookie",result.set_cookie);
+  c.header("Cache-Control","no-store");
+  return json(c,{authorization_url:result.authorization_url});
 });
 
 barberRouter.get("/me", async (c) => {
