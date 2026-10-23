@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import type { ShopSettings } from "./types";
@@ -110,9 +111,10 @@ export function useBodyScrollLock(locked: boolean) {
 
 /** papel do usuário na empresa do contexto atual (owner/manager/barber|null) */
 export function useCompanyRole(user: TiguUser | null | undefined): CompanyRef | null {
+  const { pathname } = useLocation();
   return useMemo(() => {
-    const m = location.pathname.match(/^\/c\/([a-z0-9-]+)/);
+    const m = pathname.match(/^\/c\/([a-z0-9-]+)/);
     if (!m || !user?.companies) return null;
     return user.companies.find((c) => c.slug === m[1]) ?? null;
-  }, [user]);
+  }, [user, pathname]);
 }
