@@ -56,7 +56,8 @@ export async function updateStagingWorker({token,accountId,fetcher=fetch,exec=ex
   const health=await response.json();
   if(response.status!==200||health?.staging!==true||health?.d1!==true||health?.r2!==true||
      !health.security?.session_secret_ready||!health.security?.encryption_key_ready||
-     health.payments?.mercadopago!==false||health.whatsapp?.embedded!==false)
+     health.payments?.mock!==false||typeof health.payments?.mercadopago!=="boolean"||
+     health.whatsapp?.mock!==true||typeof health.whatsapp?.embedded!=="boolean")
     throw Error("Health staging pós-deploy falhou, conferir publicação.");
   return {staging_worker:"tigu-staging",code_updated:true,existing_secrets_preserved:true,
     staging_health_verified:true,production_modified:false,migrations_applied:false,
