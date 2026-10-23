@@ -79,15 +79,15 @@ export function PublicLayout() {
         </div>
       )}
       <header className={clsx("fixed inset-x-0 z-50 transition-all duration-300", scrolled || open ? "border-b border-line bg-ink backdrop-blur-md" : "bg-transparent")}>
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
-          <Link to={base || "/"} className="flex items-center gap-2.5">
+        <div className="mx-auto flex h-16 min-w-0 max-w-6xl items-center gap-2 px-3 sm:gap-4 sm:px-6">
+          <Link to={base || "/"} className="flex min-w-0 flex-1 items-center gap-2 sm:flex-initial sm:gap-2.5">
             {s?.logo_url ? (
               <img src={s.logo_url} alt="logo" className="h-9 w-9 object-contain" />
             ) : (
               <Scissors className="h-7 w-7 text-[var(--c-gold)]" />
             )}
-            <div className="leading-tight">
-              <p className="font-display text-lg font-semibold tracking-wide text-zinc-50">{s?.shop_name ?? "…"}</p>
+            <div className="min-w-0 leading-tight">
+              <p className="truncate font-display text-base font-semibold tracking-wide text-zinc-50 sm:text-lg">{s?.shop_name ?? "…"}</p>
               <p className="text-[9.5px] uppercase tracking-[0.3em] text-[var(--c-gold)]">Barbearia</p>
             </div>
           </Link>
@@ -96,7 +96,7 @@ export function PublicLayout() {
               <a key={n.to} href={base + n.to} className="text-sm text-zinc-300 transition-colors hover:text-[var(--c-gold)]">{n.label}</a>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-1.5 lg:ml-4">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 lg:ml-4">
             <Link to={`${base}/#loja`.replace("#loja", "")} onClick={() => { setTimeout(() => document.getElementById("loja")?.scrollIntoView({ behavior: "smooth" }), 60); }} className="relative rounded-xl border border-line p-2.5 text-zinc-300 transition-colors hover:border-[var(--c-gold)] hover:text-[var(--c-gold)]" aria-label="Carrinho">
               <ShoppingBag size={17} />
               <CartBadge />
