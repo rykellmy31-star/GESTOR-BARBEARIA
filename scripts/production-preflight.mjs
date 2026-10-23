@@ -15,7 +15,7 @@ export function productionConfigIssues(config) {
   if (!isRecord(config)) return ["Configuracao do Worker ausente ou invalida"];
   const errors = [];
   const require = (pass, reason) => {if(!pass) errors.push(reason)};
-  require(config.name==="tigu-platform","Worker de producao inesperado");
+  require(config.name==="tigu-production","Worker de producao inesperado");
   require(config.main==="api/index.ts","Entrypoint inesperado");
   require(typeof config.compatibility_date==="string" && /^\d{4}-\d{2}-\d{2}$/.test(config.compatibility_date),"compatibility_date invalida");
   require(Array.isArray(config.compatibility_flags) && config.compatibility_flags.includes("nodejs_compat"),"nodejs_compat obrigatorio");
@@ -27,12 +27,12 @@ export function productionConfigIssues(config) {
   require(!Object.keys(vars).some(k=>/(SECRET|PASSWORD|ACCESS_TOKEN|PRIVATE_KEY|MSG_ENC_KEY|API_KEY)/i.test(k)),
     "Credenciais nao devem estar em vars publicas: usar wrangler secret put");
   const d=Array.isArray(config.d1_databases)&&config.d1_databases.length===1?config.d1_databases[0]:null;
-  require(isRecord(d) && d.binding==="DB" && d.database_name==="tigu-db" &&
+  require(isRecord(d) && d.binding==="DB" && d.database_name==="tigu-production-db" &&
     typeof d.database_id==="string" && uuid.test(d.database_id) &&
     d.database_id!=="00000000-0000-0000-0000-000000000000" &&
     d.migrations_dir==="migrations","D1 de producao invalido");
   const b=Array.isArray(config.r2_buckets)&&config.r2_buckets.length===1?config.r2_buckets[0]:null;
-  require(isRecord(b) && b.binding==="MEDIA" && b.bucket_name==="tigu-media",
+  require(isRecord(b) && b.binding==="MEDIA" && b.bucket_name==="tigu-production-media",
     "R2 de producao invalido");
   const a=config.assets;
   require(isRecord(a) && a.directory==="./dist" && a.binding==="ASSETS" &&
