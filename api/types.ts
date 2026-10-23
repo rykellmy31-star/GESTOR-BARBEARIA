@@ -43,6 +43,8 @@ export interface Env {
   MP_MARKETPLACE_CLIENT_SECRET?: string;
   /** Callback HTTPS registrado na aplicação TIGU Marketplace. */
   MP_MARKETPLACE_REDIRECT_URI?: string;
+  /** Segredo de assinatura do webhook da aplicação Marketplace de vendedores. */
+  MP_MARKETPLACE_WEBHOOK_SECRET?: string;
   PAYMENTS_MOCK?: string; // '1' habilita provedor mock (dev/testes)
 }
 
