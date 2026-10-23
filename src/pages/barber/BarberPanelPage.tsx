@@ -35,6 +35,11 @@ export function BarberPanelPage() {
     },
     onError: (e: any) => toast.push("err", e.message || "Não foi possível conectar o Mercado Pago."),
   });
+  const disconnectMp = useMutation({
+    mutationFn: () => api.post<{ ok: boolean }>("/barber/mercadopago/disconnect", {}),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["barber-mercadopago", siteBase()] }); toast.push("ok", "Conta desconectada do TIGU."); },
+    onError: (e: any) => toast.push("err", e.message || "Falha ao desconectar a conta."),
+  });
   const days = useMemo(() => {
     const start = localDay(tz);
     return Array.from({ length: 7 }, (_, i) =>
@@ -101,6 +106,13 @@ export function BarberPanelPage() {
             {marketplace.data?.connected ? "Reconectar minha conta Mercado Pago" : "Conectar minha conta Mercado Pago"}
             {!marketplace.data?.can_connect ? " — indisponível neste ambiente" : ""}
           </button>
+          {marketplace.data?.connected && (
+            <button type="button" disabled={disconnectMp.isPending} onClick={() => {
+              if (window.confirm("Desconectar a conta Mercado Pago do TIGU? Novos recebimentos nesta conta serão indisponíveis até reconectar.")) disconnectMp.mutate();
+            }} className="ml-2 mt-3 rounded-lg border border-red-500/40 px-4 py-2 text-sm text-red-300 disabled:opacity-50">
+              Desconectar conta
+            </button>
+          )}
           <p className="mt-2 text-xs text-zinc-500">Não informe sua senha nem cole um Access Token no painel. A futura conexão usará a autorização oficial do Mercado Pago.</p>
         </section>
         {/* dias */}
