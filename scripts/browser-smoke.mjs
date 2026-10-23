@@ -404,6 +404,9 @@ try{
   await until("nova senha aceita",'location.pathname==="/selecionar"');
   const proSession=await api(base,"/api/auth/login","POST",{email:proEmail,password:replacement});
   assert.equal(proSession.status,200,"Nova senha do profissional deve autenticar");
+  assert.equal(proSession.data.next,"/c/"+slug+"/painel",
+    "Login do profissional deve abrir diretamente o painel, nunca /selecionar nem /admin");
+  pass("login do barbeiro redireciona diretamente ao painel individual");
   const proAdmin=await api(base,"/api/c/"+slug+"/admin/team","GET",undefined,proSession.cookie);
   assert.equal(proAdmin.status,403,"Profissional não pode listar/gerenciar equipes no backend");
   const proSettings=await api(base,"/api/c/"+slug+"/admin/settings","GET",undefined,proSession.cookie);
