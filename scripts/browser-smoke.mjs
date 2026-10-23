@@ -135,6 +135,10 @@ try{
   await cmd("Page.addScriptToEvaluateOnNewDocument",{source:"window.open=function(){return null;};"});
   await go(base+"/c/"+slug);
   await until("produto na vitrine",'document.body.innerText.includes("Pomada Navegador")');
+  await until("marca da barbearia carregada", 'document.querySelector("header")?.innerText.includes("Barbearia Chromium Local")');
+  assert.equal(await js('document.body.innerText.includes("AURUM")'),false,
+    "Marca de demonstração não deve aparecer no site da empresa");
+  pass("site mostra a identidade salva, não o projeto de demonstração");
   pass("vitrine carrega produto real do D1");
   await click("Adicionar ao carrinho");
   await click("Ver carrinho");
