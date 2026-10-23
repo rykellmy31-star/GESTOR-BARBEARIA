@@ -9,6 +9,7 @@ import type { Env } from "../types";
 import { err, json, nowIso } from "../lib/utils";
 import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
 import { beginSellerOauth, sellerOauthEnabled } from "../lib/seller-mercadopago-oauth";
+import { sellerPixReady } from "../lib/seller-payments";
 import { calendarDaySchema } from "../lib/admin-blocks";
 import { setBookingStatus, cancelBooking, rescheduleBooking, finishBookingEarly } from "../lib/booking";
 import { todayLocal, addDays, localToUtc } from "../lib/time";
@@ -240,7 +241,7 @@ barberRouter.get("/mercadopago", async (c) => {
   return json(c, {
     connected: Boolean(account),
     token_expired: expired,
-    enabled: false,
+    enabled: await sellerPixReady(c.env,cid(c),m.barber_id),
     integration_mode: "oauth",
     app_configured: configured,
     can_connect: sellerOauthEnabled(c.env),
@@ -248,7 +249,9 @@ barberRouter.get("/mercadopago", async (c) => {
     notice: account
       ? expired
         ? "Sua autorização Mercado Pago expirou. Reconecte a conta para atualizar a autorização."
-        : "Conta Mercado Pago conectada. Os pagamentos individuais serão liberados após homologação do checkout e webhooks."
+        : await sellerPixReady(c.env,cid(c),m.barber_id)
+          ? "Sua conta pode receber Pix de agendamentos diretamente pelo checkout."
+          : "Conta conectada. Pix exige configuração do webhook e liberação de produção."
       : sellerOauthEnabled(c.env)
         ? "Conecte sua conta no Mercado Pago para preparar seus recebimentos."
         : "Conexão ainda indisponível neste ambiente. As mensalidades do TIGU permanecem separadas.",
@@ -272,6 +275,9 @@ barberRouter.post("/mercadopago/disconnect", async (c) => {
   if (!m.barber_id) return err(c, "Profissional não vinculado", 403);
   if (c.env.TIGU_STAGING === "1") return err(c, "Conexão financeira indisponível no staging.", 403);
   const companyId = cid(c);
+  const unresolved=await c.env.DB.prepare("SELECT 1 FROM booking_payments WHERE company_id=?1 AND receiver_barber_id=?2 AND status IN ('creating','pending','refund_required') LIMIT 1")
+    .bind(companyId,m.barber_id).first();
+  if(unresolved)return err(c,"Existem Pix pendentes de conciliação ou estorno. Resolva antes de desconectar.",409);
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM seller_mp_accounts WHERE company_id=?1 AND barber_id=?2")
       .bind(companyId, m.barber_id),
