@@ -105,7 +105,7 @@ sellerMpCallbackRouter.get("/callback",async c=>{
   const access=await encryptSecret(c.env,tokens.access_token);
   const refresh=await encryptSecret(c.env,tokens.refresh_token);
   const now=new Date().toISOString();
-  await c.env.DB.prepare(`INSERT INTO seller_mp_accounts
+  const saved=await c.env.DB.prepare(`INSERT INTO seller_mp_accounts
    (company_id,barber_id,mp_user_id,access_ciphertext,refresh_ciphertext,expires_at,connected_by,connected_at,updated_at)
    SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?8
    WHERE EXISTS (SELECT 1 FROM seller_mp_oauth_pending
@@ -117,6 +117,7 @@ sellerMpCallbackRouter.get("/callback",async c=>{
    connected_by=excluded.connected_by,connected_at=excluded.connected_at,updated_at=excluded.updated_at`)
    .bind(pending.company_id,pending.barber_id,mpId,access,refresh,
     new Date(Date.now()+tokens.expires_in*1000).toISOString(),pending.user_id,now,hash).run();
+  if(saved.meta.changes!==1)return response(pending.slug,"failed");
   // Disconnect apaga pending: a operação SQL atômica impede reanexar a conta
   // se a desconexão ocorreu enquanto o Mercado Pago trocava os tokens.
   return response(pending.slug,"connected");
