@@ -83,6 +83,12 @@ export function SalesPlansSection() {
               <Link to={plan.code === "free" ? "/comecar" : `/contratar?plano=${plan.code}`} className={`${featured ? "btn-gold" : "border border-[#35313b] text-zinc-200 hover:border-[var(--c-gold)]"} mt-6 flex w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold`}>
                 {isStart ? "Começar meus 15 dias grátis" : "Solicitar atendimento comercial"}
               </Link>
+              {!isStart && (
+                <Link to={`/adquirir?plano=${plan.code}`}
+                  className="mt-3 flex w-full items-center justify-center rounded-xl border border-[var(--c-gold)]/70 px-4 py-3 text-sm font-semibold text-[var(--c-gold)] hover:bg-[var(--c-gold)]/10">
+                  Adquirir plano
+                </Link>
+              )}
               {isStart ? (
                 <p className="mt-2 text-center text-[11px] leading-relaxed text-zinc-500">Sem pagamento agora. Após 15 dias: {formatPrice(plan.price_cents_month)}/mês, com pagamento via Pix pelo painel. Sem débito automático.</p>
               ) : (
