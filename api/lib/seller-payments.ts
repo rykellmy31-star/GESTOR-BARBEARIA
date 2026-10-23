@@ -86,5 +86,5 @@ export async function loadSeller(env:Env,companyId:number,barberId:number):Promi
  }
  const token=await decryptSecret(env,row.access_ciphertext);
  const notificationUrl=sellerNotificationUrl(env,companyId,barberId);
- return token&&notificationUrl?{token,account_id:row.mp_user_id,notificationUrl}:null;
+ return token&&notificationUrl?{token,account_id:row.mp_user_id,notificationUrl,requireCollectorId:true}:null;
 }
