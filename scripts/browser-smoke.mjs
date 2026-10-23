@@ -139,6 +139,11 @@ try{
   assert.equal(await js('document.body.innerText.includes("AURUM")'),false,
     "Marca de demonstração não deve aparecer no site da empresa");
   pass("site mostra a identidade salva, não o projeto de demonstração");
+  // Os cards carregam assincronamente: precisam se tornar visíveis
+  // imediatamente, sem esperar outro reload ou uma rolagem tardia.
+  await until("serviço publicado visível", '(()=>{const el=[...document.querySelectorAll("#servicos article")].find(x=>x.textContent?.includes("Corte"));return !el || !el.classList.contains("reveal") || el.classList.contains("in")})()');
+  pass("catálogo carrega e libera as animações depois da consulta D1");
+
   pass("vitrine carrega produto real do D1");
   await click("Adicionar ao carrinho");
   await click("Ver carrinho");
