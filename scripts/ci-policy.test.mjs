@@ -346,3 +346,16 @@ test("OAuth Marketplace mantém credenciais de vendedor isoladas dos recebimento
  assert.match(source,/can_connect: sellerOauthEnabled\(c.env\)/);
  assert.doesNotMatch(source.slice(source.indexOf('barberRouter.get("/mercadopago"'),source.indexOf('barberRouter.get("/me"')),/MP_ACCESS_TOKEN|secret\s*:/);
 });
+
+test("OAuth Marketplace bloqueia URL inválida, parâmetros ambíguos e callbacks no staging",()=>{
+ const oauth=readFileSync(new URL("../api/lib/seller-mercadopago-oauth.ts",import.meta.url),"utf8");
+ assert.match(oauth,/env\.TIGU_STAGING==="1"/);
+ assert.match(oauth,/env\.APP_ENV!=="production"/);
+ assert.match(oauth,/publicUrl\.protocol!=="https:"/);
+ assert.match(oauth,/getAll\("state"\)\.length!==1/);
+ assert.match(oauth,/getAll\("code"\)\.length>1/);
+ assert.match(oauth,/state!==cookieState/);
+ assert.match(oauth,/used_at IS NULL/);
+ assert.match(oauth,/code_verifier:verifier/);
+ assert.doesNotMatch(oauth,/MP_ACCESS_TOKEN/);
+});
