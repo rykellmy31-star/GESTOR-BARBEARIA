@@ -359,3 +359,17 @@ test("OAuth Marketplace bloqueia URL inválida, parâmetros ambíguos e callback
  assert.match(oauth,/code_verifier:verifier/);
  assert.doesNotMatch(oauth,/MP_ACCESS_TOKEN/);
 });
+
+test("Mercado Pago individual recusa tokens malformados e desconexão respeita empresa",()=>{
+ const oauth=readFileSync(new URL("../api/lib/seller-mercadopago-oauth.ts",import.meta.url),"utf8");
+ const barber=readFileSync(new URL("../api/routes/barber.ts",import.meta.url),"utf8");
+ assert.match(oauth,/Number\.isSafeInteger\(tokens\.expires_in\)/);
+ assert.match(oauth,/tokens\.access_token\.length>8192/);
+ assert.match(oauth,/tokens\.refresh_token\.length>8192/);
+ assert.match(oauth,/tokens\.expires_in!>31536000/);
+ const disconnect=barber.slice(barber.indexOf('barberRouter.post("/mercadopago/disconnect"'),barber.indexOf('barberRouter.get("/me"'));
+ assert.match(disconnect,/company_id=\?1 AND barber_id=\?2/);
+ assert.match(disconnect,/\.bind\(companyId, m\.barber_id\)/);
+ assert.match(disconnect,/TIGU_STAGING === "1"/);
+ assert.doesNotMatch(disconnect,/MP_ACCESS_TOKEN/);
+});
