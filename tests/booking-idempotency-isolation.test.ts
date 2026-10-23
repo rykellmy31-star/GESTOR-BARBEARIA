@@ -73,7 +73,9 @@ describe("checkout do serviço", () => {
   });
   it("a flag financeira é fechada por padrão e staging nunca permite cobrança", () => {
     const configured={APP_ENV:"production",MERCHANT_PIX_ENABLED:"1",MSG_ENC_KEY:"12345678901234567890123456789012",
-      PUBLIC_URL:"https://tigu.example/"} as Env;
+      PUBLIC_URL:"https://tigu.example/", MP_MARKETPLACE_CLIENT_ID:"test-client",
+      MP_MARKETPLACE_CLIENT_SECRET:"marketplace-client-test",
+      MP_MARKETPLACE_WEBHOOK_SECRET:"marketplace-webhook-test-secret"} as Env;
     expect(bookingPixEnabled({...configured,MERCHANT_PIX_ENABLED:"0"})).toBe(false);
     expect(bookingPixEnabled({...configured,TIGU_STAGING:"1"})).toBe(false);
     expect(bookingPixEnabled({...configured,PAYMENTS_MOCK:"1"})).toBe(false);
