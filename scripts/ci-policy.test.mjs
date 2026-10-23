@@ -375,3 +375,10 @@ test("Mercado Pago individual recusa tokens malformados e desconexão respeita e
  assert.doesNotMatch(disconnect,/seller_mp_oauth_pending WHERE[^\n]*user_id/);
  assert.doesNotMatch(disconnect,/MP_ACCESS_TOKEN/);
 });
+
+test("callback OAuth não restaura conta após desconexão concorrente",()=>{
+ const oauth=readFileSync(new URL("../api/lib/seller-mercadopago-oauth.ts",import.meta.url),"utf8");
+ assert.match(oauth,/INSERT INTO seller_mp_accounts[\\s\\S]*?WHERE EXISTS \\(SELECT 1 FROM seller_mp_oauth_pending/);
+ assert.match(oauth,/state_hash=\\?9 AND company_id=\\?1 AND barber_id=\\?2/);
+ assert.match(oauth,/if\\(saved\\.meta\\.changes!==1\\)return response\\(pending\\.slug,"failed"\\)/);
+});
