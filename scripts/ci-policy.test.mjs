@@ -297,3 +297,24 @@ test("Superadmin abre detalhe correto, ajusta créditos no D1 e não exibe regra
   assert.match(browser,/Superadmin faz ajuste financeiro auditável apenas na carteira local/);
   assert.match(browser,/Superadmin consulta mensalidades sem ativação ou cobrança/);
 });
+
+test("CI: preflight da futura produção somente GET e sem Worker/dados/DNS mutados",()=>{
+  const part=content.match(/      - name: Inspecionar isolamento da futura produção TIGU \(somente leitura\)[\s\S]*?run: node scripts\/production-inventory-readonly\.mjs/);
+  assert.ok(part,"Gate de pré-inspeção remota de produção ausente");
+  assert.match(part[0],/github\.event_name == 'push'/);
+  assert.match(part[0],/github\.ref == 'refs\/heads\/audit\/tigu-primeira-validacao'/);
+  assert.match(part[0],/github\.event\.head_commit\.message == 'TIGU_PRODUCTION_READONLY_PREFLIGHT_ONCE'/);
+  assert.match(part[0],/TIGU_PRODUCTION_READONLY_APPROVED: YES/);
+  assert.match(part[0],/secrets\.CLOUDFLARE_STAGING_TOKEN/);
+  const script=readFileSync(new URL("./production-inventory-readonly.mjs",import.meta.url),"utf8");
+  assert.match(script,/method:"GET"/);
+  assert.doesNotMatch(script,/method:"(?:POST|PUT|PATCH|DELETE)"|wrangler deploy|wrangler d1 migrations apply|secret put|r2 object put/);
+  const config=JSON.parse(readFileSync(new URL("../wrangler.production.template.jsonc",import.meta.url),"utf8"));
+  assert.equal(config.name,"tigu-production");
+  assert.equal(config.vars.TIGU_STAGING,"0");
+  assert.equal(config.vars.WHATSAPP_MOCK,"0");
+  assert.equal(config.vars.PAYMENTS_MOCK,"0");
+  assert.deepEqual(config.triggers.crons,[]);
+  assert.equal(config.d1_databases[0].database_name,"tigu-production-db");
+  assert.equal(config.r2_buckets[0].bucket_name,"tigu-production-media");
+});
