@@ -21,7 +21,10 @@ export function LoginPage() {
       toast.push("ok", `Bem-vindo, ${res.user.name.split(" ")[0]}!`);
       // Não permitir URL externa, nem contornar troca de senha obrigatória.
       const requestedNext = params.get("next") || "";
-      const safeNext = /^\/(?:superadmin|selecionar|c\/[a-z0-9-]+\/(?:admin|painel))(?:\/|$)/.test(requestedNext)
+      const allowedNext = /^\/(?:superadmin|selecionar|c\/[a-z0-9-]+\/(?:admin|painel))(?:\/|$)/.test(requestedNext);
+      // Nunca direcionar profissional para /admin apenas porque a URL pediu.
+      const requestedRole = res.companies.find(c => requestedNext.startsWith(`/c/${c.slug}/`));
+      const safeNext = allowedNext && !(requestedRole?.role === "barber" && requestedNext.startsWith(`/c/${requestedRole.slug}/admin`))
         ? requestedNext : "";
       navigate(res.user.must_change_password ? "/alterar-senha" : (safeNext || res.next || "/selecionar"), { replace: true });
     } catch (e2: any) {
