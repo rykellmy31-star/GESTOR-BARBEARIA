@@ -13,7 +13,9 @@ import { CartDrawer } from "./CartDrawer";
 export function HomePage() {
   const { data: cfg } = useConfig();
   const s = cfg?.settings;
-  useReveal([cfg]);
+  // Dados do catálogo chegam depois do layout: reobserve os novos cards
+  // para não ficarem ocultos pela animação .reveal enquanto já foram salvos.
+  useReveal([cfg, services, barbers, products]);
   const { data: services } = useQuerySafe<Service[]>("services");
   const { data: barbers } = useQuerySafe<Barber[]>("barbers");
   const { data: reviews } = useQuerySafe<any[]>("reviews");
@@ -196,7 +198,13 @@ export function HomePage() {
 /* hook local com react-query */
 import { useQuery } from "@tanstack/react-query";
 function useQuerySafe<T>(key: string): { data?: T } {
-  const q = useQuery({ queryKey: ["tenant", siteBase(), key], queryFn: () => api.get<any>(`/${key}`).then((d) => (key === "services" ? d.services : key === "barbers" ? d.barbers : key === "products" ? d.products : d.reviews) as T) });
+  const q = useQuery({ queryKey: ["tenant", siteBase(), key], queryFn: () => api.get<any>(`/${key}`).then((d) => (key === "services" ? d.services : key === "barbers" ? d.barbers : key === "products" ? d.products : d.reviews) as T),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchInterval: key === "reviews" ? 60_000 : 5_000,
+    refetchIntervalInBackground: false,
+  });
   return { data: Array.isArray(q.data) ? (q.data as T) : undefined };
 }
 
