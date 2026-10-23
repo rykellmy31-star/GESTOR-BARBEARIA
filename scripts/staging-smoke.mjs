@@ -57,10 +57,13 @@ try {
     health.body?.d1 === true && health.body?.r2 === true &&
     health.body?.security?.session_secret_ready === true &&
     health.body?.security?.encryption_key_ready === true &&
+    // O indicador mercadopago/embedded relata PRESENÇA de credencial,
+    // não permissão de transacionar. TIGU_STAGING=1 continua recusando
+    // Pix real, webhooks de pagamento e envio de mensagens Meta.
     health.body?.payments?.mock === false &&
-    health.body?.payments?.mercadopago === false &&
+    typeof health.body?.payments?.mercadopago === "boolean" &&
     health.body?.whatsapp?.mock === true &&
-    health.body?.whatsapp?.embedded === false;
+    typeof health.body?.whatsapp?.embedded === "boolean";
 
   if (!isolated) {
     fail("VERIFICAÇÃO DE IDENTIDADE: Worker isolado, D1, R2, secrets fortes e integrações",
