@@ -261,6 +261,23 @@ barberRouter.post("/mercadopago/connect", async c=>{
   return json(c,{authorization_url:result.authorization_url});
 });
 
+// Desconexão restrita ao profissional autenticado e seu vínculo multiempresa.
+// Apaga os tokens locais e invalida autorizações OAuth ainda pendentes.
+barberRouter.post("/mercadopago/disconnect", async (c) => {
+  const m = me(c);
+  if (!m.barber_id) return err(c, "Profissional não vinculado", 403);
+  if (c.env.TIGU_STAGING === "1") return err(c, "Conexão financeira indisponível no staging.", 403);
+  const companyId = cid(c);
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM seller_mp_accounts WHERE company_id=?1 AND barber_id=?2")
+      .bind(companyId, m.barber_id),
+    c.env.DB.prepare("DELETE FROM seller_mp_oauth_pending WHERE company_id=?1 AND barber_id=?2 AND user_id=?3")
+      .bind(companyId, m.barber_id, m.id),
+  ]);
+  c.header("Cache-Control", "no-store");
+  return json(c, { ok: true, connected: false });
+});
+
 barberRouter.get("/me", async (c) => {
   // já definido acima — este sobrescreve apenas para incluir permissions explícitas
   const m = me(c);
