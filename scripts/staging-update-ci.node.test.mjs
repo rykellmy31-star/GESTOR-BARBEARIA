@@ -8,7 +8,7 @@ const token="ficticio-secret-staging-ci-example",accountId="1234567890abcdef1234
 const uuid="12345678-1234-4234-8234-123456789012";
 const root=resolve(import.meta.dirname,"..");
 const [template,production]=["wrangler.staging.template.jsonc","wrangler.jsonc"].map(n=>readFileSync(join(root,n),"utf8"));
-function mock({worker=true,d1=true,r2=true,healthy=true,requests=[]}={}){
+function mock({worker=true,d1=true,r2=true,healthy=true,credentials=false,requests=[]}={}){
  return async (url,opts)=>{
   requests.push({url,method:opts.method});
   assert.equal(opts.method,"GET");
@@ -20,7 +20,7 @@ function mock({worker=true,d1=true,r2=true,healthy=true,requests=[]}={}){
   else if(url.endsWith("/api/health"))
     return {status:200,json:async()=>({staging:healthy,d1:true,r2:true,
       security:{session_secret_ready:true,encryption_key_ready:true},
-      payments:{mercadopago:false},whatsapp:{embedded:false}})};
+      payments:{mercadopago:credentials,mock:false},whatsapp:{embedded:credentials,mock:true}})};
   else throw Error("URL inesperada: "+url);
   return {ok:true,json:async()=>({success:true,result})};
  };
@@ -60,6 +60,26 @@ test("redeploy conserva segredos, valida configuração, faz apenas build/deploy
   assert.equal(requests.length,4);
  }finally{rmSync(tmp,{force:true,recursive:true});}
 });
+test("staging com tokens dos provedores não libera transações e continua publicável",async()=>{
+ const tmp=mkdtempSync(join(tmpdir(),"tigu-redeploy-credentials-"));
+ try {
+  writeFileSync(join(tmp,"wrangler.staging.template.jsonc"),template);
+  writeFileSync(join(tmp,"wrangler.jsonc"),production);
+  const exec=(bin,args)=>{
+   if(args.includes("prepare")){
+    const cfg=JSON.parse(template);cfg.d1_databases[0].database_id=uuid;
+    writeFileSync(join(tmp,"wrangler.staging.jsonc"),JSON.stringify(cfg));
+   }
+  };
+  const result=await updateStagingWorker({
+   token,accountId,root:tmp,fetcher:mock({credentials:true}),exec
+  });
+  assert.equal(result.staging_health_verified,true);
+  assert.equal(result.real_providers_enabled,false);
+  assert.equal(result.production_modified,false);
+ } finally { rmSync(tmp,{force:true,recursive:true}); }
+});
+
 test("falha com health sem chaves configuradas, nunca anuncia sucesso",async()=>{
  const tmp=mkdtempSync(join(tmpdir(),"tigu-redeploy-check-"));
  try{
