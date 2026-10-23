@@ -9,7 +9,7 @@ const first=source.indexOf(String.fromCharCode(96),start);
 const last=source.indexOf(String.fromCharCode(96),first+1);
 const sql=source.slice(first+1,last);
 function setup(){const d=new DatabaseSync(":memory:");
-d.exec("CREATE TABLE seller_mp_oauth_pending (state_hash TEXT PRIMARY KEY,company_id INTEGER,barber_id INTEGER,user_id INTEGER,used_at TEXT,expires_at TEXT NOT NULL DEFAULT '2026-10-30T00:00:00Z');");
+d.exec("CREATE TABLE seller_mp_oauth_pending (state_hash TEXT PRIMARY KEY,company_id INTEGER,barber_id INTEGER,user_id INTEGER,used_at TEXT,expires_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now','+1 hour')));");
 d.exec("CREATE TABLE seller_mp_accounts (company_id INTEGER,barber_id INTEGER,mp_user_id TEXT,access_ciphertext TEXT,refresh_ciphertext TEXT,expires_at TEXT,connected_by INTEGER,connected_at TEXT,updated_at TEXT,PRIMARY KEY(company_id,barber_id));");
 d.exec("CREATE UNIQUE INDEX idx_seller_mp_accounts_mp_account ON seller_mp_accounts(mp_user_id);");
 return d;}
