@@ -365,6 +365,7 @@ test("Mercado Pago individual recusa tokens malformados e desconexão respeita e
  const oauth=readFileSync(new URL("../api/lib/seller-mercadopago-oauth.ts",import.meta.url),"utf8");
  const barber=readFileSync(new URL("../api/routes/barber.ts",import.meta.url),"utf8");
  assert.match(oauth,/Number\.isSafeInteger\(tokens\.expires_in\)/);
+ assert.match(oauth,/Number\.isSafeInteger\(tokens\.user_id\)/);
  assert.match(oauth,/tokens\.access_token\.length>8192/);
  assert.match(oauth,/tokens\.refresh_token\.length>8192/);
  assert.match(oauth,/tokens\.expires_in>31536000/);
