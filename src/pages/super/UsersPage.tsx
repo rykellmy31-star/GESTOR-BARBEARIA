@@ -34,7 +34,7 @@ export function SuperUsers() {
             <Tr key={u.id} onClick={() => setSel(u)}>
               <Td className="font-medium text-zinc-100">{u.name} {u.must_change_password === 1 && <Badge tone="amber">troca senha</Badge>}</Td>
               <Td className="text-zinc-400">{u.email}</Td>
-              <Td><Badge tone={u.platform_role === "superadmin" ? "blue" : "gray"}>{u.platform_role}</Badge></Td>
+              <Td><Badge tone={u.platform_role === "superadmin" ? "blue" : "gray"}>{u.platform_role === "superadmin" ? "Super Admin" : u.membership_roles?.split(",").includes("owner") ? "Dono" : u.membership_roles?.split(",").includes("manager") ? "Gerente" : u.membership_roles?.split(",").includes("barber") ? "Profissional" : "Sem vínculo"}</Badge></Td>
               <Td className="max-w-[220px] truncate text-xs text-zinc-500">{u.companies || "—"}</Td>
               <Td className="text-xs">{u.last_login_at ? new Date(u.last_login_at).toLocaleString("pt-BR", { hour12: false }) : "nunca"}</Td>
               <Td className="text-right">{u.active === 0 && <span className="text-[10px] uppercase text-red-300">inativo</span>}</Td>
