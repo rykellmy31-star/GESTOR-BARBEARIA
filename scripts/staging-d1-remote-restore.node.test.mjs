@@ -10,7 +10,10 @@ const source="12345678-1234-4234-8234-123456789012";
 const target="87654321-4321-4321-8321-210987654321";
 const root=resolve(import.meta.dirname,"..");
 const sql=readdirSync(join(root,"migrations")).filter(x=>/^\d{4}_.*\.sql$/.test(x)).sort()
-  .map(x=>readFileSync(join(root,"migrations",x),"utf8")).join("\n");
+  .map(x=>readFileSync(join(root,"migrations",x),"utf8")).join("\n")
+  // Data fixa apenas no fixture: duas importações do mesmo SQL não podem
+  // gerar hashes diferentes se ocorrer virada de segundo nos DEFAULTs.
+  .replaceAll("strftime(\'%Y-%m-%dT%H:%M:%SZ\',\'now\')","\'2026-10-01T00:00:00Z\'");
 function fake({targetExists=false,deny=false,calls=[]}={}) {
   return async (url,opts)=>{
     const path=url.replace("https://api.cloudflare.com/client/v4","");
