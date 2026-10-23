@@ -51,7 +51,7 @@ authRouter.post("/login", async (c) => {
   return json(c, {
     user: { ...publicUser({ id: u.id, name: u.name, email: u.email, platform_role: u.platform_role }), must_change_password: u.must_change_password === 1 },
     companies,
-    next: u.must_change_password === 1 ? "/alterar-senha" : u.platform_role === "superadmin" ? "/superadmin" : companies.length === 1 ? `/c/${companies[0].slug}/admin` : companies.length ? "/selecionar" : "/comecar",
+    next: u.must_change_password === 1 ? "/alterar-senha" : u.platform_role === "superadmin" ? "/superadmin" : companies.length === 1 ? companyPanelPath(companies[0]) : companies.length ? "/selecionar" : "/comecar",
   });
 });
 
@@ -157,6 +157,11 @@ authRouter.post("/register", async (c) => {
   await createSession(c, userId);
   return json(c, { ok: true, company: { slug, name: company_name }, next: `/c/${slug}/admin` }, 201);
 });
+
+/** Redireciona por vínculo ativo, sem conceder acesso administrativo ao barbeiro. */
+export function companyPanelPath(company: { slug: string; role: string }): string {
+  return `/c/${company.slug}/${company.role === "barber" ? "painel" : "admin"}`;
+}
 
 async function myCompanies(db: D1Database, userId: number) {
   const { results } = await db
