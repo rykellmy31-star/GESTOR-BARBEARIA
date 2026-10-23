@@ -97,7 +97,8 @@ sellerMpCallbackRouter.get("/callback",async c=>{
   });}finally{clearTimeout(timer);}
   if(!tokenResponse.ok)return response(pending.slug,"failed");
   const tokens=await tokenResponse.json() as Tokens;
-  const mpId=String(tokens.user_id||"");
+  const mpId=typeof tokens.user_id==="number" && Number.isSafeInteger(tokens.user_id)
+    ? String(tokens.user_id) : typeof tokens.user_id==="string" ? tokens.user_id : "";
   if(!/^\d{1,20}$/.test(mpId)||typeof tokens.access_token!=="string"||
     typeof tokens.refresh_token!=="string"||tokens.access_token.length<8||
     tokens.refresh_token.length<8||tokens.access_token.length>8192||tokens.refresh_token.length>8192||
