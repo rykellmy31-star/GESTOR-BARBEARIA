@@ -23,6 +23,18 @@ export function BarberPanelPage() {
 
   const me = useQuery({ queryKey: ["barber-me", siteBase()], queryFn: () => api.get<any>("/barber/me") });
   const marketplace = useQuery({ queryKey: ["barber-mercadopago", siteBase()], queryFn: () => api.get<{ connected:boolean; enabled:boolean; can_connect:boolean; notice:string }>("/barber/mercadopago") });
+  const connectMp = useMutation({
+    mutationFn: () => api.post<{ authorization_url: string }>("/barber/mercadopago/connect", {}),
+    onSuccess: ({ authorization_url }) => {
+      const url = new URL(authorization_url);
+      if (url.origin !== "https://auth.mercadopago.com" || url.pathname !== "/authorization") {
+        toast.push("err", "Endereço de autorização inválido.");
+        return;
+      }
+      window.location.assign(url.toString());
+    },
+    onError: (e: any) => toast.push("err", e.message || "Não foi possível conectar o Mercado Pago."),
+  });
   const days = useMemo(() => {
     const start = localDay(tz);
     return Array.from({ length: 7 }, (_, i) =>
@@ -83,8 +95,11 @@ export function BarberPanelPage() {
           <p role="status" className="mt-3 text-sm text-amber-200">
             {marketplace.isError ? "Não foi possível consultar a integração." : marketplace.isLoading ? "Consultando sua integração…" : marketplace.data?.notice}
           </p>
-          <button disabled className="mt-3 rounded-lg border border-line px-4 py-2 text-sm text-zinc-500" type="button">
-            Conectar minha conta Mercado Pago — em homologação
+          <button type="button" disabled={!marketplace.data?.can_connect || connectMp.isPending}
+            onClick={() => connectMp.mutate()}
+            className="mt-3 rounded-lg border border-line px-4 py-2 text-sm text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-500">
+            {marketplace.data?.connected ? "Reconectar minha conta Mercado Pago" : "Conectar minha conta Mercado Pago"}
+            {!marketplace.data?.can_connect ? " — indisponível neste ambiente" : ""}
           </button>
           <p className="mt-2 text-xs text-zinc-500">Não informe sua senha nem cole um Access Token no painel. A futura conexão usará a autorização oficial do Mercado Pago.</p>
         </section>
