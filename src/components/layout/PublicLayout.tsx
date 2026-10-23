@@ -5,7 +5,7 @@ import { clsx } from "clsx";
 import { siteBase, cartEvent } from "@/lib/api";
 import { readCart } from "@/lib/cart";
 import { useConfig } from "@/lib/hooks";
-import { Badge } from "@/components/ui";
+import { Badge, Spinner } from "@/components/ui";
 
 export function CartBadge() {
   const [, setTick] = useState(0);
@@ -25,7 +25,7 @@ export function CartBadge() {
 }
 
 export function PublicLayout() {
-  const { data } = useConfig();
+  const { data, isPending, isError } = useConfig();
   const s = data?.settings;
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -37,6 +37,30 @@ export function PublicLayout() {
     return () => window.removeEventListener("scroll", h);
   }, []);
   useEffect(() => setOpen(false), [loc.pathname]);
+
+  // Não renderizar identidade/hero/rodapé do template enquanto as
+  // configurações da barbearia não forem carregadas. Isso elimina
+  // o flash da marca de demonstração em atualizações da página.
+  // Em falha de rede, nunca mostrar dados de outra empresa nem placeholders.
+  if (isPending || (!data && !isError)) {
+    return <div role="status" aria-live="polite"
+      className="grid min-h-screen place-items-center bg-[#0a0a0c] px-4 text-zinc-300">
+      <div className="flex flex-col items-center gap-4">
+        <Spinner />
+        <p className="text-sm">Carregando informações da barbearia…</p>
+      </div>
+    </div>;
+  }
+  if (isError || !data?.settings) {
+    return <div role="alert" className="grid min-h-screen place-items-center bg-[#0a0a0c] px-4 text-center text-zinc-200">
+      <div className="max-w-md space-y-4">
+        <p className="font-display text-2xl">Não foi possível carregar a barbearia</p>
+        <p className="text-sm text-zinc-400">Verifique a conexão e atualize a página. Nenhuma configuração foi modificada.</p>
+        <button className="btn-gold rounded-xl px-5 py-3 text-sm"
+          onClick={() => window.location.reload()}>Tentar novamente</button>
+      </div>
+    </div>;
+  }
 
   const nav = [
     { to: "#servicos", label: "Serviços" },
