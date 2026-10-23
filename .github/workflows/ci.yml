@@ -28,6 +28,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Diagnosticar contexto do gatilho sem expor segredos
+        env:
+          TIGU_EVENT: ${{ github.event_name }}
+          TIGU_REF: ${{ github.ref }}
+          TIGU_HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          node -e 'const ok=process.env.TIGU_EVENT==="push" && process.env.TIGU_REF==="refs/heads/audit/tigu-primeira-validacao" && process.env.TIGU_HEAD_MESSAGE==="TIGU_PRODUCTION_READONLY_PREFLIGHT_ONCE"; console.log("Evento:",process.env.TIGU_EVENT); console.log("Branch permitida:",process.env.TIGU_REF==="refs/heads/audit/tigu-primeira-validacao"); console.log("Inventário remoto autorizado por gatilho:",ok);'
       - name: Instalar dependencias
         run: npm ci --no-audit --prefer-offline --fetch-retries=1 --fetch-timeout=20000
       - name: Validar auditoria, homologacao, tipos, build e testes
