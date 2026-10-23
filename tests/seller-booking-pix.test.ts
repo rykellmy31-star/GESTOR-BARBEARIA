@@ -34,6 +34,7 @@ async function fixture(withSeller=true){
  const u=await db.prepare("INSERT INTO users(name,email,password_hash) VALUES ('Profissional',?1,'hash-ficticio')")
   .bind("barber-"+suffix+"@example.test").run();
  const userId=Number(u.meta.last_row_id);
+ const mpUserId=String(10000+barberId);
  await db.prepare("INSERT INTO company_memberships(company_id,user_id,role,barber_id) VALUES (?1,?2,'barber',?3)")
   .bind(companyId,userId,barberId).run();
  const service=await db.prepare("INSERT INTO services(company_id,slug,name,price_cents,duration_min) VALUES (?1,?2,'Corte',2999,30)")
@@ -43,12 +44,12 @@ async function fixture(withSeller=true){
   "VALUES (?1,?2,?3,?4,'2026-11-10T13:00:00Z','2026-11-10T13:30:00Z',2999,'confirmado','Cliente','5573999999999','cliente@example.test',?5,'pix')")
   .bind(companyId,"BOOK-"+suffix,barberId,Number(service.meta.last_row_id),crypto.randomUUID()).run();
  if(withSeller){
-  await db.prepare("INSERT INTO seller_mp_accounts(company_id,barber_id,mp_user_id,access_ciphertext,refresh_ciphertext,expires_at,connected_by,connected_at,updated_at) VALUES (?1,?2,'2001',?3,?4,?5,?6,?7,?7)")
-   .bind(companyId,barberId,await encryptSecret(secure,sellerToken),
+  await db.prepare("INSERT INTO seller_mp_accounts(company_id,barber_id,mp_user_id,access_ciphertext,refresh_ciphertext,expires_at,connected_by,connected_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8)")
+   .bind(companyId,barberId,mpUserId,await encryptSecret(secure,sellerToken),
      await encryptSecret(secure,"REFRESH-SELLER-SECRET-ACCOUNT"),
      new Date(Date.now()+3600000).toISOString(),userId,new Date().toISOString()).run();
  }
- return {companyId,barberId,bookingId:Number(booking.meta.last_row_id)};
+ return {companyId,barberId,mpUserId,bookingId:Number(booking.meta.last_row_id)};
 }
 
 describe("Pix real separado pela conta OAuth de cada profissional",()=>{
@@ -68,7 +69,7 @@ describe("Pix real separado pela conta OAuth de cada profissional",()=>{
   expect((await generateBookingPix(secure,companyId,bookingId)).status).toBe("unavailable");
  });
  it("cobra na conta do barbeiro, evita duplicação e confirma por GET com isolamento",async()=>{
-  const {companyId,barberId,bookingId}=await fixture();
+  const {companyId,barberId,bookingId,mpUserId}=await fixture();
   let posts=0;
   vi.stubGlobal("fetch",async(url:string,opts:RequestInit)=>{
    expect(url).toBe("https://api.mercadopago.com/v1/payments");
@@ -78,7 +79,7 @@ describe("Pix real separado pela conta OAuth de cada profissional",()=>{
    expect(body.notification_url).toBe(sellerNotificationUrl(secure,companyId,barberId));
    expect(body.transaction_amount).toBe(29.99);
    posts++;
-   return new Response(JSON.stringify({id:991337,collector_id:2001,
+   return new Response(JSON.stringify({id:991337,collector_id:Number(mpUserId),
     point_of_interaction:{transaction_data:{qr_code:"000201PIX-DO-PROFISSIONAL"}}}),{status:201});
   });
   expect(await generateBookingPix(secure,companyId,bookingId)).toMatchObject({
@@ -89,7 +90,7 @@ describe("Pix real separado pela conta OAuth de cada profissional",()=>{
   const p=await db.prepare("SELECT * FROM booking_payments WHERE booking_id=?1")
    .bind(bookingId).first<{code:string;receiver_barber_id:number;receiver_mp_user_id:string}>();
   expect(p?.receiver_barber_id).toBe(barberId);
-  expect(p?.receiver_mp_user_id).toBe("2001");
+  expect(p?.receiver_mp_user_id).toBe(mpUserId);
   await expect(db.prepare("DELETE FROM seller_mp_accounts WHERE company_id=?1 AND barber_id=?2")
     .bind(companyId,barberId).run()).rejects.toThrow();
   vi.stubGlobal("fetch",async(url:string,opts:RequestInit)=>{
