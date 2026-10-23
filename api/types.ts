@@ -37,6 +37,12 @@ export interface Env {
   MERCHANT_PIX_ENABLED?: string; // kill-switch de checkout por conta própria da barbearia (não afeta assinatura/recarga)
   MP_ACCESS_TOKEN?: string; // produção ou sandbox (deixe consistente com o ambiente)
   MP_WEBHOOK_SECRET?: string; // validação x-signature
+  /** Aplicação separada: OAuth dos vendedores (nunca confundir com MP_ACCESS_TOKEN). */
+  MP_MARKETPLACE_CLIENT_ID?: string;
+  /** Segredo central OAuth, nunca exposto no client ou logs. */
+  MP_MARKETPLACE_CLIENT_SECRET?: string;
+  /** Callback HTTPS registrado na aplicação TIGU Marketplace. */
+  MP_MARKETPLACE_REDIRECT_URI?: string;
   PAYMENTS_MOCK?: string; // '1' habilita provedor mock (dev/testes)
 }
 
