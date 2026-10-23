@@ -1,10 +1,14 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { ArrowRight, Plus, Scissors } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
 
 export function CompanyPickerPage() {
   const { user } = useAuth();
   const companies = user?.companies ?? [];
+  if (user?.platform_role !== "superadmin" && companies.length === 1) {
+    const c = companies[0];
+    return <Navigate replace to={`/c/${c.slug}/${c.role === "barber" ? "painel" : "admin"}`} />;
+  }
   return (
     <div className="texture min-h-screen px-4 py-14">
       <div className="mx-auto max-w-lg">
@@ -14,7 +18,7 @@ export function CompanyPickerPage() {
         <ul className="mt-6 space-y-3">
           {companies.map((c) => (
             <li key={c.slug}>
-              <Link to={`/c/${c.slug}/admin`} className="flex items-center gap-3 rounded-2xl border border-line bg-panel p-4 transition-colors hover:border-[var(--c-gold)]">
+              <Link to={`/c/${c.slug}/${c.role === "barber" ? "painel" : "admin"}`} className="flex items-center gap-3 rounded-2xl border border-line bg-panel p-4 transition-colors hover:border-[var(--c-gold)]">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold text-zinc-100">{c.name}</p>
                   <p className="text-[11px] uppercase tracking-wide text-zinc-500">{c.role} · plano {c.plan}{c.status === "suspended" ? " · SUSPENSA" : ""}</p>
@@ -28,7 +32,7 @@ export function CompanyPickerPage() {
               <p className="flex-1 font-semibold text-sky-200">Suíte Tigu (plataforma)</p><ArrowRight size={18} className="text-sky-300" /></Link></li>
           )}
         </ul>
-        <Link to="/comecar" className="btn-gold mt-6 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm"><Plus size={16} /> Cadastrar nova barbearia</Link>
+        {(user?.platform_role === "superadmin" || companies.some(c => c.role === "owner")) && <Link to="/comecar" className="btn-gold mt-6 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm"><Plus size={16} /> Cadastrar nova barbearia</Link>}
       </div>
     </div>
   );
