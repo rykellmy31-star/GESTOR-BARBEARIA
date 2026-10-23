@@ -26,21 +26,20 @@ export function HomePage() {
       {/* ── HERO ─────────────────────────────────────────────────────── */}
       <section className="relative flex min-h-[102svh] items-end overflow-hidden">
         <div className="absolute inset-0">
-          <img src={s?.banner_url || "/img/hero.jpg"} alt="" className="h-full w-full object-cover object-center" loading="eager" />
+          {s?.banner_url && <img src={s.banner_url} alt="" className="h-full w-full object-cover object-center" loading="eager" />}
           <div className="absolute inset-0 bg-gradient-to-t from-[var(--c-ink)] via-[var(--c-ink)]/55 to-black/40" />
           <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent" />
         </div>
         <div className="relative mx-auto w-full max-w-6xl px-4 pb-24 pt-40 sm:px-6">
           <div className="max-w-2xl">
             <p className="animate-fade-up mb-4 inline-flex items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--c-gold)_40%,transparent)] bg-black/40 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.28em] text-[var(--c-gold)] backdrop-blur">
-              <BadgeCheck size={13} /> {s?.tagline || "Barbearia premium"}
+              <BadgeCheck size={13} /> {s?.tagline || s?.shop_name}
             </p>
             <h1 className="animate-fade-up font-display text-[42px] leading-[1.04] text-white sm:text-6xl lg:text-7xl" style={{ animationDelay: "0.08s" }}>
-              Barbearia<br />
-              <span className="gold-text">{s?.shop_name?.replace("Barbearia ", "") ?? "Aurum"}</span>
+              <span className="gold-text">{s?.shop_name}</span>
             </h1>
             <p className="animate-fade-up mt-5 max-w-lg text-[15px] leading-relaxed text-zinc-300 sm:text-lg" style={{ animationDelay: "0.16s" }}>
-              Cortes de precisão, barboterapia e atendimento de alto padrão — com agenda online, escolha do seu barbeiro e confirmação na hora.
+              {s?.about || "Escolha seu serviço, profissional e horário para fazer seu agendamento."}
             </p>
             <div className="animate-fade-up mt-8 flex flex-wrap items-center gap-3" style={{ animationDelay: "0.24s" }}>
               <Link to="agendar" className="btn-gold inline-flex items-center gap-2 rounded-xl px-7 py-4 text-base" style={{ animationDelay: "0.2s" }}>
@@ -50,7 +49,7 @@ export function HomePage() {
             </div>
             {s?.opening_hours && (
               <p className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-zinc-400">
-                <span className="inline-flex items-center gap-1.5"><Clock size={14} className="text-[var(--c-gold)]" />Seg–Sex 09h–20h · Sáb 08h–18h</span>
+                <span className="inline-flex items-center gap-1.5"><Clock size={14} className="text-[var(--c-gold)]" />Confira nossos horários de atendimento</span>
                 <span className="inline-flex items-center gap-1.5"><MapPin size={14} className="text-[var(--c-gold)]" />{s.address}</span>
               </p>
             )}
