@@ -1,12 +1,14 @@
 import type { Env } from "../types";
-import { merchantFeatureEnabled, loadMerchant, createMerchantPayment, fetchMerchantPayment } from "./merchant-payments";
+import { loadMerchant, createMerchantPayment, fetchMerchantPayment } from "./merchant-payments";
+import { sellerPaymentsEnabled, loadSeller } from "./seller-payments";
 import { normalizePhone, nowIso } from "./utils";
 
-export const bookingPixEnabled = merchantFeatureEnabled;
+export const bookingPixEnabled = sellerPaymentsEnabled;
 
 type PixStatus = "creating"|"pending"|"paid"|"expired"|"failed"|"refund_required"|"refunded";
 interface PaymentRow {
   id: number; company_id: number; booking_id: number; code: string;
+  receiver_barber_id:number|null; receiver_mp_user_id:string|null;
   amount_cents: number; status: PixStatus; provider_payment_id: string|null;
   qr_code_text: string; qr_code_base64: string;
   expires_at: string|null; paid_at: string|null;
@@ -31,19 +33,19 @@ function unavailable(message:string):BookingPix {
 }
 
 export async function generateBookingPix(env:Env,companyId:number,bookingId:number):Promise<BookingPix> {
-  const merchant=await loadMerchant(env,companyId);
-  if(!merchant)
-    return unavailable("A barbearia não habilitou pagamento online; a reserva permanece registrada.");
   const db=env.DB;
-  const booking=await db.prepare("SELECT id,code,status,payment_choice,price_cents,customer_email FROM bookings WHERE id=?1 AND company_id=?2")
-    .bind(bookingId,companyId).first<{id:number;code:string;status:string;payment_choice:string;price_cents:number;customer_email:string|null}>();
+  const booking=await db.prepare("SELECT id,code,status,payment_choice,price_cents,customer_email,barber_id FROM bookings WHERE id=?1 AND company_id=?2")
+    .bind(bookingId,companyId).first<{id:number;code:string;status:string;payment_choice:string;price_cents:number;customer_email:string|null;barber_id:number}>();
   if(!booking || booking.payment_choice!=="pix" || !["pendente","confirmado"].includes(booking.status))
     return unavailable("Agendamento não permite esta cobrança.");
   if(!booking.customer_email || !Number.isSafeInteger(booking.price_cents) || booking.price_cents<=0)
     return unavailable("Pix exige e-mail e preço válido do serviço.");
+  // Nunca desviar a cobrança de um corte para a conta da barbearia ou plataforma.
+  const merchant=await loadSeller(env,companyId,booking.barber_id);
+  if(!merchant)return unavailable("Profissional sem Mercado Pago autorizado para este Pix.");
   const reference="TIGU-BOOK-"+crypto.randomUUID();
-  const inserted=await db.prepare("INSERT OR IGNORE INTO booking_payments(company_id,booking_id,code,amount_cents) VALUES (?1,?2,?3,?4)")
-    .bind(companyId,bookingId,reference,booking.price_cents).run();
+  const inserted=await db.prepare("INSERT OR IGNORE INTO booking_payments(company_id,booking_id,code,amount_cents,receiver_barber_id,receiver_mp_user_id) VALUES (?1,?2,?3,?4,?5,?6)")
+    .bind(companyId,bookingId,reference,booking.price_cents,booking.barber_id,merchant.account_id).run();
   const current=await db.prepare("SELECT * FROM booking_payments WHERE booking_id=?1 AND company_id=?2")
     .bind(bookingId,companyId).first<PaymentRow>();
   if(!current)return unavailable("Falha ao criar cobrança de serviço.");
@@ -82,13 +84,20 @@ export async function generateBookingPix(env:Env,companyId:number,bookingId:numb
   return publicPayment(updated!);
 }
 
-export async function confirmBookingPix(env:Env,companyId:number,paymentId:string):Promise<{ok:boolean;status:string}> {
-  const merchant=await loadMerchant(env,companyId);
-  if(!merchant)return {ok:false,status:"disabled"};
+export async function confirmBookingPix(env:Env,companyId:number,paymentId:string,origin:"any"|"merchant"|"seller"="any"):Promise<{ok:boolean;status:string}> {
   const db=env.DB;
   const inv=await db.prepare("SELECT p.*,b.status AS booking_status FROM booking_payments p JOIN bookings b ON b.id=p.booking_id AND b.company_id=p.company_id WHERE p.provider_payment_id=?1 AND p.company_id=?2")
     .bind(paymentId,companyId).first<PaymentRow&{booking_status:string}>();
   if(!inv)return {ok:false,status:"not_found"};
+  const sellerPayment=inv.receiver_barber_id!=null;
+  if(origin==="seller"&&!sellerPayment || origin==="merchant"&&sellerPayment)
+    return {ok:false,status:"not_found"};
+  // A identidade do recebedor fica congelada na criação do Pix.
+  const merchant=sellerPayment
+    ?await loadSeller(env,companyId,inv.receiver_barber_id!)
+    :await loadMerchant(env,companyId);
+  if(!merchant||sellerPayment&&merchant.account_id!==inv.receiver_mp_user_id)
+    return {ok:false,status:"recipient_unavailable"};
   if(["paid","refund_required","refunded"].includes(inv.status))return {ok:true,status:inv.status};
   if(!["pending","expired","failed"].includes(inv.status))return {ok:false,status:inv.status};
   const payment=await fetchMerchantPayment(merchant,paymentId);
@@ -97,6 +106,7 @@ export async function confirmBookingPix(env:Env,companyId:number,paymentId:strin
     const d=payment.detail||{};
     const amount=Number(d.transaction_amount);
     if(String(d.id??"")!==paymentId || d.external_reference!==inv.code ||
+      (sellerPayment&&String(d.collector_id??"")!==inv.receiver_mp_user_id) ||
       d.currency_id!=="BRL" || d.payment_method_id!=="pix" ||
       !Number.isFinite(amount)||Math.round(amount*100)!==inv.amount_cents)
       return {ok:false,status:"mismatch"};
@@ -122,7 +132,7 @@ export async function lookupBookingPix(env:Env,companyId:number,code:string,phon
   const row=await env.DB.prepare("SELECT p.*,b.status AS booking_status FROM booking_payments p JOIN bookings b ON b.id=p.booking_id AND b.company_id=p.company_id WHERE b.company_id=?1 AND b.code=?2 AND b.customer_phone=?3 AND b.cancel_token=?4")
     .bind(companyId,code.toUpperCase(),normalizePhone(phone),token).first<PaymentRow>();
   if(!row)return null;
-  if(row.provider_payment_id && row.status==="pending" && await loadMerchant(env,companyId)){
+  if(row.provider_payment_id && row.status==="pending"){
     await confirmBookingPix(env,companyId,row.provider_payment_id);
     const updated=await env.DB.prepare("SELECT * FROM booking_payments WHERE id=?1").bind(row.id).first<PaymentRow>();
     const latest=updated??row;
