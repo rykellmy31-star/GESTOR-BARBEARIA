@@ -32,7 +32,7 @@ export async function merchantPixReady(env:Env,companyId:number):Promise<boolean
  return row?.enabled===1;
 }
 export type Merchant=Row&{token:string;webhookSecret:string;notificationUrl:string};
-export type PaymentRecipient=Pick<Merchant,"token"|"account_id"|"notificationUrl">;
+export type PaymentRecipient=Pick<Merchant,"token"|"account_id"|"notificationUrl">&{requireCollectorId?:boolean};
 export async function loadMerchant(env:Env,companyId:number):Promise<Merchant|null> {
  if(!merchantFeatureEnabled(env))return null;
  const row=await env.DB.prepare("SELECT * FROM company_payment_integrations WHERE company_id=?1 AND enabled=1")
@@ -118,8 +118,9 @@ export async function createMerchantPayment(m:PaymentRecipient,p:{
   const d=await res.json().catch(()=>({})) as Record<string,unknown>;
   if(!res.ok || !(typeof d.id==="string"||typeof d.id==="number"))
    return {ok:false,error:"Mercado Pago recusou a geração do Pix."};
-  if(d.collector_id!=null&&String(d.collector_id)!==m.account_id)
-   return {ok:false,uncertain:true,error:"Conta recebedora divergente."};
+  if((m.requireCollectorId&&d.collector_id==null)||
+     (d.collector_id!=null&&String(d.collector_id)!==m.account_id))
+   return {ok:false,uncertain:true,error:"Conta recebedora não comprovada."};
   const point=d.point_of_interaction as {transaction_data?:{qr_code?:string;qr_code_base64?:string}}|undefined;
   return {ok:true,providerPaymentId:String(d.id),
    qrCodeText:point?.transaction_data?.qr_code||"",
@@ -135,7 +136,8 @@ export async function fetchMerchantPayment(m:PaymentRecipient,paymentId:string):
   });
   if(!res.ok)return {status:"error"};
   const detail=await res.json().catch(()=>({})) as Record<string,unknown>;
-  if(detail.collector_id!=null&&String(detail.collector_id)!==m.account_id)
+  if((m.requireCollectorId&&detail.collector_id==null)||
+     (detail.collector_id!=null&&String(detail.collector_id)!==m.account_id))
    return {status:"mismatch"};
   return {status:typeof detail.status==="string"?detail.status:"error",detail};
  }catch{return {status:"error"};}
