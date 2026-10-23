@@ -234,3 +234,15 @@ jobs:
           node --check scripts/staging-turnstile-setup.mjs
           node --test scripts/staging-turnstile-setup.node.test.mjs
           node scripts/staging-turnstile-setup.mjs
+
+      # PREPARAÇÃO da produção: GET somente. Nunca cria D1/R2/Worker,
+      # troca DNS, sobe webhooks, configura segredos ou copia clientes.
+      # Run em push único após CI inteiro, usando token de staging para
+      # listar metadados da mesma conta Cloudflare.
+      - name: Inspecionar isolamento da futura produção TIGU (somente leitura)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_PRODUCTION_READONLY_PREFLIGHT_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_PRODUCTION_READONLY_APPROVED: YES
+        run: node scripts/production-inventory-readonly.mjs
