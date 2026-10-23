@@ -275,8 +275,8 @@ barberRouter.post("/mercadopago/disconnect", async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM seller_mp_accounts WHERE company_id=?1 AND barber_id=?2")
       .bind(companyId, m.barber_id),
-    c.env.DB.prepare("DELETE FROM seller_mp_oauth_pending WHERE company_id=?1 AND barber_id=?2 AND user_id=?3")
-      .bind(companyId, m.barber_id, m.id),
+    c.env.DB.prepare("DELETE FROM seller_mp_oauth_pending WHERE company_id=?1 AND barber_id=?2")
+      .bind(companyId, m.barber_id),
   ]);
   c.header("Cache-Control", "no-store");
   return json(c, { ok: true, connected: false });
