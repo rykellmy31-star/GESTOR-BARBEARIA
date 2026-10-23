@@ -217,6 +217,25 @@ barberRouter.post("/notifications/read", async (c) => {
   return json(c, { ok: true });
 });
 
+/** Integração financeira individual: a credencial da plataforma não é
+ * reutilizada para créditos, reservas ou produtos do barbeiro.
+ * Até o fluxo OAuth + D1 individual + reconciliação passar em homologação,
+ * o profissional NÃO pode ativar cobranças reais nem copiar secrets.
+ */
+barberRouter.get("/mercadopago", async (c) => {
+  const m = me(c);
+  if (!m.barber_id) return err(c, "Profissional não vinculado", 403);
+  c.header("Cache-Control", "no-store");
+  return json(c, {
+    connected: false,
+    enabled: false,
+    integration_mode: "oauth",
+    can_connect: false,
+    stage: c.env.TIGU_STAGING === "1" ? "homologacao" : "configuracao_pendente",
+    notice: "Integração Mercado Pago individual em preparação. O token da plataforma não é utilizado para seus serviços.",
+  });
+});
+
 barberRouter.get("/me", async (c) => {
   // já definido acima — este sobrescreve apenas para incluir permissions explícitas
   const m = me(c);
