@@ -366,7 +366,7 @@ test("Mercado Pago individual recusa tokens malformados e desconexão respeita e
  assert.match(oauth,/Number\.isSafeInteger\(tokens\.expires_in\)/);
  assert.match(oauth,/tokens\.access_token\.length>8192/);
  assert.match(oauth,/tokens\.refresh_token\.length>8192/);
- assert.match(oauth,/tokens\.expires_in!>31536000/);
+ assert.match(oauth,/tokens\.expires_in>31536000/);
  const disconnect=barber.slice(barber.indexOf('barberRouter.post("/mercadopago/disconnect"'),barber.indexOf('barberRouter.get("/me"'));
  assert.match(disconnect,/company_id=\?1 AND barber_id=\?2/);
  assert.match(disconnect,/\.bind\(companyId, m\.barber_id\)/);
