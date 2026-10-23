@@ -53,6 +53,10 @@ sellerMpCallbackRouter.get("/callback",async c=>{
   c.header("Set-Cookie",cookie("",0));c.header("Cache-Control","no-store");
   return c.redirect(safeReturn(slug,result),303);
  };
+ const callbackUrl=new URL(c.req.url);
+ if(callbackUrl.searchParams.getAll("state").length!==1 ||
+    callbackUrl.searchParams.getAll("code").length>1)
+  return c.json({error:"Parâmetros de autorização inválidos."},400,noStore);
  const state=c.req.query("state")||"";
  const code=c.req.query("code")||"";
  const cookieHeader=c.req.header("cookie")||"";
