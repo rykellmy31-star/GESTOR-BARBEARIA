@@ -14,6 +14,7 @@ import { confirmTopupFromProvider } from "../lib/topup";
 import { confirmBookingPix } from "../lib/booking-payments";
 import { confirmOrderPix } from "../lib/order-payments";
 import { merchantByWebhookKey } from "../lib/merchant-payments";
+import { sellerPaymentsEnabled } from "../lib/seller-payments";
 import { confirmSubscriptionPix } from "../lib/subscription-billing";
 import { nowIso } from "../lib/utils";
 
@@ -75,7 +76,7 @@ webhooksRouter.post("/merchant-mercadopago/:key",async c=>{
  // Responder falha transitória 503 para permitir reenvio; nunca confirmar
  // pagamento com base apenas na notificação.
  try {
-  const booking=await confirmBookingPix(c.env,merchant.company_id,paymentId);
+  const booking=await confirmBookingPix(c.env,merchant.company_id,paymentId,"merchant");
   const result=booking.status==="not_found"?
    await confirmOrderPix(c.env,merchant.company_id,paymentId):booking;
   if(!result.ok&&result.status!=="not_found")
@@ -84,6 +85,39 @@ webhooksRouter.post("/merchant-mercadopago/:key",async c=>{
  }catch{
   return c.json({error:"Falha temporária ao conferir recebimento."},503);
  }
+});
+
+// Webhook Marketplace: confirmação sempre feita no Mercado Pago do profissional.
+webhooksRouter.post("/seller-mercadopago/:companyId/:barberId",async c=>{
+ if(!sellerPaymentsEnabled(c.env))return c.json({error:"Pix do profissional indisponível."},503);
+ const co=c.req.param("companyId"),ba=c.req.param("barberId");
+ if(!/^[1-9]\d{0,11}$/.test(co)||!/^[1-9]\d{0,11}$/.test(ba))
+  return c.json({error:"Recebedor inválido."},400);
+ const secret=c.env.MP_MARKETPLACE_WEBHOOK_SECRET||"";
+ if(secret.length<16)return c.json({error:"Webhook não configurado."},503);
+ const raw=await c.req.text();
+ let body:unknown;
+ try{body=JSON.parse(raw);}catch{return c.json({ok:true,ignored:"json"});}
+ if(!body||typeof body!=="object"||Array.isArray(body))
+  return c.json({ok:true,ignored:"payload"});
+ const event=body as Record<string,unknown>;
+ if(event.type!=="payment")return c.json({ok:true,ignored:"tipo"});
+ const data=event.data&&typeof event.data==="object"&&!Array.isArray(event.data)
+  ?event.data as Record<string,unknown>:null;
+ const rawId=data?.id??c.req.query("data.id");
+ const id=(typeof rawId==="string"||typeof rawId==="number")?String(rawId):"";
+ if(!/^[0-9]{1,24}$/.test(id))return c.json({ok:true,ignored:"id"});
+ const queryId=c.req.query("data.id");
+ if(queryId&&queryId!==id)return c.json({error:"Identificador divergente."},401);
+ if(!await verifyMpWebhookSignature(secret,c.req.header("x-signature")??null,
+   c.req.header("x-request-id")??null,id))
+  return c.json({error:"Assinatura inválida."},401);
+ try{
+  const result=await confirmBookingPix(c.env,Number(co),id,"seller");
+  if(result.status==="not_found")return c.json({ok:true,ignored:"não associado"});
+  if(!result.ok)return c.json({error:"Conciliação indisponível; reenvie o evento."},503);
+  return c.json({ok:true,status:result.status});
+ }catch{return c.json({error:"Conciliação falhou; reenvie o evento."},503);}
 });
 
 webhooksRouter.post("/mercadopago", async (c) => {
