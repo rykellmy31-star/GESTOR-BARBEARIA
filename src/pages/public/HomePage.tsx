@@ -15,11 +15,12 @@ export function HomePage() {
   const s = cfg?.settings;
   // Dados do catálogo chegam depois do layout: reobserve os novos cards
   // para não ficarem ocultos pela animação .reveal enquanto já foram salvos.
-  useReveal([cfg, services, barbers, products]);
+
   const { data: services } = useQuerySafe<Service[]>("services");
   const { data: barbers } = useQuerySafe<Barber[]>("barbers");
   const { data: reviews } = useQuerySafe<any[]>("reviews");
   const { data: products } = useQuerySafe<Product[]>("products");
+  useReveal([cfg, services, barbers, products]);
   const [cartOpen, setCartOpen] = useState(false);
   const shopEnabled = s?.products_enabled !== false;
 
