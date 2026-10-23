@@ -96,7 +96,7 @@ describe("Pix real separado pela conta OAuth de cada profissional",()=>{
   vi.stubGlobal("fetch",async(url:string,opts:RequestInit)=>{
    expect(url).toBe("https://api.mercadopago.com/v1/payments/991337");
    expect((opts.headers as Record<string,string>).Authorization).toBe("Bearer "+sellerToken);
-   return new Response(JSON.stringify({id:991337,status:"approved",collector_id:2001,
+   return new Response(JSON.stringify({id:991337,status:"approved",collector_id:Number(mpUserId),
     external_reference:p!.code,currency_id:"BRL",payment_method_id:"pix",
     transaction_amount:29.99}),{status:200});
   });
