@@ -11,8 +11,23 @@
   --c-line: #26262f;
 }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { background: var(--c-ink); overscroll-behavior-y: none; }
+
+/* Layout do telefone: conteúdos largos não podem alargar a viewport inteira.
+   Tabelas e faixas roláveis continuam com seu scroll-x local. */
+html, body, #root { width: 100%; max-width: 100%; min-width: 0; }
+img, video, canvas, svg { max-width: 100%; }
+button, a { touch-action: manipulation; }
+
+@media (max-width: 767px) {
+  html, body, #root { overflow-x: clip; }
+
+  /* Safari iOS amplia automaticamente campos com fonte menor que 16px.
+     Cobrir também inputs escritos diretamente fora do componente Input. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  textarea, select { font-size: 16px !important; }
+}
 
 ::selection { background: var(--c-gold); color: #0a0a0c; }
 
@@ -58,7 +73,7 @@ body { background: var(--c-ink); overscroll-behavior-y: none; }
 
 /* inputs */
 .input-dark {
-  @apply w-full rounded-xl border border-line bg-ink-soft px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 outline-none;
+  @apply w-full min-w-0 rounded-xl border border-line bg-ink-soft px-3.5 py-2.5 text-base sm:text-sm text-zinc-100 placeholder-zinc-500 outline-none;
   transition: border-color .2s ease, box-shadow .2s ease;
 }
 .input-dark:focus { border-color: var(--c-gold); box-shadow: 0 0 0 3px rgba(212,175,55,.14); }
