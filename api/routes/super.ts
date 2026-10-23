@@ -269,7 +269,8 @@ superRouter.get("/users", async (c) => {
   const where = q ? `AND (u.name LIKE ?1 OR u.email LIKE ?1)` : "";
   const { results } = await c.env.DB
     .prepare(`SELECT u.id, u.name, u.email, u.platform_role, u.active, u.must_change_password, u.last_login_at, u.created_at,
-                      COALESCE(GROUP_CONCAT(c.slug), '') AS companies
+                      COALESCE(GROUP_CONCAT(DISTINCT c.slug), '') AS companies,
+                      COALESCE(GROUP_CONCAT(DISTINCT m.role), '') AS membership_roles
                FROM users u LEFT JOIN company_memberships m ON m.user_id=u.id AND m.active=1 LEFT JOIN companies c ON c.id=m.company_id
                WHERE 1=1 ${where} GROUP BY u.id ORDER BY u.id DESC LIMIT 200`)
     .bind(...(q ? [`%${q}%`] : []))
