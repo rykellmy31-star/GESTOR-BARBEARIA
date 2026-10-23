@@ -355,6 +355,7 @@ test("OAuth Marketplace bloqueia URL inválida, parâmetros ambíguos e callback
  assert.match(oauth,/getAll\("state"\)\.length!==1/);
  assert.match(oauth,/getAll\("code"\)\.length>1/);
  assert.match(oauth,/state!==cookieState/);
+ assert.match(oauth,/if\(stateCookies\.length!==1\)/);
  assert.match(oauth,/used_at IS NULL/);
  assert.match(oauth,/code_verifier:verifier/);
  assert.doesNotMatch(oauth,/MP_ACCESS_TOKEN/);
