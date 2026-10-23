@@ -26,6 +26,7 @@ import { ChangePasswordPage } from "./pages/auth/ChangePasswordPage";
 import { CompanyPickerPage } from "./pages/auth/CompanyPickerPage";
 import { LandingPage } from "./pages/marketing/LandingPage";
 import { SalesLeadPage } from "./pages/marketing/SalesLeadPage";
+import { PurchasePlanPage } from "./pages/marketing/PurchasePlanPage";
 import { PreviewPage } from "./pages/marketing/PreviewPage";
 import { DeveloperCredit } from "./components/layout/DeveloperCredit";
 import { SuperLayout } from "./pages/super/SuperLayout";
@@ -96,6 +97,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/comecar" element={<RegisterPage />} />
       <Route path="/contratar" element={<SalesLeadPage />} />
+      <Route path="/adquirir" element={<PurchasePlanPage />} />
       <Route path="/recuperar" element={<RecoverPage />} />
       <Route path="/alterar-senha" element={<Gate need="login"><ChangePasswordPage /></Gate>} />
       <Route path="/selecionar" element={<Gate need="login"><CompanyPickerPage /></Gate>} />
