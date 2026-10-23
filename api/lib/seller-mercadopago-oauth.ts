@@ -99,7 +99,8 @@ sellerMpCallbackRouter.get("/callback",async c=>{
   if(!/^\d{1,20}$/.test(mpId)||typeof tokens.access_token!=="string"||
     typeof tokens.refresh_token!=="string"||tokens.access_token.length<8||
     tokens.refresh_token.length<8||tokens.access_token.length>8192||tokens.refresh_token.length>8192||
-    !Number.isSafeInteger(tokens.expires_in)||tokens.expires_in!<60||tokens.expires_in!>31536000)
+    typeof tokens.expires_in!=="number"||!Number.isSafeInteger(tokens.expires_in)||
+    tokens.expires_in<60||tokens.expires_in>31536000)
     return response(pending.slug,"failed");
   const access=await encryptSecret(c.env,tokens.access_token);
   const refresh=await encryptSecret(c.env,tokens.refresh_token);
