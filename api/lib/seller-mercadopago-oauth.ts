@@ -7,10 +7,17 @@ const CALLBACK="/api/oauth/mercadopago/callback";
 const COOKIE="tigu_mp_oauth_state";
 const tenMinutes=600_000;
 const noStore={"Cache-Control":"no-store","Referrer-Policy":"no-referrer"};
-const isEnabled=(env:Env)=>env.TIGU_STAGING!=="1"&&env.APP_ENV==="production"&&
- Boolean(env.MP_MARKETPLACE_CLIENT_ID?.trim()&&env.MP_MARKETPLACE_CLIENT_SECRET?.trim()&&
-  env.MP_MARKETPLACE_REDIRECT_URI?.startsWith("https://")&&env.MSG_ENC_KEY?.length&&env.MSG_ENC_KEY.length>=32)&&
- env.MP_MARKETPLACE_REDIRECT_URI===new URL(CALLBACK,env.PUBLIC_URL||"https://invalid.example").toString();
+const isEnabled=(env:Env)=>{
+ if(env.TIGU_STAGING==="1"||env.APP_ENV!=="production"||
+  !env.MP_MARKETPLACE_CLIENT_ID?.trim()||!env.MP_MARKETPLACE_CLIENT_SECRET?.trim()||
+  !env.MP_MARKETPLACE_REDIRECT_URI?.startsWith("https://")||
+  !env.MSG_ENC_KEY||env.MSG_ENC_KEY.length<32)return false;
+ try {
+  const publicUrl=new URL(env.PUBLIC_URL||"");
+  if(publicUrl.protocol!=="https:"||publicUrl.username||publicUrl.password||publicUrl.search||publicUrl.hash)return false;
+  return env.MP_MARKETPLACE_REDIRECT_URI===new URL(CALLBACK,publicUrl).toString();
+ }catch{return false;}
+};
 function cookie(value:string,maxAge=600){return `${COOKIE}=${value}; HttpOnly; Secure; SameSite=Lax; Path=${CALLBACK}; Max-Age=${maxAge}`;}
 function safeReturn(slug:string,result:"connected"|"failed"){return `/c/${slug}/painel?mp=${result}`;}
 const ascii=(v:string)=>new TextEncoder().encode(v);
