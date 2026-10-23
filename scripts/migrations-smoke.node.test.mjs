@@ -20,8 +20,8 @@ function migrated(){
   return db;
 }
 
-test("a cadeia completa contém exatamente as 20 migrações sequenciais e é íntegra",()=>{
-  assert.equal(files.length,20);
+test("a cadeia completa contém exatamente as 21 migrações sequenciais e é íntegra",()=>{
+  assert.equal(files.length,21);
   files.forEach((f,i)=>assert.equal(Number(f.slice(0,4)),i+1));
   const db=migrated();
   try{
