@@ -107,13 +107,18 @@ sellerMpCallbackRouter.get("/callback",async c=>{
   const now=new Date().toISOString();
   await c.env.DB.prepare(`INSERT INTO seller_mp_accounts
    (company_id,barber_id,mp_user_id,access_ciphertext,refresh_ciphertext,expires_at,connected_by,connected_at,updated_at)
-   VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8)
+   SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?8
+   WHERE EXISTS (SELECT 1 FROM seller_mp_oauth_pending
+     WHERE state_hash=?9 AND company_id=?1 AND barber_id=?2
+       AND user_id=?7 AND used_at IS NOT NULL)
    ON CONFLICT(company_id,barber_id) DO UPDATE SET
    mp_user_id=excluded.mp_user_id,access_ciphertext=excluded.access_ciphertext,
    refresh_ciphertext=excluded.refresh_ciphertext,expires_at=excluded.expires_at,
    connected_by=excluded.connected_by,connected_at=excluded.connected_at,updated_at=excluded.updated_at`)
    .bind(pending.company_id,pending.barber_id,mpId,access,refresh,
-    new Date(Date.now()+tokens.expires_in*1000).toISOString(),pending.user_id,now).run();
+    new Date(Date.now()+tokens.expires_in*1000).toISOString(),pending.user_id,now,hash).run();
+  // Disconnect apaga pending: a operação SQL atômica impede reanexar a conta
+  // se a desconexão ocorreu enquanto o Mercado Pago trocava os tokens.
   return response(pending.slug,"connected");
  }catch{
   // Não registrar tokens, authorization code, request body ou client_secret.
