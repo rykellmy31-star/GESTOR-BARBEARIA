@@ -17,15 +17,15 @@ export function LandingPage() {
   useReveal([]);
   return (
     <div className="texture min-h-screen bg-[#0a0a0c]">
-      <header className="mx-auto flex h-16 max-w-6xl items-center px-4 sm:px-6">
-        <div className="flex items-center gap-2"><Scissors className="h-6 w-6 text-[var(--c-gold)]" /><span className="font-display text-xl tracking-wide text-zinc-50">tigu</span></div>
+      <header className="mx-auto flex h-16 min-w-0 max-w-6xl items-center gap-2 px-3 sm:px-6">
+        <div className="flex min-w-0 shrink-0 items-center gap-2"><Scissors className="h-6 w-6 text-[var(--c-gold)]" /><span className="font-display text-xl tracking-wide text-zinc-50">tigu</span></div>
         <nav className="ml-auto hidden items-center gap-6 text-sm text-zinc-400 md:flex">
           <a href="#recursos" className="hover:text-[var(--c-gold)]">Recursos</a>
           <a href="#planos" className="hover:text-[var(--c-gold)]">Planos</a>
         </nav>
-        <div className="ml-auto flex items-center gap-2 md:ml-6">
-          <Link to="/login" className="rounded-xl border border-[#26262f] px-4 py-2 text-sm text-zinc-200 hover:border-[var(--c-gold)] hover:text-[var(--c-gold)]">Entrar</Link>
-          <Link to="/comecar" className="btn-gold rounded-xl px-4 py-2 text-sm">Criar barbearia</Link>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2 md:ml-6">
+          <Link to="/login" className="whitespace-nowrap rounded-xl border border-[#26262f] px-2.5 py-2 text-xs text-zinc-200 hover:border-[var(--c-gold)] hover:text-[var(--c-gold)] sm:px-4 sm:text-sm">Entrar</Link>
+          <Link to="/comecar" className="btn-gold whitespace-nowrap rounded-xl px-2.5 py-2 text-xs sm:px-4 sm:text-sm">Criar barbearia</Link>
         </div>
       </header>
 
