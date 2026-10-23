@@ -32,6 +32,7 @@ export async function merchantPixReady(env:Env,companyId:number):Promise<boolean
  return row?.enabled===1;
 }
 export type Merchant=Row&{token:string;webhookSecret:string;notificationUrl:string};
+export type PaymentRecipient=Pick<Merchant,"token"|"account_id"|"notificationUrl">;
 export async function loadMerchant(env:Env,companyId:number):Promise<Merchant|null> {
  if(!merchantFeatureEnabled(env))return null;
  const row=await env.DB.prepare("SELECT * FROM company_payment_integrations WHERE company_id=?1 AND enabled=1")
@@ -100,7 +101,7 @@ export interface MerchantPaymentResponse {
  ok:boolean;error?:string;uncertain?:boolean;providerPaymentId?:string;
  qrCodeText?:string;qrCodeBase64?:string;expiresAt?:string|null;
 }
-export async function createMerchantPayment(m:Merchant,p:{
+export async function createMerchantPayment(m:PaymentRecipient,p:{
  amountCents:number;reference:string;description:string;payerEmail:string
 }):Promise<MerchantPaymentResponse> {
  if(!Number.isSafeInteger(p.amountCents)||p.amountCents<=0||!p.payerEmail)
@@ -126,7 +127,7 @@ export async function createMerchantPayment(m:Merchant,p:{
    expiresAt:typeof d.date_of_expiration==="string"?d.date_of_expiration:null};
  }catch{return {ok:false,uncertain:true,error:"Resposta incerta do Mercado Pago."};}
 }
-export async function fetchMerchantPayment(m:Merchant,paymentId:string):
+export async function fetchMerchantPayment(m:PaymentRecipient,paymentId:string):
  Promise<{status:string;detail?:Record<string,unknown>}> {
  try {
   const res=await fetch("https://api.mercadopago.com/v1/payments/"+encodeURIComponent(paymentId),{
