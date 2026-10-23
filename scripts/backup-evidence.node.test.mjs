@@ -16,7 +16,8 @@ function withDir(fn) {
   try { return fn(root); } finally { rmSync(root,{force:true,recursive:true}); }
 }
 test("audita export SQL contendo todas as migrações e não divulga dados pessoais",()=>{
-  assert.equal(migrationNames.length,22);
+  assert.equal(migrationNames.length,23);
+  assert.ok(migrationNames.includes("0100_seller_pix.sql"));
   assert.ok(migrationNames.includes("0099_seller_mercadopago_oauth.sql"));
   const fixture = sql + "\nINSERT INTO companies(id,slug,name) VALUES (901,'evidence','Empresa fictícia');\n" +
     "INSERT INTO customers(company_id,name,phone) VALUES (901,'Pessoa privada','73999998888');\n";
