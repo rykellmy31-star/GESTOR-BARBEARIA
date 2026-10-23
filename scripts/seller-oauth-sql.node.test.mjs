@@ -47,3 +47,8 @@ d.prepare("INSERT INTO seller_mp_oauth_pending (state_hash,company_id,barber_id,
 assert.equal(d.prepare(sql).run(...bind("expired")).changes,0);
 assert.equal(d.prepare("SELECT count(*) AS n FROM seller_mp_accounts").get().n,0);
 }finally{d.close();}});
+test("OAuth compara expiração ao relógio do banco e não ao timestamp fornecido",()=>{const d=setup();try{
+const expired=new Date(Date.now()-60000).toISOString();
+d.prepare("INSERT INTO seller_mp_oauth_pending (state_hash,company_id,barber_id,user_id,used_at,expires_at) VALUES (?,?,?,?,?,?)").run("stale-clock",10,20,30,new Date(Date.now()-120000).toISOString(),expired);
+assert.equal(d.prepare(sql).run(...bind("stale-clock")).changes,0);
+}finally{d.close();}});
