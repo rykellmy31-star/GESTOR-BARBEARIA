@@ -4,6 +4,8 @@ import checkoutSchema from "../../migrations/0018_booking_checkout.sql";
 import orderPaidSchema from "../../migrations/0011_order_paid_at.sql";
 import merchantSchema from "../../migrations/0019_merchant_payments.sql";
 import fitInSchema from "../../migrations/0020_last_minute_fit_in.sql";
+import sellerOauthSchema from "../../migrations/0099_seller_mercadopago_oauth.sql";
+import sellerPixSchema from "../../migrations/0100_seller_pix.sql";
 /** Completa as fixtures antigas que carregam a base 0001 diretamente. */
 export async function applyBookingMigrations(db:D1Database):Promise<void> {
   const columns=new Set((await db.prepare("PRAGMA table_info(bookings)").all<{name:string}>()).results.map(row=>row.name));
@@ -26,6 +28,16 @@ export async function applyBookingMigrations(db:D1Database):Promise<void> {
     const remaining=merchantSchema.replace(/--[^\n]*/g,"").replace(/CREATE TRIGGER[\s\S]+?END;/g,"");
     for(const sql of remaining.split(";").map(x=>x.trim()).filter(Boolean))await db.prepare(sql).run();
     for(const sql of triggers)await db.prepare(sql).run();
+  }
+  const sellerTables=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='seller_mp_accounts'").first();
+  if(!sellerTables)for(const sql of sellerOauthSchema.replace(/--[^\n]*/g,"").split(";").map(s=>s.trim()).filter(Boolean))
+    await db.prepare(sql).run();
+  const receiverColumns=new Set((await db.prepare("PRAGMA table_info(booking_payments)").all<{name:string}>()).results.map(row=>row.name));
+  if(!receiverColumns.has("receiver_barber_id")){
+    const triggers=sellerPixSchema.match(/CREATE TRIGGER[\s\S]+?END;/g)||[];
+    const remaining=sellerPixSchema.replace(/--[^\n]*/g,"").replace(/CREATE TRIGGER[\s\S]+?END;/g,"");
+    for(const statement of remaining.split(";").map(x=>x.trim()).filter(Boolean))await db.prepare(statement).run();
+    for(const trigger of triggers)await db.prepare(trigger).run();
   }
 
 }
