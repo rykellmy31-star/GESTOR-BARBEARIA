@@ -1,0 +1,272 @@
+name: Tigu - verificacao de codigo
+
+# Validacao gratuita somente em desenvolvimento, PRs para main e disparo manual.
+# Nao executa deploy, migrations remotas ou tokens de provedores.
+on:
+  push:
+    branches:
+      - audit/tigu-primeira-validacao
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      production_readonly_inventory:
+        description: 'Inspecionar somente metadados de D1, R2 e Workers de produção (sem alterações)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tigu-validation-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Diagnosticar contexto do gatilho sem expor segredos
+        env:
+          TIGU_EVENT: ${{ github.event_name }}
+          TIGU_REF: ${{ github.ref }}
+          TIGU_HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          node -e 'const ok=process.env.TIGU_EVENT==="push" && process.env.TIGU_REF==="refs/heads/audit/tigu-primeira-validacao" && process.env.TIGU_HEAD_MESSAGE==="TIGU_PRODUCTION_READONLY_PREFLIGHT_ONCE"; console.log("Evento:",process.env.TIGU_EVENT); console.log("Branch permitida:",process.env.TIGU_REF==="refs/heads/audit/tigu-primeira-validacao"); console.log("Inventário remoto autorizado por gatilho:",ok);'
+      - name: Instalar dependencias
+        run: npm ci --no-audit --prefer-offline --fetch-retries=1 --fetch-timeout=20000
+      - name: Validar auditoria, homologacao, tipos, build e testes
+        env:
+          # Permite somente staging ultrapassar uma indisponibilidade do npm.
+          # Falhas reais de segurança continuam bloqueando o build.
+          TIGU_STAGING_AUDIT_OUTAGE_TOLERATED: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_UPDATE_WORKER_STAGING_ONCE' && 'YES' || 'NO' }}
+        run: npm run validate
+      - name: Homologar fluxos HTTP completos com Worker, D1 e R2 locais
+        run: node scripts/local-e2e.mjs
+      - name: Testar jornada real no navegador Chromium local
+        run: node scripts/browser-smoke.mjs
+      # Executa somente depois da suite local, em push da branch autorizada,
+      # usando a URL homologada do Worker (ou Variable explicitamente definida).
+      # Script faz apenas GET, recusa dominios fora de tigu-staging.*.workers.dev.
+      - name: Conferir homologacao Cloudflare online (se configurada)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' }}
+        env:
+          STAGING_URL: ${{ vars.TIGU_STAGING_URL || 'https://tigu-staging.netssh3-0.workers.dev' }}
+        run: node scripts/staging-smoke.mjs
+      # Apenas leitura de metadados, depois dos testes locais e somente na
+      # branch de auditoria; o token fica em Repository secrets do TIGU.
+      # A etapa roda mesmo com credenciais ausentes para indicar precisamente o
+      # erro; o script encerra antes da rede se token/Account ID estiver faltando.
+      - name: Diagnosticar acesso Cloudflare por token (se configurado)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' }}
+        env:
+          CLOUDFLARE_AUDIT_TOKEN: ${{ secrets.CLOUDFLARE_AUDIT_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/cloudflare-audit.mjs
+
+      # Um unico commit com mensagem exata libera SOMENTE criação D1/R2
+      # em homologação. Não roda em PR, no disparo manual ou em commits
+      # seguintes. O script usa allowlist de endpoints e nomes literais.
+      - name: Provisionar D1 e R2 isolados do TIGU (commit unico)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_PROVISION_STAGING_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_STAGING_CREATE_APPROVED: YES
+        run: node scripts/staging-provision.mjs create
+
+      # Gatilho separado, unico e explicito: publica apenas tigu-staging,
+      # aplica migrations so em tigu-staging-db e usa tigu-staging-media.
+      # Exige os testes anteriores aprovados e nunca roda em PR ou em main.
+      - name: Publicar Worker TIGU staging isolado (commit unico)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_DEPLOY_STAGING_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_STAGING_DEPLOY_APPROVED: YES
+        run: node scripts/staging-deploy-ci.mjs
+
+      # Backup SOMENTE-LEITURA do D1 remoto de staging, com restauração do SQL
+      # em SQLite EFÊMERO no runner. Não exporta arquivos como artifacts,
+      # não executa SQL remoto e não persiste conteúdo de clientes.
+      - name: Exportar D1 staging e validar restauração SQLite efêmera (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_VERIFY_D1_EXPORT_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_D1_EXPORT_APPROVED: YES
+        run: node scripts/staging-d1-export-verify.mjs
+
+      # UM push específico permite criar somente 2 contas fictícias no
+      # tigu-staging após verificar isolamento e segredos; nenhuma cobrança.
+      - name: Exercitar jornadas autenticadas remotas fictícias (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && (github.event.head_commit.message == 'TIGU_AUTH_STAGING_E2E_ONCE' || github.event.head_commit.message == 'TIGU_ALL_STAGING_TESTS_ONCE') }}
+        env:
+          STAGING_URL: https://tigu-staging.netssh3-0.workers.dev/
+          TIGU_AUTH_E2E_APPROVED: YES
+        run: node scripts/staging-auth-e2e.mjs
+
+      # D1: export SQL de staging -> NOVO D1 tigu-staging-restore-check.
+      # Requer commit unico. Recusa sobrescrever banco existente.
+      - name: Recuperar D1 Cloudflare em banco separado (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && (github.event.head_commit.message == 'TIGU_D1_REMOTE_RESTORE_ONCE' || github.event.head_commit.message == 'TIGU_ALL_STAGING_TESTS_ONCE') }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_REMOTE_D1_RESTORE_APPROVED: YES
+        run: node scripts/staging-d1-remote-restore.mjs
+
+      # R2: usa APENAS objeto fictício em staging e bucket de restore novo.
+      # Nunca copia/edita objetos de clientes, não usa produção.
+      - name: Recuperar objeto R2 em bucket separado (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && (github.event.head_commit.message == 'TIGU_R2_REMOTE_RESTORE_ONCE' || github.event.head_commit.message == 'TIGU_ALL_STAGING_TESTS_ONCE') }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_REMOTE_R2_RESTORE_APPROVED: YES
+        run: node scripts/staging-r2-remote-restore.mjs
+
+      # Atualiza SOMENTE tigu-staging existente. Nunca troca SESSION_SECRET
+      # nem MSG_ENC_KEY, nem recria D1/R2, nem aplica migrações.
+      - name: Atualizar Worker staging preservando segredos (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_UPDATE_WORKER_STAGING_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_STAGING_UPDATE_APPROVED: YES
+        run: node scripts/staging-update-ci.mjs
+
+      # Migrações somente no D1 staging existente, após testes locais.
+      # Não publica Worker nem altera D1 de produção.
+      - name: Migrar checkout Pix exclusivamente no D1 staging (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_MIGRATE_BOOKING_STAGING_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_BOOKING_MIGRATION_APPROVED: YES
+        run: node scripts/staging-booking-migrate-ci.mjs
+
+      # Pré-inspeção dos destinos de DR: APENAS requisições GET.
+      # Sem criar D1/R2, sem importar SQL e sem mudar produção.
+      - name: Inventariar destinos D1 R2 para recuperação segura (somente leitura)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_DR_READONLY_INVENTORY_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_DR_INVENTORY_APPROVED: YES
+        run: node scripts/staging-dr-inventory-ci.mjs
+
+      # Compara só duas bases staging existentes via Wrangler D1 EXPORT.
+      # Não importa SQL, não cria D1/R2 e não sobrescreve dados.
+      - name: Comparar recuperação D1 existente sem nenhuma escrita
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_D1_READONLY_COMPARE_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_D1_COMPARE_APPROVED: YES
+        run: node scripts/staging-d1-restore-readonly-compare.mjs
+
+      # Autorizado pelo proprietário: recursos novos e isolados para DR.
+      # Nunca tocar nos destinos antigos nem na produção. Criar recursos
+      # exclusivos desta execução e verificar conteúdo antes de aprovar.
+      - name: Restaurar D1 em novo banco isolado e comparar hashes
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_NEW_ISOLATED_RECOVERY_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_REMOTE_D1_RESTORE_APPROVED: YES
+        run: node scripts/staging-d1-new-isolated-recovery.mjs
+
+      - name: Restaurar arquivo de prova em novo bucket R2 e comparar SHA-256
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_NEW_ISOLATED_RECOVERY_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_REMOTE_R2_RESTORE_APPROVED: YES
+        run: node scripts/staging-r2-new-isolated-recovery.mjs
+
+      # Consultar quantidade e tamanho total dos arquivos R2 por GET paginado.
+      # Nenhuma chave, metadado pessoal ou objeto é exibido nos logs.
+      - name: Inventariar objetos R2 de staging e recuperação (somente leitura)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_R2_READONLY_INVENTORY_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_R2_INVENTORY_APPROVED: YES
+        run: node scripts/staging-r2-inventory-readonly.mjs
+
+      # Com autorização expressa, recuperar todos os objetos de staging em
+      # bucket NOVO por run-id; exigir SHA-256 e inventário idêntico.
+      - name: Recuperar acervo integral R2 em novo bucket isolado
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_FULL_R2_ISOLATED_RECOVERY_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_FULL_R2_RECOVERY_APPROVED: YES
+        run: node scripts/staging-r2-full-recovery-ci.mjs
+
+      # Criação/redefinição somente do superadmin autorizado no D1 de homologação.
+      # Nunca publica senha, hash, SQL ou segredo em logs. Exige commit de gatilho exato.
+      - name: Criar primeiro Super Admin TIGU somente em staging (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_CREATE_SUPER_STAGING_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_SUPERADMIN_INITIAL_PASSWORD: ${{ secrets.TIGU_SUPERADMIN_INITIAL_PASSWORD }}
+          TIGU_SUPER_STAGING_APPROVED: YES
+        run: node scripts/staging-super-bootstrap-once.mjs
+
+      # Inventário SOMENTE leitura de contas/barbearias com assinatura explícita dos
+      # testes remotos. Não retorna PII nem altera registros, pagamentos ou R2.
+      - name: Inventariar usuários e barbearias fictícias do staging
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_AUDIT_TEST_ACCOUNTS_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/staging-test-accounts-inventory.mjs
+
+      # Ativação exclusivamente em staging, após testes locais. Exige permissão
+      # Account:Turnstile:Edit no token Cloudflare; nunca atualiza secrets antigos.
+      # Falha fechada antes de qualquer alteração se o Worker não for isolado.
+      - name: Instalar Turnstile de interessados somente no TIGU staging
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_TURNSTILE_STAGING_SETUP_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_TURNSTILE_TOKEN: ${{ secrets.CLOUDFLARE_TURNSTILE_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_TURNSTILE_STAGING_APPROVED: YES
+        run: |
+          node --check scripts/staging-turnstile-setup.mjs
+          node --test scripts/staging-turnstile-setup.node.test.mjs
+          node scripts/staging-turnstile-setup.mjs
+
+      # PREPARAÇÃO da produção: GET somente. Nunca cria D1/R2/Worker,
+      # troca DNS, sobe webhooks, configura segredos ou copia clientes.
+      # Run em push único após CI inteiro, usando token de staging para
+      # listar metadados da mesma conta Cloudflare.
+      - name: Inspecionar isolamento da futura produção TIGU (somente leitura)
+        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_PRODUCTION_READONLY_PREFLIGHT_ONCE') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && inputs.production_readonly_inventory == true) }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_PRODUCTION_READONLY_APPROVED: YES
+        run: node scripts/production-inventory-readonly.mjs
+
+      # Apenas provisiona D1 e R2 NOVOS e vazios para produção.
+      # Só após validação local, inventário GET e autorização explícita.
+      # Nunca altera o domínio, staging, users, secrets nem roda pagamento.
+      - name: Criar D1 e R2 novos para produção TIGU (commit único)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/audit/tigu-primeira-validacao' && github.event.head_commit.message == 'TIGU_CREATE_PRODUCTION_RESOURCES_ONCE' }}
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_PRODUCTION_RESOURCES_APPROVED: YES
+        run: node scripts/production-create-resources-once.mjs

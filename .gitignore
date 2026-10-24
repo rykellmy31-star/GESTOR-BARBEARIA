@@ -1,0 +1,29 @@
+# Dependências
+node_modules/
+
+# Build
+dist/
+.wrangler/
+.dev.vars
+*.local
+
+# Geração temporária do seed
+seeds/.generated-*.sql
+
+# Editores / SO
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# Ambiente (NUNCA commite segredos reais)
+.env
+.env.production
+
+# Configuração local de homologação (D1 ID e recursos privados)
+wrangler.staging.jsonc

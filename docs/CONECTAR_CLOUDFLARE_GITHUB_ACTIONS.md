@@ -1,0 +1,151 @@
+# TIGU — Conectar Cloudflare por token com GitHub Actions
+
+**Escopo:** somente `rykellmy31-star/GESTOR-BARBEARIA`, branch `audit/tigu-primeira-validacao`. O CR Jornada possui repositório e recursos independentes.
+
+## Preparação pelo proprietário (não enviar tokens no chat)
+
+1. Em **Cloudflare → My Profile → API Tokens → Create Token → Create Custom Token**, crie um token revogável, de preferência com validade limitada, restrito à conta usada pelo TIGU. Para o **primeiro diagnóstico apenas**, selecione as permissões da conta:
+   - **D1: Read**
+   - **Workers Scripts: Read**
+   - **Workers R2 Storage: Read**
+   Não marque Write/Edit; não é necessário acesso à Global API Key. Alguns nomes podem variar na interface.
+2. No repositório [TIGU — Secrets do Actions](https://github.com/rykellmy31-star/GESTOR-BARBEARIA/settings/secrets/actions), clique em **New repository secret** e cadastre o token com o nome exato `CLOUDFLARE_AUDIT_TOKEN`. Nunca incluir o valor no commit, em arquivos `.env` ou nas mensagens do chat.
+3. Copie o **Account ID** (32 caracteres hexadecimais) da página da conta Cloudflare. Em [TIGU — Variables do Actions](https://github.com/rykellmy31-star/GESTOR-BARBEARIA/settings/variables/actions), use **New repository variable** com nome exato `CLOUDFLARE_ACCOUNT_ID`.
+4. Depois de cadastrar os dois itens, execute o workflow **Tigu - verificacao de codigo** na branch `audit/tigu-primeira-validacao` pela aba [Actions](https://github.com/rykellmy31-star/GESTOR-BARBEARIA/actions). Se a opção manual não aparecer para essa branch, um novo commit nessa branch faz o GitHub Actions rodar automaticamente. Informe apenas que a configuração foi feita; nenhum segredo precisa ser revelado.
+
+## O que o GitHub Actions faz automaticamente
+
+Após passar nos testes locais, uma etapa opcional faz quatro operações GET na API Cloudflare:
+
+- Verifica se o token está ativo;
+- Verifica permissão de listar **D1**, buscando somente `tigu-staging-db`;
+- Verifica permissão de listar **R2**, buscando somente `tigu-staging-media`;
+- Verifica permissão de listar **Workers**, procurando `tigu-staging`.
+
+Os logs mostram somente estados e presença/ausência dos recursos pretendidos, nunca tokens, UUIDs do banco, dados de clientes, outros buckets/Workers ou conteúdo do banco. Na branch de auditoria, a etapa é executada após os testes locais e falha explicitamente se não houver token ou Account ID, sem fazer modificações. O ID é lido primeiro de Repository Variables e, se ausente, de Repository Secrets.
+
+O script [scripts/cloudflare-audit.mjs](../scripts/cloudflare-audit.mjs) recusa respostas de erro, token revogado e Account ID inválido. Seus testes locais usam respostas simuladas; portanto **um workflow verde sem a etapa remota executada não confirma acesso à Cloudflare**.
+
+## Depois do diagnóstico: execução dos dois marcos restantes
+
+Com acesso de leitura confirmado, podemos inspecionar quais recursos precisam ser criados e configurar **um segundo token específico de staging**, com as permissões mínimas de escrita realmente necessárias para criar/migrar D1, R2 e publicar Worker de homologação, sem dar permissão a recursos de produção. Esse segundo token deve ser salvo em outro Secret do repositório, nunca enviado pelo chat. Fluxos de criação, publicação e backup requerem autorização de operação e controles separados.
+
+Não conceder escrita à produção para pular a homologação. Backups são completos somente após exportação, inventário de objetos R2, validação dos arquivos e teste de restauração controlada em recursos isolados. A operação real pode gerar custos Cloudflare e depende de consentimento do proprietário.
+
+**Estado:** a automação de diagnóstico está preparada no código; somente a execução remota bem-sucedida comprova o acesso por token. Nenhum deploy, migração remota, Pix real ou restore em produção é iniciado pelo diagnóstico.
+
+## Conferência automatizada da conexão após cadastrar o Secret e a Variable
+
+O GitHub Actions da branch de auditoria executa o diagnóstico no evento `push`, usando `CLOUDFLARE_ACCOUNT_ID` preferencialmente como Repository variable e, como alternativa, como Repository secret. Após o cadastro dos dois valores, um novo commit de documentação dispara a execução sem implantar Worker e sem ler dados pessoais. Para conferir, consulte o job `verificar` do workflow `Tigu - verificacao de codigo`, etapa `Diagnosticar acesso Cloudflare por token (se configurado)`. Se a etapa estiver pulada, a Variable não foi reconhecida ou o evento não foi `push`; se falhar, o log informa se falta token, se houve `403` ou se os recursos de staging não existem. Uma execução bem-sucedida prova apenas acesso de leitura à API e presença/ausência dos recursos; não prova deploy nem restauração de backups.
+
+## Diagnóstico solicitado após configurar credenciais
+
+Quando o operador informar que finalizou a variável `CLOUDFLARE_ACCOUNT_ID` e o Secret `CLOUDFLARE_AUDIT_TOKEN`, o próximo commit nesta branch executará novamente o CI. Só considerar a Cloudflare conectada se o passo **Diagnosticar acesso Cloudflare por token (se configurado)** tiver conclusão `success` e logs confirmarem a autenticação e permissões de leitura. `skipped` significa que o evento ou a branch não atenderam ao gatilho; `failure` indica credencial ausente/inválida, permissão insuficiente ou resposta remota inadequada e exige análise sem divulgar segredos.
+
+## Reteste autorizado após correção do Account ID — 21/10/2026
+
+O proprietário informou que ajustou `CLOUDFLARE_ACCOUNT_ID` no GitHub do TIGU. Este commit dispara novamente o workflow de `push` na branch de auditoria, para confirmar que a etapa `Diagnosticar acesso Cloudflare por token (se configurado)` lê o ID atualizado e realiza exclusivamente consultas GET. O status real deverá ser conferido no log do run correspondente; nenhuma publicação ou modificação Cloudflare faz parte desse teste.
+
+## Provisionamento remoto autorizado — D1 e R2 de homologação
+
+Com o Secret `CLOUDFLARE_STAGING_TOKEN` já cadastrado no repositório TIGU e o Account ID validado, foi acrescentada uma rotina de criação restrita, testada localmente em simulações, sem alterar produção:
+
+- Verifica se o token está ativo e se os nomes `tigu-staging-db` e `tigu-staging-media` já existem na conta; não sobrescreve objetos já encontrados.
+- Quando acionada na modalidade `create`, usa exclusivamente `POST /accounts/<conta>/d1/database` com nome fixo `tigu-staging-db` e `POST /accounts/<conta>/r2/buckets` com nome fixo `tigu-staging-media`.
+- Confere a presença de ambos em nova consulta; não publica Worker nem manipula SQL, arquivos de clientes, DNS ou produção.
+- A execução de criação por Actions só ocorre no `push` da branch `audit/tigu-primeira-validacao` com mensagem de commit **exatamente** `TIGU_PROVISION_STAGING_ONCE`. Em todos os outros pushes e PRs o passo é ignorado. O gate de ambiente `TIGU_STAGING_CREATE_APPROVED=YES` é exigido pelo script.
+- `node scripts/staging-provision.mjs check` faz apenas consultas GET. Depois da criação, o deploy do Worker depende de configurações de secrets e migrações próprias e deve ser validado separadamente.
+
+Permissões `D1 Edit` e `Workers R2 Storage Edit` têm alcance à conta selecionada pela Cloudflare e **não garantem isolamento por recurso**. Os bloqueios desse script reduzem o risco de alterações indevidas, mas não restringem o próprio token. Se o ambiente de produção estiver na mesma conta, o risco residual permanece até restringir ou revogar o token de escrita. Recursos novos podem gerar cobranças conforme o plano Cloudflare.
+
+## Ordem de provisionamento TIGU — execução única
+
+Autorizado pelo proprietário após configuração do token de staging. O commit que introduz esta anotação ativa uma única execução da rotina com allowlist e nomes fixos para **criar somente** D1 `tigu-staging-db` e R2 `tigu-staging-media` caso estejam ausentes. O resultado real deve ser confirmado no GitHub Actions. Não publicar Worker sem validação adicional de segredo, binding e migrações.
+
+## Próxima fase — implantação segura do Worker tigu-staging
+
+Após confirmação **real** da criação de `tigu-staging-db` e `tigu-staging-media`, existe uma segunda rotina restrita a `tigu-staging`:
+
+- Somente um `push` na branch `audit/tigu-primeira-validacao` com mensagem de commit **exatamente** `TIGU_DEPLOY_STAGING_ONCE` habilita o passo; PR, commits comuns e `main` jamais publicam.
+- Confere inventário Cloudflare antes de fazer qualquer escrita; recusa D1/R2 ausentes, UUID inválido, Worker pré-existente ou configuração diferente do contrato de staging.
+- Usa o script revisado `staging.mjs` para preparar config efêmera, validar bindings e flags, aplicar 17 migrations no **D1 de staging**, compilar e publicar o **Worker tigu-staging**.
+- Depois de publicar, gera `SESSION_SECRET` e `MSG_ENC_KEY` aleatórios, **sem imprimi-los**, e os grava diretamente como Worker secrets na Cloudflare. Não configura credenciais Mercado Pago, Meta/WhatsApp nem cron.
+- A Cloudflare cria backup D1 antes de migrations remotas, mas isso **não equivale** à homologação de exportação e restauração controlada D1/R2 do projeto.
+
+A primeira publicação do Worker pode exigir permissões adicionais de Workers Admin conforme o sistema de papéis da conta. Falha 403 é reportada; não aumentar escopo ou alterar a produção automaticamente. Se a implantação falhar após parte das operações, verificar estado real antes de retentar, pois o mecanismo recusa sobrescrever Worker já existente.
+
+Mesmo após deploy, a **homologação funcional remota** e a **validação de recuperação de backups** continuam pendentes até testes reais, acessos fictícios e evidências verificadas.
+
+## Disparo unico do Worker de homologação — 21/10/2026
+
+CI local completo aprovado previamente; o proprietário autorizou disponibilizar o token `CLOUDFLARE_STAGING_TOKEN`. O commit desta anotação é o gatilho único para preparar e migrar **somente D1 staging** e tentar implantar **somente o Worker tigu-staging** com segredos próprios. Os resultados devem ser confirmados no GitHub Actions; esta anotação não representa aprovação remota nem restauração de backups.
+
+## Recursos Cloudflare criados — evidência real de 21/10/2026
+
+- [Run de criação D1/R2 aprovado](https://github.com/rykellmy31-star/GESTOR-BARBEARIA/actions/runs/39636682380): `tigu-staging-db` e `tigu-staging-media` novos, sem alterações em recursos existentes.
+- [Run de deploy aprovado](https://github.com/rykellmy31-star/GESTOR-BARBEARIA/actions/runs/39638246202): 17 migrações D1 aplicadas, 25 assets enviados, Worker `tigu-staging` publicado e dois segredos fortes configurados no Worker.
+- URL publicada pelo Wrangler: `https://tigu-staging.netssh3-0.workers.dev`.
+- O CI passa a executar `staging-smoke.mjs` com apenas GET nessa URL, recusando qualquer destino fora do padrão de homologação. **Ainda é necessário confirmar o sucesso efetivo desse smoke remoto**.
+- As integrações de Pix/Meta permanecem inativas e a exportação/restauração real D1+R2 segue pendente. Nunca considerar os backups homologados com base somente no backup automático de migrations.
+
+## Próximo passo — comprovar exportação D1 da Cloudflare sem expor dados
+
+A branch de auditoria contém `scripts/staging-d1-export-verify.mjs`, que consulta o inventário dos três recursos de staging, usa `wrangler d1 export tigu-staging-db --remote` com configuração temporária restrita, recria a exportação em banco SQLite em memória e confere tabelas obrigatórias, integridade e vínculos. Nenhum dado de cliente é impresso. O dump SQL é apagado ao final da execução; o SHA-256 gerado é somente uma impressão de integridade, **não é uma cópia durável**.
+
+A execução remota por GitHub Actions exige um `push` na branch `audit/tigu-primeira-validacao` cujo commit tenha mensagem exatamente `TIGU_VERIFY_D1_EXPORT_ONCE`. Não executa em PR ou commits comuns, não lê outros bancos, não faz importação no D1 da Cloudflare e não salva artifact. A execução deve ser comprovada nos logs de Actions antes de considerá-la aprovada.
+
+**Limites:** recriar o export da Cloudflare num SQLite temporário é uma evidência mais forte que o teste de migração local, mas **não comprova restauração num D1 remoto separado**, não cobre R2 nem estabelece RPO/RTO ou cópia externa de longo prazo. Mantém a verificação integral de backups como etapa pendente.
+
+## Disparo único da exportação real D1 de staging
+
+Aprovada a validação do script no CI do PR, o proprietário autorizou prosseguir com os testes de homologação e backup. Este commit habilita somente a exportação SQL do D1 `tigu-staging-db` para arquivo efêmero de GitHub Actions, com importação local para conferência. Nenhum SQL será enviado ao chat, artifact ou repositório. O resultado remoto precisa ser conferido nos logs; R2 e restore dentro da Cloudflare continuam independentes.
+
+## Próxima fase: jornadas autenticadas remotas com dados fictícios
+
+O script `scripts/staging-auth-e2e.mjs` exige o domínio `tigu-staging.*.workers.dev`, `/api/health` com bindings de staging, chaves fortes e Meta/Pix desabilitados **antes de qualquer POST**. Ele cria duas contas com e-mails exclusivos `example.test`, valida separação entre empresas, cadastro, login, profissional, serviço, agendamento, cancelamento, produto, pedido, estoque e R2 (PNG fictício). Não envia WhatsApp, não cobra Pix nem utiliza telefone de pessoa real. O script só é acionado via commit `TIGU_AUTH_STAGING_E2E_ONCE` no push da branch de auditoria. Reservas e pedidos são cancelados, mas contas, barbearias e fotos de teste permanecem no D1/R2 de homologação para permitir verificar posteriormente a restauração dos dados fictícios. O teste requer sucesso real do Actions; testes de CI com respostas simuladas não o substituem.
+
+## Testes de recuperação remota D1 e R2 (a comprovar)
+
+- `scripts/staging-d1-remote-restore.mjs`: valida o inventário do staging, exporta `tigu-staging-db`, verifica SQL e cria **apenas se ausente** o D1 `tigu-staging-restore-check`; faz a importação e exportação de retorno nesse banco separado, compara SHA-256 semântico de todas as linhas e seus totais, elimina arquivos temporários. O disparo único exige commit `TIGU_D1_REMOTE_RESTORE_ONCE` e token staging. Não sobrescreve D1 existente ou recursos de produção.
+- `scripts/staging-r2-remote-restore.mjs`: verifica staging e cria **apenas se ausente** o bucket `tigu-staging-restore-check`, grava um objeto aleatório sob `__tigu_recovery_test/` no R2 de staging, baixa, copia para o bucket de recuperação e baixa novamente, comparando SHA-256. O disparo único exige `TIGU_R2_REMOTE_RESTORE_ONCE`. Não copia dados reais nem afirma inventário completo de arquivos.
+- **Limites:** os testes dependem de confirmação real no Actions; não substituem backup durável fora da conta, testes de restauração de todos os objetos do bucket, RPO/RTO ou auditoria de segurança. Se a execução falhar depois de criar um destino, ele permanece para inspeção e o script bloqueia qualquer sobrescrita automática. Esses recursos extras podem gerar custos conforme o plano Cloudflare.
+
+## Bateria integral de testes automatizados de staging
+
+O commit único `TIGU_ALL_STAGING_TESTS_ONCE` aciona **na ordem**, após a suíte local, três ensaios remotos segregados: (1) jornadas autenticadas com duas barbearias e mídia fictícias, (2) exportação e restauração do D1 de staging em `tigu-staging-restore-check`, com verificação de integridade por conteúdo e (3) cópia de objeto sintético do R2 `tigu-staging-media` para `tigu-staging-restore-check` com comparação de SHA-256. A falha de qualquer etapa interrompe as seguintes e requer inspeção sem sobrescrever dados existentes. Os dois destinos de restauração são recursos separados, podem ter custos Cloudflare e devem ser removidos somente após análise do registro de execução. O ensaio sintético R2 não equivale a backup de todo o bucket; RPO, RTO, retenção e recuperação de dados reais continuam avaliações separadas. A criação de contas de teste não configura pagamentos Meta/Pix reais.
+
+## Execução autorizada da bateria integral — 21/10/2026
+
+O proprietário solicitou a realização de todos os testes necessários. A suíte local do commit anterior passou em Push e PR; este commit habilita unicamente a bateria `TIGU_ALL_STAGING_TESTS_ONCE` em ordem: jornadas autenticadas com dados fictícios, restauração D1 para banco isolado e recuperação de objeto sintético R2 para bucket isolado. O resultado só deve ser declarado após a conferência do GitHub Actions. Não autoriza uso de Pix/Meta reais, alterações em produção, publicação comercial ou leitura de dados privados não fictícios.
+
+## Reteste integral — cadastro remoto e diagnóstico HTTP
+
+Após o primeiro ensaio remoto identificar recusa de cadastro fictício, o script foi alterado para enviar `Origin` de staging e informar exclusivamente código HTTP e mensagem genérica de erro. O CI local aprovou a correção. Este novo commit habilita nova bateria integral; nenhum recurso de restauração separado foi criado na tentativa anterior, que encerrou na primeira etapa.
+
+## Atualização corretiva do Worker de homologação — 21/10/2026
+
+A bateria autenticada identificou um HTTP 500 ao cadastrar a primeira barbearia fictícia. A correção candidata em `api/lib/rate-limit.ts` usa `run()` para UPSERT com `RETURNING` em vez de `first()`. O CI de Push e PR aprovou os testes. Este commit habilita **uma única atualização do Worker existente `tigu-staging`** sem migrações, sem criar ou sobrescrever bancos/buckets e **sem rotacionar segredos existentes**. O resultado do redeploy e do cadastro remoto deve ser confirmado nos logs antes de declarar o bloqueio resolvido.
+
+## Reteste remoto após atualização do Worker e do D1 Rate Limit
+
+A nova versão do Worker `tigu-staging` foi publicada no Actions run `39650984613` sem recriar D1/R2 nem modificar segredos. Este commit reexecuta a bateria autenticada fictícia seguida dos ensaios de recuperação D1/R2, com gating seguro. Cada etapa deverá ser comprovada nos logs. A fonte original e a produção não devem ser alteradas.
+
+## Diagnóstico controlado do HTTP 500 no cadastro de staging
+
+O cadastro remoto segue retornando HTTP 500 mesmo depois do ajuste de D1 `run()` e da atualização do Worker. Para não adivinhar outra causa, há um workflow exclusivo de diagnóstico que inicia uma sessão temporária `wrangler tail` para `tigu-staging`, envia **somente um cadastro fictício** com email `example.test`, captura unicamente mensagens de exceção e erro da rota `/api/auth/register`, redige emails, telefones e tokens, e encerra o tail sem armazenar dados em artifact. O disparo exige commit com mensagem `TIGU_DIAGNOSE_SIGNUP_ONCE` na branch de auditoria. Logs indisponíveis ou permissão de tail insuficiente exigem outro diagnóstico antes de declarar correção.
+
+## Bateria separada de recuperação D1 após indisponibilidade do tail
+
+O `wrangler tail` do Worker staging foi negado com o token existente, por isso nenhum erro interno foi capturado e a falha HTTP 500 de signup permanece aberta. A execução isolada de restore D1 e R2 pode seguir independentemente do cadastro, sem tocar dados de produção. Este commit aciona apenas o ensaio D1 que exporta `tigu-staging-db`, cria exclusivamente `tigu-staging-restore-check` se ausente e compara conteúdo recuperado. Não autoriza recursos externos, acesso a outros bancos ou migrações no banco de origem.
+
+## Restauração real D1 concluída; próximo R2
+
+O GitHub Actions run `39656147680` restaurou o export SQL do D1 de homologação em `tigu-staging-restore-check`, recuperando 40 tabelas com hash semântico e totais idênticos. O D1 original permaneceu inalterado, embora ainda não houvesse dados comerciais fictícios nele. Este commit ativa **somente** a verificação remota de objeto R2 sintético para bucket de restore separado; a conclusão dependerá do resultado no CI.
+
+## Atualização temporária para diagnóstico por etapas do signup staging
+
+A leitura de logs do Worker depende da permissão `Account → Workers Tail → Read`, ausente no token atual. Para identificar o ponto exato do HTTP 500 sem esse acesso e sem divulgar o erro interno, o Worker de **staging somente** inclui temporariamente no JSON de erro de `/api/auth/register` dois campos de diagnóstico de baixa sensibilidade: fase fixa de cadastro (`middleware-rate-limit`, `signup-password-hash`, etc.) e categoria (`database`, `cryptography`, `other`). Em produção esses campos nunca aparecem. Nenhuma senha, SQL, email, ID de conta, stack trace ou segredo é retornado. Após identificar/corrigir o bloqueio, esses marcadores devem ser removidos em novo deploy. Este commit faz atualização única do Worker existente preservando os secrets de homologação, D1 e R2.
+
+## Reteste de cadastro remoto com etapa segura de diagnóstico
+
+O Worker staging foi atualizado com sucesso no run `39657412902` (segunda tentativa, após timeout intermitente de leitura da API). Sua configuração, D1/R2 e secrets foram preservados. Esta execução aciona somente a jornada remota fictícia para confirmar cadastro, isolamento, agendamentos, loja e upload. A restauração D1/R2 já foi comprovada em recursos separados; não se deve recriar nem sobrescrever os destinos existentes ao repetir a jornada. Se o cadastro continuar falhando, o teste reporta apenas a fase e categoria de erro (sem dados pessoais ou SQL).

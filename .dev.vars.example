@@ -1,0 +1,35 @@
+# ============================================================================
+# Copie para .dev.vars (gitignored) — só para `wrangler dev`.
+# Em produção use `wrangler secret put <NOME>`. Tudo abaixo é OPCIONAL em dev
+# (há fallbacks inseguros propositalmente, só para desenvolvimento local).
+# ============================================================================
+
+# --- núcleo -----------------------------------------------------------------
+# Assinatura de sessões/cookies. Qualquer string longa: openssl rand -hex 32
+SESSION_SECRET=troque…ucao
+# Chave AES-GCM que cifra tokens de WhatsApp no D1 (rotação invalida conexões)
+MSG_ENC_KEY=
+
+# --- WhatsApp Cloud API (envio real) — ver docs/WHATSAPP.md -----------------
+# Com WHATSAPP_MOCK=1 o painel pode ativar "modo simulação" e testes de envio
+WHATSAPP_MOCK=1
+GRAPH_API_VERSION=v23.0
+# Segredo do webhook (configure o mesmo no app da Meta)
+WHATSAPP_WEBHOOK_VERIFY_TOKEN=tigu-…ocal
+# App da plataforma p/ Embedded Signup (fluxo BSP) — deixe vazio p/ desativar
+WHATSAPP_APP_ID=
+WHATSAPP_APP_SECRET_FOR_OAUTH=
+WHATSA…_ID=
+# Token de sistema (fallback global; o recomendado é por-empresa, via connect)
+WHATSAPP_SYSTEM_USER_TOKEN=
+
+# --- pagamentos (Pix) — ver docs/PAGAMENTOS.md ------------------------------
+# PAYMENTS_MOCK=1 habilita "simular pagamento" na carteira (demo/testes)
+PAYMENTS_MOCK=1
+MERCADOPAGO_ACCESS_TOKEN=
+MERCADOPA…ken=
+# Segredo do webhook do gateway p/ validar x-signature
+MERCADOPAGO_WEBHOOK_SECRET=
+
+# --- e-mail transacional (opcional; sem isto só WhatsApp/notificações internas)
+RESEND_API_KEY=
