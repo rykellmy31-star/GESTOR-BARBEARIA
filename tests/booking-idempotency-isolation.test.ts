@@ -88,7 +88,7 @@ describe("check-in presencial e motivo de cancelamento",()=>{
   it("a equipe confirma chegada sem finalizar serviço, liberar horário nem registrar pagamento",async()=>{
     const a=await company();
     const day=new Date(Date.now()+4*86400000).toISOString().slice(0,10);
-    const startsAt=localToUtc("America/Bahia",day,10*60).toISOString().replace(/\\.\\d{3}Z$/,"Z");
+    const startsAt=localToUtc("America/Bahia",day,10*60).toISOString().replace(/\.\d{3}Z$/,"Z");
     const created=await createBooking(a.ctx,{serviceId:a.serviceId,barberId:a.barberId,
       startsAt,name:"Cliente chegou",phone:"5573999991432",consent:true,whatsappOptin:false,
       idempotencyKey:crypto.randomUUID()});
@@ -101,13 +101,13 @@ describe("check-in presencial e motivo de cancelamento",()=>{
     expect(await markBookingArrived(a.ctx,created.bookingId,at))
       .toMatchObject({ok:false,status:403});
     const done=await markBookingArrived(admin,created.bookingId,at);
-    expect(done).toMatchObject({ok:true,checkedInAt:at.toISOString().replace(/\\.\\d{3}Z$/,"Z")});
+    expect(done).toMatchObject({ok:true,checkedInAt:at.toISOString().replace(/\.\d{3}Z$/,"Z")});
     expect(await markBookingArrived(admin,created.bookingId,at))
       .toMatchObject({ok:false,status:409});
     const status=await db.prepare("SELECT status,checked_in_at,cancel_reason,notes FROM bookings WHERE id=?1")
       .bind(created.bookingId).first<{status:string;checked_in_at:string;cancel_reason:string;notes:string}>();
     expect(status?.status).toBe("confirmado");
-    expect(status?.checked_in_at).toBe(at.toISOString().replace(/\\.\\d{3}Z$/,"Z"));
+    expect(status?.checked_in_at).toBe(at.toISOString().replace(/\.\d{3}Z$/,"Z"));
     expect(status?.cancel_reason).toBe("");
     expect(await db.prepare("SELECT COUNT(*) AS n FROM booking_slots WHERE booking_id=?1")
       .bind(created.bookingId).first<number>("n")).toBeGreaterThan(0);
@@ -126,7 +126,7 @@ describe("check-in presencial e motivo de cancelamento",()=>{
   it("não permite registrar chegada de reserva pertencente a outra empresa",async()=>{
     const a=await company(),b=await company();
     const day=new Date(Date.now()+6*86400000).toISOString().slice(0,10);
-    const startsAt=localToUtc("America/Bahia",day,10*60).toISOString().replace(/\\.\\d{3}Z$/,"Z");
+    const startsAt=localToUtc("America/Bahia",day,10*60).toISOString().replace(/\.\d{3}Z$/,"Z");
     const created=await createBooking(a.ctx,{serviceId:a.serviceId,barberId:a.barberId,
       startsAt,name:"Cliente separado",phone:"5573999991433",consent:true,whatsappOptin:false,
       idempotencyKey:crypto.randomUUID()});
