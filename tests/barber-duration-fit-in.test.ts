@@ -44,7 +44,7 @@ async function seed(){
   env:env as Env,db,companyId,origin,settings:shop
  });
  const booking=(barberId:number,startsAt:string,fitInDurationMin?:number)=>({
-  barberId,serviceId,startsAt,name:"Cliente duração",phone:"5573999999999",consent:true,
+  barberId,serviceId,startsAt,name:"Cliente duração",phone:"5573999999999",consent:true,whatsappOptin:false,
   idempotencyKey:crypto.randomUUID(),fitInDurationMin
  });
  return {companyId,ids,serviceId,srv,barber,day,utc,context,booking};
