@@ -225,7 +225,7 @@ export function BookingPage() {
                 <Row icon={<Scissors size={15} />} k="Serviço" v={service.name} />
                 <Row icon={<UserRound size={15} />} k="Profissional" v={barberProfile.data.barber.name} />
                 <Row icon={<CalendarDays size={15} />} k="Data & hora" v={`${date && fmtDayLong(date)} · ${slot?.label} (horário local)`} />
-                <Row icon={<Clock size={15} />} k="Duração" v={`${service.duration_min} min`} />
+                <Row icon={<Clock size={15} />} k="Duração" v={`${barberProfile.data?.service_durations?.[service.id] ?? service.duration_min} min`} />
                 <div className="gold-hr !my-3" />
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-400">Valor</span>
