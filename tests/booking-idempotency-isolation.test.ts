@@ -139,3 +139,30 @@ describe("check-in presencial e motivo de cancelamento",()=>{
     expect(still?.checked_in_at).toBeNull();
   });
 });
+
+
+describe("chegada informada pelo próprio cliente",()=>{
+  it("só aceita confirmação com prova verificada e janela próxima ao atendimento",async()=>{
+    const a=await company();
+    const day=new Date(Date.now()+5*86400000).toISOString().slice(0,10);
+    const startsAt=localToUtc("America/Bahia",day,10*60).toISOString().replace(/\.\d{3}Z$/,"Z");
+    const created=await createBooking(a.ctx,{serviceId:a.serviceId,barberId:a.barberId,
+      startsAt,name:"Cliente presencial",phone:"5573999991434",consent:true,whatsappOptin:false,
+      idempotencyKey:crypto.randomUUID()});
+    if(!created.ok)throw Error(created.message);
+    const at=new Date(Date.parse(startsAt)-15*60000);
+    expect(await markBookingArrived(a.ctx,created.bookingId,at))
+      .toMatchObject({ok:false,status:403});
+    expect(await markBookingArrived(a.ctx,created.bookingId,
+      new Date(Date.parse(startsAt)-60*60000),true)).toMatchObject({ok:false,status:409});
+    expect(await markBookingArrived(a.ctx,created.bookingId,at,true)).toMatchObject({ok:true});
+    const b=await db.prepare("SELECT status,checked_in_source,checked_in_by_user_id,checked_in_at FROM bookings WHERE id=?1")
+      .bind(created.bookingId).first<{status:string;checked_in_source:string;checked_in_by_user_id:number|null;checked_in_at:string}>();
+    expect(b?.status).toBe("confirmado");
+    expect(b?.checked_in_source).toBe("cliente");
+    expect(b?.checked_in_by_user_id).toBeNull();
+    expect(b?.checked_in_at).toBe(at.toISOString().replace(/\.\d{3}Z$/,"Z"));
+    expect(await markBookingArrived({...a.ctx,origin:"admin"},created.bookingId,at))
+      .toMatchObject({ok:false,status:409});
+  });
+});
