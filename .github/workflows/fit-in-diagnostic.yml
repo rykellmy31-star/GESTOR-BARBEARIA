@@ -28,5 +28,11 @@ jobs:
         run: npm run test:migrations
       - name: Testar duração e encaixe no Worker local
         run: npx vitest run tests/barber-duration-fit-in.test.ts tests/booking-idempotency-isolation.test.ts
+      - name: Testar suíte completa sem acesso remoto
+        run: npm test
       - name: Construir front-end
         run: npm run build
+      - name: Verificar Worker, D1 e R2 locais
+        run: node scripts/local-e2e.mjs
+      - name: Verificar navegação real Chromium local
+        run: node scripts/browser-smoke.mjs
