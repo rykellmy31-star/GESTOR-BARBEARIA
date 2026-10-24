@@ -247,6 +247,8 @@ export async function assertSlotAllowed(
   const startMs = Date.parse(opts.startsAt);
   if (!Number.isFinite(startMs)) return { ok: false, error: "Data/hora inválida", status: 400 };
   const { day } = utcToLocal(tz, new Date(startMs));
+  if(opts.origin==="barbeiro"&&startMs<=Date.now())
+    return {ok:false,error:"Não é possível encaixar cliente em horário que já passou.",status:409};
   const local = utcToLocal(tz, new Date(startMs));
   const standardDuration=await effectiveServiceDuration(db,barber.id,service);
   if(opts.fitInDurationMin!=null && (
