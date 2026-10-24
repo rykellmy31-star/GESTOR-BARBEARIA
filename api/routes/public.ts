@@ -54,7 +54,14 @@ publicRouter.get("/barbers/:id", async (c) => {
        FROM barbers WHERE id=?1 AND company_id=?2 AND active=1`
   ).bind(Number(rawId), cid(c)).first();
   if (!barber) return err(c, "Profissional não encontrado", 404);
-  return json(c, { barber, pix_available: await sellerPixReady(c.env,cid(c),Number(rawId)) });
+  const {results:linked}=await c.env.DB.prepare(
+    "SELECT sb.service_id,COALESCE(sb.duration_override_min,s.duration_min) AS duration_min "+
+    "FROM service_barbers sb JOIN services s ON s.id=sb.service_id AND s.company_id=?1 "+
+    "WHERE sb.barber_id=?2 AND s.active=1"
+  ).bind(cid(c),Number(rawId)).all<{service_id:number;duration_min:number}>();
+  return json(c, { barber, service_durations:Object.fromEntries(
+    linked.map(item=>[item.service_id,item.duration_min])
+  ), pix_available: await sellerPixReady(c.env,cid(c),Number(rawId)) });
 });
 publicRouter.get("/services", async (c) => {
   const companyId = cid(c);
