@@ -268,7 +268,7 @@ adminRouter.post("/bookings/:id/check-in",async c=>{
 
 adminRouter.post("/bookings/:id/cancel", async (c) => {
   const parsed=z.object({
-   reason:z.enum(["Cliente desistiu","Avisou pelo WhatsApp","Não poderá comparecer","Outro motivo"]),
+   reason:z.string().trim().min(1).max(120),
    details:z.string().trim().max(120).default("")
   }).strict().safeParse(await c.req.json().catch(()=>null));
   if(!parsed.success)return err(c,"Selecione o motivo do cancelamento.",422);
