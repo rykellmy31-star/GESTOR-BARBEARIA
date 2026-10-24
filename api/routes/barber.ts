@@ -265,7 +265,7 @@ barberRouter.get("/agenda", async (c) => {
   const end=localToUtc(tz,to,0).toISOString().replace(/\.\d{3}Z$/,"Z");
   const { results } = await c.env.DB
     .prepare(
-      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.customer_name, b.customer_phone, b.notes, b.price_cents, b.origin, b.checked_in_at, b.cancel_reason, s.name AS service_name, s.duration_min AS default_duration_min
+      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.customer_name, b.customer_phone, b.notes, b.price_cents, b.origin, b.checked_in_at, b.checked_in_source, b.cancel_reason, s.name AS service_name, s.duration_min AS default_duration_min
        FROM bookings b LEFT JOIN services s ON s.id=b.service_id
        WHERE b.company_id=?1 AND b.barber_id=?2 AND b.starts_at>=?3 AND b.starts_at<?4 AND b.status!='bloqueio' ORDER BY b.starts_at`
     )
