@@ -7,6 +7,7 @@ import fitInSchema from "../../migrations/0020_last_minute_fit_in.sql";
 import sellerOauthSchema from "../../migrations/0099_seller_mercadopago_oauth.sql";
 import sellerPixSchema from "../../migrations/0100_seller_pix.sql";
 import barberDurationSchema from "../../migrations/0101_barber_service_duration.sql";
+import bookingCheckinSchema from "../../migrations/0102_booking_checkin_cancel_reason.sql";
 /** Completa as fixtures antigas que carregam a base 0001 diretamente. */
 export async function applyBookingMigrations(db:D1Database):Promise<void> {
   const columns=new Set((await db.prepare("PRAGMA table_info(bookings)").all<{name:string}>()).results.map(row=>row.name));
@@ -44,4 +45,10 @@ export async function applyBookingMigrations(db:D1Database):Promise<void> {
   const durationColumns=await db.prepare("PRAGMA table_info(service_barbers)").all<{name:string}>();
   if(!durationColumns.results.some(c=>c.name==="duration_override_min"))
     await db.prepare(barberDurationSchema.replace(/--[^\n]*/g,"").trim()).run();
+  const bookingColumns=new Set((await db.prepare("PRAGMA table_info(bookings)")
+    .all<{name:string}>()).results.map(row=>row.name));
+  if(!bookingColumns.has("checked_in_at"))
+    for(const statement of bookingCheckinSchema.replace(/--[^\n]*/g,"")
+      .split(";").map(x=>x.trim()).filter(Boolean))
+      await db.prepare(statement).run();
 }
