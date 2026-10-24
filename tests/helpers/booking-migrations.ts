@@ -41,7 +41,7 @@ export async function applyBookingMigrations(db:D1Database):Promise<void> {
     for(const trigger of triggers)await db.prepare(trigger).run();
   }
 
-  const columns=await db.prepare("PRAGMA table_info(service_barbers)").all<{name:string}>();
-  if(!columns.results.some(c=>c.name==="duration_override_min"))
+  const durationColumns=await db.prepare("PRAGMA table_info(service_barbers)").all<{name:string}>();
+  if(!durationColumns.results.some(c=>c.name==="duration_override_min"))
     await db.prepare(barberDurationSchema.replace(/--[^\n]*/g,"").trim()).run();
 }
