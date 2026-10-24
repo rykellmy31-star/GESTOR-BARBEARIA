@@ -79,6 +79,9 @@ describe("duração individual e encaixe sem superposição",()=>{
    .bind(s.ids[0],s.serviceId).run();
   const first=await createBooking(s.context("barbeiro"),s.booking(s.ids[0],s.utc(9,10),40));
   if(!first.ok)throw Error(first.message);
+  // Já há um atendimento às 09h50: o tempo liberado só pode ser usado até ele.
+  const following=await createBooking(s.context("cliente"),s.booking(s.ids[0],s.utc(9,50)));
+  expect(following.ok).toBe(true);
   const finish=await finishBookingEarly(s.context("barbeiro"),first.bookingId,
     new Date(s.utc(9,35)));
   expect(finish.ok).toBe(true);
