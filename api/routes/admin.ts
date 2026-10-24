@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { Env } from "../types";
 import { err, json, nowIso, uniqueSlug, slugify, brl, normalizePhone } from "../lib/utils";
 import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
-import { createBooking, createBookingSchema, cancelBooking, rescheduleBooking, setBookingStatus, finishBookingEarly } from "../lib/booking";
+import { createBooking, createBookingSchema, cancelBooking, rescheduleBooking, setBookingStatus, finishBookingEarly, markBookingArrived } from "../lib/booking";
 import { assertSlotAllowed, slotKeysFor, type BarberRow, type ServiceRow } from "../lib/availability";
 import { companySettingsSchema, saveCompanySettings } from "../lib/settings";
 import { audit } from "../lib/audit";
@@ -257,9 +257,23 @@ adminRouter.post("/bookings/:id/finish-early",async c=>{
   return json(c,result);
 });
 
+adminRouter.post("/bookings/:id/check-in",async c=>{
+ const result=await markBookingArrived({
+  env:c.env,db:P(c),companyId:cid(c),settings:ctxSettings(c),
+  origin:"admin",user:c.get("user")
+ },await bookingIdParam(c));
+ if(!result.ok)return err(c,result.message,result.status);
+ return json(c,result);
+});
+
 adminRouter.post("/bookings/:id/cancel", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { reason?: string };
-  const res = await cancelBooking({ env: c.env, db: P(c), companyId: cid(c), settings: ctxSettings(c), origin: "admin", user: c.get("user") }, await bookingIdParam(c), { actorRole: "admin", reason: body.reason ?? "" });
+  const parsed=z.object({
+   reason:z.enum(["Cliente desistiu","Avisou pelo WhatsApp","Não poderá comparecer","Outro motivo"]),
+   details:z.string().trim().max(120).default("")
+  }).strict().safeParse(await c.req.json().catch(()=>null));
+  if(!parsed.success)return err(c,"Selecione o motivo do cancelamento.",422);
+  const reason=parsed.data.reason+(parsed.data.details?" — "+parsed.data.details:"");
+  const res = await cancelBooking({ env: c.env, db: P(c), companyId: cid(c), settings: ctxSettings(c), origin: "admin", user: c.get("user") }, await bookingIdParam(c), { actorRole: "admin", reason });
   if (!res.ok) return err(c, res.message, res.status);
   return json(c, { ok: true });
 });
