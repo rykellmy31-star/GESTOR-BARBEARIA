@@ -37,7 +37,7 @@ async function fixture(){
   const created=await createBooking(ctx,{barberId,serviceId,startsAt:iso(545),name:"Cliente",phone:"5573999990000",consent:true,whatsappOptin:false,idempotencyKey:crypto.randomUUID()});
   if(!created.ok)throw Error(created.message);
   const id=created.bookingId;
-  const row=()=>db.prepare("SELECT status,starts_at,ends_at,notes,schedule_version,mutation_token FROM bookings WHERE id=?1").bind(id).first<{status:string;starts_at:string;ends_at:string;notes:string;schedule_version:number;mutation_token:string}>();
+  const row=()=>db.prepare("SELECT status,starts_at,ends_at,notes,cancel_reason,schedule_version,mutation_token FROM bookings WHERE id=?1").bind(id).first<{status:string;starts_at:string;ends_at:string;notes:string;cancel_reason:string;schedule_version:number;mutation_token:string}>();
   const slots=()=>db.prepare("SELECT slot FROM booking_slots WHERE booking_id=?1 ORDER BY slot").bind(id).all<{slot:string}>();
   const notifications=()=>db.prepare("SELECT count(*) n FROM notifications WHERE booking_id=?1").bind(id).first("n");
   return {ctx,id,companyId,iso,row,slots,notifications,racing:{...ctx,db:barrierDatabase()}};
