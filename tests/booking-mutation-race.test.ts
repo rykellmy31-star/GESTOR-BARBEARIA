@@ -79,7 +79,8 @@ describe("mutações concorrentes do mesmo agendamento",()=>{
     const results=await Promise.all([1,2].map(()=>cancelBooking(f.racing,f.id,{actorRole:"admin",reason:"Consulta médica"})));
     expect(results.filter(r=>r.ok)).toHaveLength(1);
     const saved=(await f.row())!;
-    expect(saved.notes.match(/Consulta médica/g)).toHaveLength(1);
+    expect(saved.cancel_reason).toBe("Consulta médica");
+    expect(saved.notes).not.toContain("Consulta médica");
     expect(saved.schedule_version).toBe(2);
     expect(await f.notifications()).toBe(2);
   });
