@@ -59,8 +59,8 @@ export interface CreateResult {
 
 export async function createBooking(ctx: BookingMutationCtx, input: z.infer<typeof createBookingSchema>): Promise<CreateResult | { ok: false; message: string; status: number; issues?: unknown }> {
   const { db, companyId, settings } = ctx;
-  if(input.fitInDurationMin!=null && ctx.origin!=="admin")
-    return {ok:false,message:"Somente a empresa pode autorizar redução de duração para encaixes.",status:403};
+  if(input.fitInDurationMin!=null && !["admin","barbeiro"].includes(ctx.origin))
+    return {ok:false,message:"Encaixe manual disponível somente para a equipe.",status:403};
   const existing = await db.prepare(`SELECT * FROM bookings WHERE idempotency_key = ?1 AND company_id = ?2`).bind(input.idempotencyKey, companyId).first<Record<string, unknown> & { id: number; starts_at: string; cancel_token: string; allowed_cancel_until: string }>();
   if (existing) {
     return {
