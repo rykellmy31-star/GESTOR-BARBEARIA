@@ -12,7 +12,7 @@ import { beginSellerOauth, sellerOauthEnabled } from "../lib/seller-mercadopago-
 import { sellerPixReady } from "../lib/seller-payments";
 import { calendarDaySchema } from "../lib/admin-blocks";
 import { createBooking, setBookingStatus, cancelBooking, rescheduleBooking, finishBookingEarly } from "../lib/booking";
-import { todayLocal, addDays, localToUtc } from "../lib/time";
+import { todayLocal, addDays, localToUtc, parseHHMM } from "../lib/time";
 import { computeDaySlots, type BarberRow } from "../lib/availability";
 import type { ServiceRow } from "../lib/availability";
 
@@ -78,7 +78,8 @@ barberRouter.post("/fit-in",async c=>{
  if(!m.barber_id)return err(c,"Profissional não vinculado.",403);
  const parsed=z.object({
    serviceId:z.number().int().positive(),
-   startsAt:z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?Z$/),
+   day:calendarDaySchema,
+   startTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
    name:z.string().trim().min(2).max(90),
    phone:z.string().min(8).max(20),
    email:z.string().email().or(z.literal("")).optional(),
@@ -87,7 +88,10 @@ barberRouter.post("/fit-in",async c=>{
    idempotencyKey:z.string().min(8).max(64),
  }).strict().safeParse(await c.req.json().catch(()=>null));
  if(!parsed.success)return err(c,"Confira serviço, cliente, horário e duração do encaixe.",422,parsed.error.flatten().fieldErrors);
- const input={...parsed.data,barberId:m.barber_id,consent:true,
+ const {day,startTime,...rest}=parsed.data;
+ const startsAt=localToUtc(ctxSettings(c).timezone,day,parseHHMM(startTime))
+   .toISOString().replace(/\.\d{3}Z$/,"Z");
+ const input={...rest,startsAt,barberId:m.barber_id,consent:true,
    whatsappOptin:false,paymentChoice:"after_service" as const};
  const result=await createBooking({
   env:c.env,db:c.env.DB,companyId:cid(c),settings:ctxSettings(c),origin:"barbeiro",
