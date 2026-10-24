@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, CalendarX2, ChevronLeft, ChevronRight, Clock, Inbox, Link2, Plus, Search, User } from "lucide-react";
 import { clsx } from "clsx";
 import { api, siteBase } from "@/lib/api";
+import { BookingCancelDialog } from "@/components/BookingCancelDialog";
 import { useConfig } from "@/lib/hooks";
 import { Badge, Button, ConfirmDialog, Field, Input, Modal, Select, Spinner, Textarea, useToast } from "@/components/ui";
 import { fmtDayLong, fromMinutes, localToUtcIso, money, toMinutes, utcToLocalParts } from "@/lib/format";
@@ -163,6 +164,7 @@ function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
   const toast = useToast();
   const id = b.id as number;
   const [busy, setBusy] = useState(false);
+  const [cancelOpen,setCancelOpen]=useState(false);
   const [resched, setResched] = useState<{ day: string; hhmm: string } | null>(null);
 
   const finishEarly = async () => {
@@ -181,6 +183,15 @@ function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
     catch (e: any) { toast.push("err", e.message); }
     finally { setBusy(false); }
   };
+  const confirmArrival=async()=>{
+    try{
+      setBusy(true);
+      await api.post(`/admin/bookings/${id}/check-in`,{});
+      toast.push("ok","Chegada confirmada! O cliente está presente.");
+      onChanged();
+    }catch(e:any){toast.push("err",e.message||"Falha ao registrar chegada.");}
+    finally{setBusy(false);}
+  };
   const doResched = async () => {
     try {
       setBusy(true);
@@ -192,13 +203,18 @@ function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
     finally { setBusy(false); }
   };
 
+  if(cancelOpen)return <BookingCancelDialog panel="admin" bookingId={id}
+    customer={b.customer_name} onClose={()=>setCancelOpen(false)} onDone={onChanged}/>;
   return (
     <Modal open onClose={onClose} title="Reserva">
       {
         <div className="space-y-3 text-sm">
           <div className="flex items-center justify-between">
             <p className="font-mono text-[13px] text-[var(--c-gold)]">{b.code}</p>
-            <Badge tone={TONE[b.status] || "gray"}>{b.status === "no_show" ? "Não compareceu" : b.status}</Badge>
+            <div className="flex flex-wrap gap-1.5">
+              {b.checked_in_at&&<Badge tone="green">Cliente chegou</Badge>}
+              <Badge tone={TONE[b.status] || "gray"}>{b.status === "no_show" ? "Não compareceu" : b.status}</Badge>
+            </div>
           </div>
           <p className="text-zinc-200">{b.service_name} <span className="text-zinc-500">({b.duration_min} min)</span> com <b className="text-zinc-100">{b.barber_name}</b></p>
           <p className="text-zinc-300">{new Date(b.starts_at).toLocaleString("pt-BR", { timeZone: tz })} → {new Date(b.ends_at).toLocaleString("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit" })}</p>
@@ -213,11 +229,20 @@ function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
             <p className="flex items-center gap-1.5 text-zinc-200"><User size={13} className="text-zinc-500" /> {b.customer_name}</p>
             {b.customer_phone && <a className="flex items-center gap-1.5 text-[var(--c-gold)]" href={`https://wa.me/${b.customer_phone.replace(/\D/g, "").replace(/^(?!55)/, "55")}`} target="_blank" rel="noreferrer"><Link2 size={13} /> {b.customer_phone} (WhatsApp)</a>}
             {b.notes && <p className="mt-1.5 text-zinc-400">Obs.: {b.notes}</p>}
+            {b.checked_in_at&&<p className="mt-1.5 text-emerald-300">
+              Chegada registrada às {new Date(b.checked_in_at).toLocaleTimeString("pt-BR",{
+                timeZone:tz,hour:"2-digit",minute:"2-digit"
+              })}
+            </p>}
+            {b.cancel_reason&&<p className="mt-1.5 text-red-300">Motivo do cancelamento: {b.cancel_reason}</p>}
           </div>
           {b.status !== "bloqueio" && (
             <div className="flex flex-wrap gap-2 pt-1">
               
-              {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="dark" disabled={busy} onClick={() => patch("concluido")}>Concluir</Button>}
+              {["pendente", "confirmado"].includes(b.status)&&!b.checked_in_at&&(
+                <Button size="sm" disabled={busy} onClick={confirmArrival}>Cliente chegou</Button>
+              )}
+              {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="dark" disabled={busy} onClick={() => patch("concluido")}>Concluir</Button>
               {["pendente","confirmado"].includes(b.status) &&
                 Date.now()>=Date.parse(b.starts_at) && Date.now()+300000<Date.parse(b.ends_at) && (
                 <Button size="sm" disabled={busy} onClick={finishEarly}>
@@ -225,7 +250,7 @@ function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
                 </Button>
               )}
               {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="dark" disabled={busy} onClick={() => patch("no_show")}>Não compareceu</Button>}
-              {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="danger" disabled={busy} onClick={() => patch("cancelado")}>Cancelar</Button>}
+              {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="danger" disabled={busy} onClick={() => setCancelOpen(true)}>Cancelar com motivo</Button>}
               {["pendente", "confirmado"].includes(b.status) && !resched && (
                 <Button size="sm" variant="ghost" onClick={() => { const p = utcToLocalParts(tz, b.starts_at); setResched(p); }}>Remarcar…</Button>
               )}
