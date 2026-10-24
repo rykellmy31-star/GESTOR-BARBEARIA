@@ -242,7 +242,7 @@ function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
               {["pendente", "confirmado"].includes(b.status)&&!b.checked_in_at&&(
                 <Button size="sm" disabled={busy} onClick={confirmArrival}>Cliente chegou</Button>
               )}
-              {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="dark" disabled={busy} onClick={() => patch("concluido")}>Concluir</Button>
+              {["pendente", "confirmado"].includes(b.status) && <Button size="sm" variant="dark" disabled={busy} onClick={() => patch("concluido")}>Concluir</Button>}
               {["pendente","confirmado"].includes(b.status) &&
                 Date.now()>=Date.parse(b.starts_at) && Date.now()+300000<Date.parse(b.ends_at) && (
                 <Button size="sm" disabled={busy} onClick={finishEarly}>
