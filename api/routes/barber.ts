@@ -158,7 +158,7 @@ barberRouter.post("/bookings/:id/cancel", async (c) => {
   if (!own) return err(c, "Agendamento não encontrado", 404);
   if (own.barber_id !== m.barber_id) return err(c, "Este atendimento não é seu", 403);
   const parsed=z.object({
-   reason:z.enum(["Cliente desistiu","Avisou pelo WhatsApp","Não poderá comparecer","Outro motivo"]),
+   reason:z.string().trim().min(1).max(120),
    details:z.string().trim().max(120).default("")
   }).strict().safeParse(await c.req.json().catch(()=>null));
   if(!parsed.success)return err(c,"Selecione o motivo do cancelamento.",422);
