@@ -192,12 +192,14 @@ export async function cancelBooking(ctx: BookingMutationCtx, bookingId: number, 
   if (opts.actorRole === "cliente" && b.allowed_cancel_until && Date.parse(b.allowed_cancel_until) < Date.now())
     return { ok: false, message: "O prazo para cancelamento on-line expirou. Fale conosco pelo WhatsApp.", status: 409 };
 
+  // Razão fica registrada em coluna própria; não modificar observações do cliente.
+  const reason=(opts.reason??"").trim().slice(0,200);
   const token=crypto.randomUUID();
   const results=await db.batch([
-    db.prepare(`UPDATE bookings SET status='cancelado', notes = CASE WHEN ?2 = '' THEN notes ELSE notes || ' — ' || ?2 END,
+    db.prepare(`UPDATE bookings SET status='cancelado',cancel_reason=?2,
       schedule_version=schedule_version+1,mutation_token=?5,updated_at=?3
       WHERE id=?1 AND company_id=?4 AND status=?6 AND schedule_version=?7 AND mutation_token=?8`)
-      .bind(b.id,opts.reason??"",nowIso(),companyId,token,b.status,b.schedule_version,b.mutation_token),
+      .bind(b.id,reason,nowIso(),companyId,token,b.status,b.schedule_version,b.mutation_token),
     db.prepare(`DELETE FROM booking_slots WHERE booking_id=?1 AND company_id=?2
       AND EXISTS(SELECT 1 FROM bookings WHERE id=?1 AND company_id=?2 AND mutation_token=?3)`).bind(b.id,companyId,token),
     ...insertBookingNotifications(db, companyId, { code: String(b.code), customer_name: b.customer_name, customer_phone: b.customer_phone, barber_id: b.barber_id, barber_name: b.barber_name, service_name: b.service_name ?? "", starts_at: b.starts_at, price_cents: b.price_cents, status: "cancelado" }, settings.timezone, `Agendamento ${b.code} cancelado (${opts.actorRole})`, "cancel",token),
@@ -205,8 +207,42 @@ export async function cancelBooking(ctx: BookingMutationCtx, bookingId: number, 
   if(results[0].meta.changes!==1) return {ok:false,message:"Este agendamento foi alterado em outra operação. Atualize a agenda antes de cancelar.",status:409};
   // cancela lembretes/confirmações pendentes + libera reservas
   await cancelPendingJobs(db,companyId,b.id,null,"agendamento cancelado",undefined,b.schedule_version+1);
-  await audit(db, ctx.user ?? null, "cancel", "booking", b.id, { code: b.code, via: opts.actorRole, reason: opts.reason ?? "" }, { companyId });
+  await audit(db, ctx.user ?? null, "cancel", "booking", b.id, { code: b.code, via: opts.actorRole, reason }, { companyId });
   return { ok: true };
+}
+
+/** Check-in PRESENCIAL: registra chegada, mantendo a reserva e as travas de horário.
+ * Não significa conclusão do serviço nem confirmação de pagamento.
+ * Confirmação duplicada, tardia ou em outra empresa não altera o registro.
+ */
+export async function markBookingArrived(ctx:BookingMutationCtx,bookingId:number,at=new Date()):
+ Promise<{ok:true;checkedInAt:string}|{ok:false;message:string;status:number}> {
+ if(ctx.origin==="cliente")return {ok:false,message:"Check-in deve ser confirmado pela equipe.",status:403};
+ if(!Number.isSafeInteger(bookingId)||bookingId<1)
+   return {ok:false,message:"Agendamento inválido.",status:400};
+ const b=await ctx.db.prepare(`SELECT id,code,barber_id,status,starts_at,ends_at,checked_in_at
+  FROM bookings WHERE id=?1 AND company_id=?2`).bind(bookingId,ctx.companyId)
+  .first<{id:number;code:string;barber_id:number;status:string;starts_at:string;ends_at:string;checked_in_at:string|null}>();
+ if(!b)return {ok:false,message:"Agendamento não encontrado.",status:404};
+ if(!["pendente","confirmado"].includes(b.status))
+   return {ok:false,message:"Somente agendamentos ativos aceitam check-in.",status:409};
+ if(b.checked_in_at)return {ok:false,message:"Chegada já registrada.",status:409};
+ const now=at.getTime(),starts=Date.parse(b.starts_at),ends=Date.parse(b.ends_at);
+ if(!Number.isFinite(now)||!Number.isFinite(starts)||!Number.isFinite(ends)||
+    now<starts-2*60*60_000||now>ends+60*60_000)
+  return {ok:false,message:"Check-in permitido de 2 horas antes até 1 hora após o fim previsto.",status:409};
+ const checkedInAt=at.toISOString().replace(/\.\d{3}Z$/,"Z");
+ const changed=await ctx.db.prepare(`UPDATE bookings
+  SET checked_in_at=?1,checked_in_by_user_id=?2,updated_at=?1
+  WHERE id=?3 AND company_id=?4 AND status IN ('pendente','confirmado')
+  AND checked_in_at IS NULL`)
+  .bind(checkedInAt,ctx.user?.id??null,b.id,ctx.companyId).run();
+ if(changed.meta.changes!==1)
+   return {ok:false,message:"Agendamento alterado por outra operação; atualize a agenda.",status:409};
+ await audit(ctx.db,ctx.user??null,"check_in","booking",b.id,{
+  code:b.code,barber_id:b.barber_id,checked_in_at:checkedInAt
+ },{companyId:ctx.companyId});
+ return {ok:true,checkedInAt};
 }
 
 export async function rescheduleBooking(
