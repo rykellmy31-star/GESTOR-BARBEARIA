@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { CalendarClock, CalendarX2, LogIn } from "lucide-react";
+import { CalendarClock, CalendarX2, CheckCircle2, LogIn } from "lucide-react";
 import { api, siteBase } from "@/lib/api";
 import { useConfig } from "@/lib/hooks";
 import { Badge, Button, ConfirmDialog, Field, Input, Spinner, useToast } from "@/components/ui";
@@ -24,6 +24,7 @@ export function MyBookingsPage() {
   const [rows, setRows] = useState<any[] | null>(null);
   const [cancelTarget, setCancelTarget] = useState<any | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [checkInBusy,setCheckInBusy]=useState<number|null>(null);
   const [reschedTarget, setReschedTarget] = useState<any | null>(null);
   const [slots, setSlots] = useState<ReschedSlot[]>([]);
   const [reschedDate, setReschedDate] = useState("");
@@ -64,6 +65,22 @@ export function MyBookingsPage() {
       setPixInfo(response.payment);
     } catch(e:any) { toast.push("err",e.message); }
     finally { setPixBusy(false); }
+  };
+  const selfCheckIn=async(b:any)=>{
+    const token=localStorage.getItem("tigu_token_"+b.code);
+    if(!token){
+      toast.push("err","Para confirmar sua chegada neste celular, você precisa do código privado salvo ao agendar. Peça ao barbeiro para registrar sua presença.");
+      return;
+    }
+    setCheckInBusy(b.id);
+    try{
+      await api.post("/bookings/check-in",{
+        code:b.code,phone:phone.replace(/\\D/g,""),cancel_token:token
+      });
+      toast.push("ok","Chegada informada! Avise ao profissional que você está presente.");
+      void lookup();
+    }catch(e:any){toast.push("err",e.message||"Não foi possível confirmar sua chegada.");}
+    finally{setCheckInBusy(null);}
   };
   const doCancel = async () => {
     if (!cancelTarget || cancelBusy) return;
@@ -151,6 +168,12 @@ export function MyBookingsPage() {
               </div>
               <p className="mt-1 text-sm text-zinc-400">{fmtDateTime(b.starts_at, tz)} · {b.barber_name} · {money(b.price_cents)}</p>
               <p className="mt-0.5 text-xs text-zinc-600">Protocolo {b.code}</p>
+              {b.checked_in_at&&<p className="mt-2 text-xs text-emerald-300">
+                {b.checked_in_source==="cliente"?"Chegada informada pelo cliente":"Chegada confirmada pela equipe"}
+                {" · "}{new Date(b.checked_in_at).toLocaleTimeString("pt-BR",{
+                  timeZone:tz,hour:"2-digit",minute:"2-digit"
+                })}
+              </p>}
               {b.payment_choice==="pix"&&(
                 <div className="mt-2 rounded-lg border border-line bg-ink-soft p-3 text-xs">
                   <p className="text-zinc-300">Pix: {b.payment_status==="paid"?"pagamento confirmado":
@@ -180,7 +203,11 @@ export function MyBookingsPage() {
                 </div>
               )}
 
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
+                {b.can_check_in&&<Button size="sm" disabled={checkInBusy!==null}
+                  onClick={()=>void selfCheckIn(b)}>
+                  <CheckCircle2 size={13}/>{checkInBusy===b.id?"Registrando…":"Cheguei"}
+                </Button>}
                 {b.can_reschedule && b.barber_id && <Button size="sm" variant="ghost" onClick={() => openResched(b)}>Remarcar</Button>}
                 {b.can_cancel && <Button size="sm" variant="danger" onClick={() => setCancelTarget(b)}><CalendarX2 size={13} /> Cancelar</Button>}
                 {!b.can_cancel && !b.can_reschedule && <span className="text-xs text-zinc-600">Fora do prazo de alteração on-line — use o WhatsApp.</span>}
