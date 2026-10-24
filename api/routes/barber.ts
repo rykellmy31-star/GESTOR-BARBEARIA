@@ -11,7 +11,7 @@ import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
 import { beginSellerOauth, sellerOauthEnabled } from "../lib/seller-mercadopago-oauth";
 import { sellerPixReady } from "../lib/seller-payments";
 import { calendarDaySchema } from "../lib/admin-blocks";
-import { createBooking, setBookingStatus, cancelBooking, rescheduleBooking, finishBookingEarly } from "../lib/booking";
+import { createBooking, setBookingStatus, cancelBooking, rescheduleBooking, finishBookingEarly, markBookingArrived } from "../lib/booking";
 import { todayLocal, addDays, localToUtc, parseHHMM } from "../lib/time";
 import { computeDaySlots, type BarberRow } from "../lib/availability";
 import type { ServiceRow } from "../lib/availability";
@@ -134,6 +134,21 @@ barberRouter.post("/bookings/:id/finish-early",async c=>{
  return json(c,result);
 });
 
+barberRouter.post("/bookings/:id/check-in",async c=>{
+  const m=me(c),id=Number(c.req.param("id"));
+  if(!Number.isSafeInteger(id)||id<1)return err(c,"Agendamento inválido.",400);
+  const row=await c.env.DB.prepare("SELECT barber_id FROM bookings WHERE id=?1 AND company_id=?2")
+   .bind(id,cid(c)).first<{barber_id:number}>();
+  if(!row)return err(c,"Agendamento não encontrado.",404);
+  if(row.barber_id!==m.barber_id)return err(c,"Este atendimento não é seu.",403);
+  const result=await markBookingArrived({
+   env:c.env,db:c.env.DB,companyId:cid(c),settings:ctxSettings(c),origin:"barbeiro",
+   user:c.get("user") as never
+  },id);
+  if(!result.ok)return err(c,result.message,result.status);
+  return json(c,result);
+});
+
 barberRouter.post("/bookings/:id/cancel", async (c) => {
   const s = ctxSettings(c);
   if (!s.barber_can_cancel) return err(c, "Cancelamento pelo barbeiro está desativado — fale com o dono", 403);
@@ -142,8 +157,13 @@ barberRouter.post("/bookings/:id/cancel", async (c) => {
   const own = await c.env.DB.prepare(`SELECT barber_id FROM bookings WHERE id=?1 AND company_id=?2`).bind(id, cid(c)).first<{ barber_id: number }>();
   if (!own) return err(c, "Agendamento não encontrado", 404);
   if (own.barber_id !== m.barber_id) return err(c, "Este atendimento não é seu", 403);
-  const body = (await c.req.json().catch(() => ({}))) as { reason?: string };
-  const res = await cancelBooking({ env: c.env, db: c.env.DB, companyId: cid(c), settings: s, origin: "barbeiro", user: c.get("user") as never }, id, { actorRole: "admin", reason: body.reason || `cancelado por ${m.name}` });
+  const parsed=z.object({
+   reason:z.enum(["Cliente desistiu","Avisou pelo WhatsApp","Não poderá comparecer","Outro motivo"]),
+   details:z.string().trim().max(120).default("")
+  }).strict().safeParse(await c.req.json().catch(()=>null));
+  if(!parsed.success)return err(c,"Selecione o motivo do cancelamento.",422);
+  const reason=parsed.data.reason+(parsed.data.details?" — "+parsed.data.details:"");
+  const res = await cancelBooking({ env: c.env, db: c.env.DB, companyId: cid(c), settings: s, origin: "barbeiro", user: c.get("user") as never }, id, { actorRole: "barbeiro", reason });
   if (!res.ok) return err(c, res.message, res.status);
   return json(c, { ok: true });
 });
@@ -245,12 +265,12 @@ barberRouter.get("/agenda", async (c) => {
   const end=localToUtc(tz,to,0).toISOString().replace(/\.\d{3}Z$/,"Z");
   const { results } = await c.env.DB
     .prepare(
-      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.customer_name, b.customer_phone, b.notes, b.price_cents, b.origin, s.name AS service_name, s.duration_min AS default_duration_min
+      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.customer_name, b.customer_phone, b.notes, b.price_cents, b.origin, b.checked_in_at, b.cancel_reason, s.name AS service_name, s.duration_min AS default_duration_min
        FROM bookings b LEFT JOIN services s ON s.id=b.service_id
        WHERE b.company_id=?1 AND b.barber_id=?2 AND b.starts_at>=?3 AND b.starts_at<?4 AND b.status!='bloqueio' ORDER BY b.starts_at`
     )
     .bind(cid(c),m.barber_id,start,end)
-    .all<Record<string, unknown> & { starts_at: string; ends_at: string; duration_min: number | null }>();
+    .all<Record<string, unknown> & { starts_at: string; ends_at: string; default_duration_min: number | null }>();
   const { utcToLocal } = await import("../lib/time");
   const byDay: Record<string, Record<string, unknown>[]> = {};
   for (const r of results) {
