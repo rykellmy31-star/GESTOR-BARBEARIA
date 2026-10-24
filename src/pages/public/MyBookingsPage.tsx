@@ -75,7 +75,7 @@ export function MyBookingsPage() {
     setCheckInBusy(b.id);
     try{
       await api.post("/bookings/check-in",{
-        code:b.code,phone:phone.replace(/\\D/g,""),cancel_token:token
+        code:b.code,phone:phone.replace(/\D/g,""),cancel_token:token
       });
       toast.push("ok","Chegada informada! Avise ao profissional que você está presente.");
       void lookup();
