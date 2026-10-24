@@ -36,6 +36,18 @@ export interface ServiceRow {
   price_cents: number;
 }
 
+/** O tempo personalizado pertence ao vínculo serviço+profissional.
+ * Sem preferência cadastrada, mantém a duração original da barbearia. */
+export async function effectiveServiceDuration(db: D1Database, barberId: number, service: ServiceRow): Promise<number> {
+  const linked = await db.prepare(`SELECT sb.duration_override_min AS minutes
+    FROM service_barbers sb
+    JOIN barbers b ON b.id=sb.barber_id
+    JOIN services s ON s.id=sb.service_id AND s.company_id=b.company_id
+    WHERE sb.barber_id=?1 AND sb.service_id=?2`)
+    .bind(barberId, service.id).first<{ minutes: number | null }>();
+  return linked?.minutes ?? service.duration_min;
+}
+
 export interface DaySlot {
   /** Instante inicial em UTC ISO */
   t: string;
@@ -109,7 +121,7 @@ export async function isDayBlocked(db: D1Database, barberId: number, day: string
  */
 export async function computeDaySlots(
   db: D1Database,
-  opts: { barber: BarberRow; service: ServiceRow; day: string; settings: ShopSettings; mode?: "public" | "admin"; now?: Date; excludeBookingId?: number; stepOverrideMin?: number }
+  opts: { barber: BarberRow; service: ServiceRow; day: string; settings: ShopSettings; mode?: "public" | "admin"; now?: Date; excludeBookingId?: number; stepOverrideMin?: number; fixedDurationMin?: number }
 ): Promise<DayResult> {
   const s = opts.settings;
   const tz = s.timezone;
@@ -136,7 +148,7 @@ export async function computeDaySlots(
   const workEnd = Math.min(parseHHMM(opts.barber.work_end), parseHHMM(open.close));
   const breakA = parseHHMM(opts.barber.break_start);
   const breakB = parseHHMM(opts.barber.break_end);
-  const duration = opts.service.duration_min;
+  const duration = opts.fixedDurationMin ?? await effectiveServiceDuration(db,opts.barber.id,opts.service);
   const step = opts.stepOverrideMin ?? Math.max(5, s.slot_step_min);
 
   if (workEnd - workStart < duration) return { ...empty, closed_reason: "fora_intervalo" };
@@ -149,8 +161,31 @@ export async function computeDaySlots(
 
   const busy = await loadBusyIntervals(db, opts.barber.id, day, day, tz, opts.excludeBookingId);
 
+  // Mantém a grade configurada e abre também o instante exato ao fim de
+  // cada atendimento (ex.: corte 09h10-09h50 oferece 09h50).
+  const candidates = new Set<number>();
+  for (let m=workStart; m+duration<=workEnd; m+=step) candidates.add(m);
+  for (const interval of busy) {
+    const endLocal=utcToLocal(tz,new Date(interval.b));
+    if(endLocal.day===day) {
+      const next=Math.ceil(endLocal.minutes/5)*5;
+      if(next>=workStart&&next+duration<=workEnd)candidates.add(next);
+    }
+  }
+  // A conclusão antecipada abre a vaga liberada em múltiplos de 5 minutos.
+  const released=await db.prepare(`SELECT ends_at FROM bookings
+    WHERE barber_id=?1 AND status='concluido' AND actual_finished_at IS NOT NULL
+      AND scheduled_ends_at>ends_at AND ends_at>=?2 AND ends_at<?3`)
+    .bind(opts.barber.id,localToUtc(tz,day,0).toISOString(),
+      localToUtc(tz,addDays(day,1),0).toISOString()).all<{ends_at:string}>();
+  for(const done of released.results) {
+    const endLocal=utcToLocal(tz,new Date(done.ends_at));
+    if(endLocal.day===day&&endLocal.minutes>=workStart&&endLocal.minutes+duration<=workEnd)
+      candidates.add(endLocal.minutes);
+  }
+
   const slots: DaySlot[] = [];
-  for (let m = workStart; m + duration <= workEnd; m += step) {
+  for (const m of [...candidates].sort((a,b)=>a-b)) {
     const startMs = localToUtc(tz, day, m).getTime();
     const endMs = localToUtc(tz, day, m + duration).getTime();
     const label = formatHHMM(m);
@@ -213,12 +248,13 @@ export async function assertSlotAllowed(
   if (!Number.isFinite(startMs)) return { ok: false, error: "Data/hora inválida", status: 400 };
   const { day } = utcToLocal(tz, new Date(startMs));
   const local = utcToLocal(tz, new Date(startMs));
+  const standardDuration=await effectiveServiceDuration(db,barber.id,service);
   if(opts.fitInDurationMin!=null && (
     opts.origin==="cliente" || !Number.isInteger(opts.fitInDurationMin) ||
-    opts.fitInDurationMin<5 || opts.fitInDurationMin>Math.min(service.duration_min,180) ||
+    opts.fitInDurationMin<5 || opts.fitInDurationMin>Math.min(standardDuration,180) ||
     opts.fitInDurationMin%5!==0 || local.minutes%5!==0
   ))return {ok:false,error:"Encaixe inválido: duração deve caber no serviço e usar incrementos de 5 minutos.",status:422};
-  const actualService=opts.fitInDurationMin==null?service:{...service,duration_min:opts.fitInDurationMin};
+  const actualService={...service,duration_min:opts.fitInDurationMin??standardDuration};
   const endMs = startMs + actualService.duration_min * 60000;
   const endsAt = new Date(endMs).toISOString().replace(/\.\d{3}Z$/, "Z");
 
@@ -233,6 +269,7 @@ export async function assertSlotAllowed(
     now:new Date(),
     excludeBookingId:opts.excludeBookingId,
     stepOverrideMin: opts.fitInDurationMin==null?undefined:5,
+    fixedDurationMin:actualService.duration_min,
   });
   if (!result.ok || !result.slots.length) {
     return { ok: false, error: reasonClosed(result.closed_reason), status: 409 };
@@ -341,7 +378,7 @@ export async function monthSummary(
     const workStart = Math.max(parseHHMM(opts.barber.work_start), parseHHMM(open.open));
     const workEnd = Math.min(parseHHMM(opts.barber.work_end), parseHHMM(open.close));
     const step = Math.max(5, s.slot_step_min);
-    const duration = opts.service.duration_min;
+    const duration = await effectiveServiceDuration(db,opts.barber.id,opts.service);
     const breakA = parseHHMM(opts.barber.break_start);
     const breakB = parseHHMM(opts.barber.break_end);
     const now = new Date();
