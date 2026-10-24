@@ -388,7 +388,7 @@ async function companyOwnsIds(db:D1Database,table:"services"|"barbers",companyId
 }
 async function syncBarberServices(db:D1Database,companyId:number,barberId:number,serviceIds:number[]) {
   await db.batch([
-    db.prepare("DELETE FROM service_barbers WHERE barber_id=?1 AND barber_id IN(SELECT id FROM barbers WHERE company_id=?2)").bind(barberId,companyId),
+    db.prepare("DELETE FROM service_barbers WHERE barber_id=?1 AND EXISTS(SELECT 1 FROM barbers WHERE id=?1 AND company_id=?2) AND service_id NOT IN (SELECT value FROM json_each(?3))").bind(barberId,companyId,JSON.stringify(serviceIds)),
     ...[...new Set(serviceIds)].map(sid=>db.prepare(`INSERT OR IGNORE INTO service_barbers(service_id,barber_id)
       SELECT s.id,b.id FROM services s JOIN barbers b ON b.company_id=s.company_id
       WHERE s.id=?1 AND b.id=?2 AND s.company_id=?3`).bind(sid,barberId,companyId)),
@@ -396,7 +396,7 @@ async function syncBarberServices(db:D1Database,companyId:number,barberId:number
 }
 async function syncServiceBarbers(db:D1Database,companyId:number,serviceId:number,barberIds:number[]) {
   await db.batch([
-    db.prepare("DELETE FROM service_barbers WHERE service_id=?1 AND service_id IN(SELECT id FROM services WHERE company_id=?2)").bind(serviceId,companyId),
+    db.prepare("DELETE FROM service_barbers WHERE service_id=?1 AND EXISTS(SELECT 1 FROM services WHERE id=?1 AND company_id=?2) AND barber_id NOT IN (SELECT value FROM json_each(?3))").bind(serviceId,companyId,JSON.stringify(barberIds)),
     ...[...new Set(barberIds)].map(bid=>db.prepare(`INSERT OR IGNORE INTO service_barbers(service_id,barber_id)
       SELECT s.id,b.id FROM services s JOIN barbers b ON b.company_id=s.company_id
       WHERE s.id=?1 AND b.id=?2 AND s.company_id=?3`).bind(serviceId,bid,companyId)),
