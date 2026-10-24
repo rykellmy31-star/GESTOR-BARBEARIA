@@ -230,7 +230,7 @@ function BookingModal({ item: b, onClose, onChanged, onFitIn, tz }: any) {
             {b.customer_phone && <a className="flex items-center gap-1.5 text-[var(--c-gold)]" href={`https://wa.me/${b.customer_phone.replace(/\D/g, "").replace(/^(?!55)/, "55")}`} target="_blank" rel="noreferrer"><Link2 size={13} /> {b.customer_phone} (WhatsApp)</a>}
             {b.notes && <p className="mt-1.5 text-zinc-400">Obs.: {b.notes}</p>}
             {b.checked_in_at&&<p className="mt-1.5 text-emerald-300">
-              Chegada registrada às {new Date(b.checked_in_at).toLocaleTimeString("pt-BR",{
+              {b.checked_in_source==="cliente"?"Cliente informou chegada às ":"Chegada confirmada às "}{new Date(b.checked_in_at).toLocaleTimeString("pt-BR",{
                 timeZone:tz,hour:"2-digit",minute:"2-digit"
               })}
             </p>}
