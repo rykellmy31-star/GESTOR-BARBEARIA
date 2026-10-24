@@ -21,11 +21,12 @@ function migrated(){
 }
 
 test("a cadeia base inclui o OAuth e o vínculo de recebedor 0100",()=>{
-  assert.equal(files.length,24);
+  assert.equal(files.length,25);
   files.slice(0,21).forEach((f,i)=>assert.equal(Number(f.slice(0,4)),i+1));
   assert.equal(files[21],"0099_seller_mercadopago_oauth.sql");
   assert.equal(files[22],"0100_seller_pix.sql");
   assert.equal(files[23],"0101_barber_service_duration.sql");
+  assert.equal(files[24],"0102_booking_checkin_cancel_reason.sql");
   const db=migrated();
   try{
     assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check,"ok");
@@ -46,6 +47,9 @@ test("colunas de dinheiro e índices de auditoria/paginação foram criados",()=
     assert.ok(col("bookings").has("scheduled_ends_at"));
     assert.ok(col("bookings").has("actual_finished_at"));
     assert.ok(col("bookings").has("fit_in_duration_min"));
+    assert.ok(col("bookings").has("checked_in_at"));
+    assert.ok(col("bookings").has("checked_in_by_user_id"));
+    assert.ok(col("bookings").has("cancel_reason"));
     assert.ok(col("booking_payments").has("amount_cents"));
     assert.ok(col("service_barbers").has("duration_override_min"));
     assert.ok(col("booking_payments").has("receiver_barber_id"));
