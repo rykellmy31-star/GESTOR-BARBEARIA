@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { api, siteBase } from "@/lib/api";
 import { useAuth, useConfig } from "@/lib/hooks";
 import { NotificationsBell } from "@/components/layout/PanelLayout";
+import { BookingCancelDialog } from "@/components/BookingCancelDialog";
 import { Badge, Button, EmptyState, Field, Input, Modal, Spinner, Textarea, useToast } from "@/components/ui";
 import { fmtDayLong, fromMinutes, localDay, money, toMinutes } from "@/lib/format";
 
@@ -22,6 +23,7 @@ export function BarberPanelPage() {
   const [tab, setTab] = useState(0);
   const [blockOpen, setBlockOpen] = useState(false);
   const [fitOpen, setFitOpen] = useState(false);
+  const [cancelItem,setCancelItem]=useState<{id:number;name:string}|null>(null);
   useEffect(() => {
     const url = new URL(window.location.href);
     const outcome = url.searchParams.get("mp");
@@ -81,6 +83,14 @@ export function BarberPanelPage() {
       toast.push("ok",Math.round(minutesAvailable)+" minutos liberados para encaixe na sua agenda.");},
     onError:(e:any)=>toast.push("err",e.message||"Não foi possível liberar o horário."),
   });
+  const checkIn=useMutation({
+    mutationFn:(id:number)=>api.post<{ok:boolean;checkedInAt:string}>("/barber/bookings/"+id+"/check-in",{}),
+    onSuccess:()=>{
+      void qc.invalidateQueries({queryKey:["barber-agenda",siteBase()]});
+      toast.push("ok","Chegada confirmada! Cliente presente na barbearia.");
+    },
+    onError:(e:any)=>toast.push("err",e.message||"Não foi possível registrar a chegada."),
+  });
   const setStatus = useMutation({
     mutationFn: ({ id, status }: any) => api.patch(`/barber/bookings/${id}/status`, { status }),
     onSuccess: (_v, args) => { qc.invalidateQueries({ queryKey: ["barber-agenda", siteBase()] }); qc.invalidateQueries({ queryKey: ["/barber/notifications", siteBase().split("/")[2]] }); toast.push("ok", `Reserva marcada como ${args.status}.`); },
@@ -99,7 +109,7 @@ export function BarberPanelPage() {
   if (!barber) return <div className="grid min-h-screen place-items-center text-sm text-zinc-400">Usuário sem barbeiro vinculado — fale com o proprietário.</div>;
 
   const day = days[tab];
-  const items = (agenda.data?.days?.[day] ?? []).filter((x: any) => x.status !== "cancelado");
+  const items = (agenda.data?.days?.[day] ?? []);
   const weekday = (new Date(`${day}T12:00:00Z`).getUTCDay());
   const worksToday = (agenda.data?.work_days ?? []).includes(weekday);
   const isBlocked = (agenda.data?.blocked ?? []).some((b: any) => b.date_from <= day && b.date_to >= day);
@@ -201,13 +211,20 @@ export function BarberPanelPage() {
                       <p className="truncate font-medium text-zinc-100">{it.customer_name}</p>
                       <p className="truncate text-xs text-zinc-500">{it.service_name} · {it.duration_min} min · {money(it.price_cents)} {it.origin === "barbeiro" ? "· manual" : ""}</p>
                       {it.notes && <p className="truncate text-[11px] italic text-zinc-500">“{it.notes}”</p>}
+                      {it.cancel_reason && <p className="text-xs text-red-300">Motivo do cancelamento: {it.cancel_reason}</p>}
+                      {it.checked_in_at&&<p className="text-xs text-emerald-300">
+                        Cliente chegou às {new Date(it.checked_in_at).toLocaleTimeString("pt-BR",{timeZone:tz,hour:"2-digit",minute:"2-digit"})}
+                      </p>}
                     </div>
-                    <Badge tone={it.status === "confirmado" ? "green" : it.status === "concluido" ? "gray" : it.status === "no_show" ? "red" : "amber"}>{it.status}</Badge>
+                    {it.checked_in_at&&<Badge tone="green">Chegou</Badge>}
+                    <Badge tone={it.status === "confirmado" ? "green" : it.status === "concluido" ? "gray" : ["no_show","cancelado"].includes(it.status) ? "red" : "amber"}>{it.status}</Badge>
                     {it.customer_phone && (
                       <a href={`https://wa.me/${String(it.customer_phone).replace(/\D/g, "").replace(/^(?!55)/, "55")}`} target="_blank" rel="noreferrer" className="rounded-lg border border-line p-1.5 text-zinc-400 hover:border-[var(--c-gold)] hover:text-[var(--c-gold)]" aria-label="WhatsApp do cliente"><Phone size={14} /></a>
                     )}
                     {["pendente", "confirmado"].includes(it.status) && (
-                      <span className="flex gap-1.5">
+                      <span className="flex flex-wrap gap-1.5">
+                        {!it.checked_in_at&&<Button size="sm" variant="dark" disabled={checkIn.isPending}
+                          onClick={()=>checkIn.mutate(it.id)}><CheckCircle2 size={13}/> Cliente chegou</Button>}
                         {perms?.can_conclude && <Button size="sm" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: it.id, status: "concluido" })}><CheckCircle2 size={13} /> Concluir</Button>}
                         {perms?.can_conclude && Date.now()>=Date.parse(it.starts_at) &&
                           Date.now()+5*60000<Date.parse(it.ends_at) && (
@@ -217,7 +234,8 @@ export function BarberPanelPage() {
                           }}><Clock3 size={13}/> Concluir antes e liberar vaga</Button>
                         )}
                         {perms?.can_conclude && <Button size="sm" variant="dark" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: it.id, status: "no_show" })}><UserX size={13} /> Faltou</Button>}
-                        {perms?.can_cancel && <Button size="sm" variant="danger" disabled={setStatus.isPending} onClick={() => { if (window.confirm("Cancelar este atendimento? O horário ficará disponível para outro cliente.")) setStatus.mutate({ id: it.id, status: "cancelado" }); }}>Cancelar</Button>}
+                        {perms?.can_cancel && <Button size="sm" variant="danger"
+  onClick={()=>setCancelItem({id:it.id,name:it.customer_name})}>Cancelar com motivo</Button>}
                       </span>
                     )}
                   </div>
@@ -228,6 +246,10 @@ export function BarberPanelPage() {
         )}
       </main>
 
+      {cancelItem&&<BookingCancelDialog panel="barber" bookingId={cancelItem.id}
+        customer={cancelItem.name} onClose={()=>setCancelItem(null)} onDone={()=>{
+          setCancelItem(null);void qc.invalidateQueries({queryKey:["barber-agenda",siteBase()]});
+        }}/>}
       {fitOpen&&<FitInModal day={day} tz={tz} services={serviceTimes.data?.services??[]}
         onClose={()=>setFitOpen(false)} onDone={()=>{
           setFitOpen(false);void qc.invalidateQueries({queryKey:["barber-agenda",siteBase()]});
