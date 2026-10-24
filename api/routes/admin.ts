@@ -150,7 +150,7 @@ adminRouter.get("/agenda", async (c) => {
   const binds: unknown[] = [id, startUtc, endUtc];
   if (barberId) { where.push("b.barber_id = ?4"); binds.push(barberId); }
   const rows = await db.prepare(
-    `SELECT b.id, b.code, b.status, b.origin, b.starts_at, b.ends_at, b.price_cents, b.customer_name, b.customer_phone, b.notes, b.checked_in_at, b.cancel_reason,
+    `SELECT b.id, b.code, b.status, b.origin, b.starts_at, b.ends_at, b.price_cents, b.customer_name, b.customer_phone, b.notes, b.checked_in_at, b.checked_in_source, b.cancel_reason,
             s.name AS service_name, s.duration_min, br.id AS barber_id, br.name AS barber_name, br.photo AS barber_photo
      FROM bookings b JOIN barbers br ON br.id=b.barber_id AND br.company_id=?1 LEFT JOIN services s ON s.id=b.service_id
      WHERE ${where.join(" AND ")} ORDER BY b.starts_at ASC`
