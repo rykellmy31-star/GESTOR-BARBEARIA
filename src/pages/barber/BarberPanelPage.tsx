@@ -213,7 +213,7 @@ export function BarberPanelPage() {
                       {it.notes && <p className="truncate text-[11px] italic text-zinc-500">“{it.notes}”</p>}
                       {it.cancel_reason && <p className="text-xs text-red-300">Motivo do cancelamento: {it.cancel_reason}</p>}
                       {it.checked_in_at&&<p className="text-xs text-emerald-300">
-                        Cliente chegou às {new Date(it.checked_in_at).toLocaleTimeString("pt-BR",{timeZone:tz,hour:"2-digit",minute:"2-digit"})}
+                        {it.checked_in_source===\"cliente\"?\"Cliente informou chegada às \":\"Chegada confirmada às \"}{new Date(it.checked_in_at).toLocaleTimeString("pt-BR",{timeZone:tz,hour:"2-digit",minute:"2-digit"})}
                       </p>}
                     </div>
                     {it.checked_in_at&&<Badge tone="green">Chegou</Badge>}
