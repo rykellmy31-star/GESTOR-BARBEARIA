@@ -11,7 +11,7 @@ import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
 import { beginSellerOauth, sellerOauthEnabled } from "../lib/seller-mercadopago-oauth";
 import { sellerPixReady } from "../lib/seller-payments";
 import { calendarDaySchema } from "../lib/admin-blocks";
-import { setBookingStatus, cancelBooking, rescheduleBooking, finishBookingEarly } from "../lib/booking";
+import { createBooking, setBookingStatus, cancelBooking, rescheduleBooking, finishBookingEarly } from "../lib/booking";
 import { todayLocal, addDays, localToUtc } from "../lib/time";
 import { computeDaySlots, type BarberRow } from "../lib/availability";
 import type { ServiceRow } from "../lib/availability";
@@ -37,6 +37,65 @@ barberRouter.get("/free-slots", async (c) => {
   const service = await db.prepare(`SELECT id, name, duration_min, price_cents FROM services WHERE company_id=?1 AND active=1 ORDER BY id LIMIT 1`).bind(cid(c)).first<ServiceRow>();
   if (!service) return err(c, "Sem serviços", 404);
   return json(c, await computeDaySlots(db, { barber, service, day, settings: ctxSettings(c), mode: "public" }));
+});
+
+
+/** O profissional ajusta o tempo do próprio serviço, nunca o preço. */
+barberRouter.get("/service-durations",async c=>{
+ const m=me(c);
+ if(!m.barber_id)return err(c,"Profissional não vinculado.",403);
+ const {results}=await c.env.DB.prepare(
+  "SELECT s.id AS service_id,s.name,s.duration_min AS default_duration_min,"+
+  "sb.duration_override_min,COALESCE(sb.duration_override_min,s.duration_min) AS duration_min "+
+  "FROM service_barbers sb JOIN barbers b ON b.id=sb.barber_id AND b.company_id=?1 AND b.active=1 "+
+  "JOIN services s ON s.id=sb.service_id AND s.company_id=b.company_id AND s.active=1 "+
+  "WHERE sb.barber_id=?2 ORDER BY s.name"
+ ).bind(cid(c),m.barber_id).all();
+ return json(c,{services:results});
+});
+
+barberRouter.put("/service-durations/:serviceId",async c=>{
+ const m=me(c),serviceId=Number(c.req.param("serviceId"));
+ if(!m.barber_id)return err(c,"Profissional não vinculado.",403);
+ if(!Number.isSafeInteger(serviceId)||serviceId<1)return err(c,"Serviço inválido.",400);
+ const parsed=z.object({
+   duration_min:z.number().int().min(5).max(480).multipleOf(5).nullable()
+ }).strict().safeParse(await c.req.json().catch(()=>null));
+ if(!parsed.success)return err(c,"Informe duração em múltiplos de 5 minutos, de 5 a 480, ou use padrão.",422);
+ const updated=await c.env.DB.prepare(
+  "UPDATE service_barbers SET duration_override_min=?1 "+
+  "WHERE service_id=?2 AND barber_id=?3 "+
+  "AND EXISTS(SELECT 1 FROM barbers b JOIN services s ON s.company_id=b.company_id "+
+  "WHERE b.id=?3 AND b.company_id=?4 AND b.active=1 AND s.id=?2 AND s.active=1)"
+ ).bind(parsed.data.duration_min,serviceId,m.barber_id,cid(c)).run();
+ if(updated.meta.changes!==1)return err(c,"Serviço não atribuído a este profissional.",404);
+ return json(c,{ok:true,duration_min:parsed.data.duration_min});
+});
+
+/** Encaixe manual: barbeiro vem da sessão; preço continua no D1. */
+barberRouter.post("/fit-in",async c=>{
+ const m=me(c);
+ if(!m.barber_id)return err(c,"Profissional não vinculado.",403);
+ const parsed=z.object({
+   serviceId:z.number().int().positive(),
+   startsAt:z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?Z$/),
+   name:z.string().trim().min(2).max(90),
+   phone:z.string().min(8).max(20),
+   email:z.string().email().or(z.literal("")).optional(),
+   notes:z.string().max(500).optional(),
+   fitInDurationMin:z.number().int().min(5).max(180).multipleOf(5),
+   idempotencyKey:z.string().min(8).max(64),
+ }).strict().safeParse(await c.req.json().catch(()=>null));
+ if(!parsed.success)return err(c,"Confira serviço, cliente, horário e duração do encaixe.",422,parsed.error.flatten().fieldErrors);
+ const input={...parsed.data,barberId:m.barber_id,consent:true,
+   whatsappOptin:false,paymentChoice:"after_service" as const};
+ const result=await createBooking({
+  env:c.env,db:c.env.DB,companyId:cid(c),settings:ctxSettings(c),origin:"barbeiro",
+  user:c.get("user") as never
+ },input);
+ if(!result.ok)return err(c,result.message,result.status);
+ return json(c,{ok:true,id:result.bookingId,code:result.code,
+  starts_at:result.startsAt,ends_at:result.endsAt,reused:result.reused??false},201);
 });
 
 const statusSchema = z.object({ status: z.enum(["confirmado", "concluido", "no_show"]) });
@@ -182,7 +241,7 @@ barberRouter.get("/agenda", async (c) => {
   const end=localToUtc(tz,to,0).toISOString().replace(/\.\d{3}Z$/,"Z");
   const { results } = await c.env.DB
     .prepare(
-      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.customer_name, b.customer_phone, b.notes, b.price_cents, b.origin, s.name AS service_name, s.duration_min
+      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.customer_name, b.customer_phone, b.notes, b.price_cents, b.origin, s.name AS service_name, s.duration_min AS default_duration_min
        FROM bookings b LEFT JOIN services s ON s.id=b.service_id
        WHERE b.company_id=?1 AND b.barber_id=?2 AND b.starts_at>=?3 AND b.starts_at<?4 AND b.status!='bloqueio' ORDER BY b.starts_at`
     )
@@ -193,9 +252,7 @@ barberRouter.get("/agenda", async (c) => {
   for (const r of results) {
     const { day, minutes } = utcToLocal(tz, r.starts_at);
     // A tela recebe o horário local e a duração para exibir cada atendimento.
-    const duration = Number(r.duration_min ?? Math.round(
-      (Date.parse(r.ends_at) - Date.parse(r.starts_at)) / 60000
-    ));
+    const duration = Math.round((Date.parse(r.ends_at) - Date.parse(r.starts_at)) / 60000);
     byDay[day] = [...(byDay[day] || []), { ...r, label: fmt(minutes), duration_min: duration }];
   }
   const bd = await c.env.DB.prepare(`SELECT date_from, date_to, reason, kind FROM blocked_days WHERE company_id=?1 AND (barber_id=?2 OR barber_id IS NULL) AND date_to>=?3 AND date_from<=?4`).bind(cid(c), m.barber_id, from, addDays(from, daysN - 1)).all();
