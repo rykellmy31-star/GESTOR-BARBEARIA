@@ -10,6 +10,7 @@ import { Badge, Button, EmptyState, Field, Input, Modal, Spinner, Textarea, useT
 import { fmtDayLong, fromMinutes, localDay, money, toMinutes } from "@/lib/format";
 
 const DAY_NAMES = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+type ProfessionalService={service_id:number;name:string;duration_min:number;default_duration_min:number;duration_override_min:number|null};
 
 export function BarberPanelPage() {
   const { data: cfg } = useConfig();
@@ -20,6 +21,7 @@ export function BarberPanelPage() {
   const toast = useToast();
   const [tab, setTab] = useState(0);
   const [blockOpen, setBlockOpen] = useState(false);
+  const [fitOpen, setFitOpen] = useState(false);
   useEffect(() => {
     const url = new URL(window.location.href);
     const outcome = url.searchParams.get("mp");
@@ -35,6 +37,15 @@ export function BarberPanelPage() {
 
   const me = useQuery({ queryKey: ["barber-me", siteBase()], queryFn: () => api.get<any>("/barber/me") });
   const marketplace = useQuery({ queryKey: ["barber-mercadopago", siteBase()], queryFn: () => api.get<{ connected:boolean; enabled:boolean; can_connect:boolean; notice:string }>("/barber/mercadopago") });
+  const serviceTimes=useQuery({queryKey:["barber-service-durations",siteBase()],
+    queryFn:()=>api.get<{services:ProfessionalService[]}>("/barber/service-durations")});
+  const saveDuration=useMutation({
+    mutationFn:({serviceId,duration}: {serviceId:number;duration:number|null})=>
+      api.put("/barber/service-durations/"+serviceId,{duration_min:duration}),
+    onSuccess:()=>{void qc.invalidateQueries({queryKey:["barber-service-durations",siteBase()]});
+      toast.push("ok","Tempo de atendimento atualizado; novas reservas respeitarão sua duração.");},
+    onError:(e:any)=>toast.push("err",e.message||"Não foi possível salvar o tempo."),
+  });
   const connectMp = useMutation({
     mutationFn: () => api.post<{ authorization_url: string }>("/barber/mercadopago/connect", {}),
     onSuccess: ({ authorization_url }) => {
@@ -62,6 +73,13 @@ export function BarberPanelPage() {
     queryKey: ["barber-agenda", siteBase(), days[0]],
     queryFn: () => api.get<any>(`/barber/agenda?from=${days[0]}&days=7`),
     refetchInterval: 30_000,
+  });
+  const finishEarly=useMutation({
+    mutationFn:(id:number)=>api.post<{ok:boolean;minutesAvailable:number}>("/barber/bookings/"+id+"/finish-early",{}),
+    onSuccess:({minutesAvailable})=>{
+      void qc.invalidateQueries({queryKey:["barber-agenda",siteBase()]});
+      toast.push("ok",Math.round(minutesAvailable)+" minutos liberados para encaixe na sua agenda.");},
+    onError:(e:any)=>toast.push("err",e.message||"Não foi possível liberar o horário."),
   });
   const setStatus = useMutation({
     mutationFn: ({ id, status }: any) => api.patch(`/barber/bookings/${id}/status`, { status }),
@@ -127,6 +145,16 @@ export function BarberPanelPage() {
           )}
           <p className="mt-2 text-xs text-zinc-500">Não informe sua senha nem cole um Access Token no painel. A futura conexão usará a autorização oficial do Mercado Pago.</p>
         </section>
+        <section className="rounded-xl border border-line bg-panel p-4" aria-label="Meus tempos de serviços">
+          <h2 className="font-display text-lg text-zinc-100">Meu tempo por serviço</h2>
+          <p className="mb-3 mt-1 text-xs text-zinc-400">Personalize sua duração de cada serviço. O valor e os demais profissionais não mudam. Agendamentos existentes mantêm seus horários.</p>
+          {serviceTimes.isLoading && <Spinner label="Carregando serviços…" />}
+          {serviceTimes.isError && <p role="alert" className="text-sm text-red-300">Não foi possível carregar seus serviços.</p>}
+          {serviceTimes.data?.services.map(x=><DurationEditor key={x.service_id+":"+x.duration_override_min}
+            service={x} pending={saveDuration.isPending}
+            onSave={duration=>saveDuration.mutate({serviceId:x.service_id,duration})}/>)}
+          {serviceTimes.data?.services.length===0&&<p className="text-sm text-zinc-400">O administrador ainda não atribuiu serviços ao seu perfil.</p>}
+        </section>
         {/* dias */}
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {days.map((d, i) => {
@@ -151,6 +179,8 @@ export function BarberPanelPage() {
             <span className="inline-flex items-center gap-1"><Star size={12} className="fill-current text-[var(--c-gold)]" />{Number(barber.rating ?? 0).toFixed(1)}</span>
             <span>·</span>
             <span>concluído no dia: <b className="text-[var(--c-gold)]">{money(revenue)}</b></span>
+            <Button size="sm" variant="dark" disabled={!serviceTimes.data?.services.length}
+              onClick={() => setFitOpen(true)}><CalendarClock size={13}/> Encaixar cliente</Button>
             {perms?.can_block && <Button size="sm" variant="dark" onClick={() => setBlockOpen(true)}><Ban size={12} /> Pedir bloqueio</Button>}
           </div>
         </div>
@@ -179,6 +209,13 @@ export function BarberPanelPage() {
                     {["pendente", "confirmado"].includes(it.status) && (
                       <span className="flex gap-1.5">
                         {perms?.can_conclude && <Button size="sm" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: it.id, status: "concluido" })}><CheckCircle2 size={13} /> Concluir</Button>}
+                        {perms?.can_conclude && Date.now()>=Date.parse(it.starts_at) &&
+                          Date.now()+5*60000<Date.parse(it.ends_at) && (
+                          <Button size="sm" variant="dark" disabled={finishEarly.isPending} onClick={()=>{
+                            if(window.confirm("Atendimento terminou mais cedo? Concluir e liberar o restante do horário para encaixe?"))
+                              finishEarly.mutate(it.id);
+                          }}><Clock3 size={13}/> Concluir antes e liberar vaga</Button>
+                        )}
                         {perms?.can_conclude && <Button size="sm" variant="dark" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: it.id, status: "no_show" })}><UserX size={13} /> Faltou</Button>}
                         {perms?.can_cancel && <Button size="sm" variant="danger" disabled={setStatus.isPending} onClick={() => { if (window.confirm("Cancelar este atendimento? O horário ficará disponível para outro cliente.")) setStatus.mutate({ id: it.id, status: "cancelado" }); }}>Cancelar</Button>}
                       </span>
@@ -191,6 +228,10 @@ export function BarberPanelPage() {
         )}
       </main>
 
+      {fitOpen&&<FitInModal day={day} tz={tz} services={serviceTimes.data?.services??[]}
+        onClose={()=>setFitOpen(false)} onDone={()=>{
+          setFitOpen(false);void qc.invalidateQueries({queryKey:["barber-agenda",siteBase()]});
+          toast.push("ok","Encaixe registrado e horário reservado.");}}/>}
       {blockOpen && <BlockRequestModal day={day} onClose={() => setBlockOpen(false)} onDone={() => { setBlockOpen(false); toast.push("ok", "Pedido enviado ao administrador."); }} />}
     </div>
   );
@@ -220,4 +261,80 @@ function BlockRequestModal({ day, onClose, onDone }: { day: string; onClose: () 
       </div>
     </Modal>
   );
+}
+
+
+function DurationEditor({service,pending,onSave}:{
+ service:ProfessionalService;pending:boolean;onSave:(duration:number|null)=>void
+}){
+ const [duration,setDuration]=useState(String(service.duration_min));
+ const n=Number(duration);
+ return <div className="flex flex-wrap items-end gap-2 border-b border-line py-3 last:border-0">
+   <div className="min-w-[120px] flex-1">
+     <p className="text-sm font-medium text-zinc-100">{service.name}</p>
+     <p className="text-xs text-zinc-500">Padrão: {service.default_duration_min} min
+       {service.duration_override_min!=null?" · personalizado":""}</p>
+   </div>
+   <label className="text-xs text-zinc-400">Meus minutos
+     <input aria-label={"Duração de "+service.name} className="input-dark mt-1 w-24" type="number"
+       inputMode="numeric" min={5} max={480} step={5} value={duration}
+       onChange={e=>setDuration(e.target.value)}/>
+   </label>
+   <Button size="sm" disabled={pending||!Number.isInteger(n)||n<5||n>480||n%5!==0}
+     onClick={()=>onSave(n)}>Salvar</Button>
+   {service.duration_override_min!=null&&<Button size="sm" variant="ghost" disabled={pending}
+     onClick={()=>onSave(null)}>Usar padrão</Button>}
+ </div>;
+}
+
+function FitInModal({day,tz,services,onClose,onDone}:{
+ day:string;tz:string;services:ProfessionalService[];onClose:()=>void;onDone:()=>void
+}){
+ const toast=useToast();
+ const [serviceId,setServiceId]=useState(services[0]?.service_id??0);
+ const svc=services.find(s=>s.service_id===serviceId);
+ const [date,setDate]=useState(day);
+ const [startTime,setStartTime]=useState("");
+ const [minutes,setMinutes]=useState(String(Math.min(services[0]?.duration_min??40,180)));
+ const [name,setName]=useState("");
+ const [phone,setPhone]=useState("");
+ const [idempotencyKey]=useState(()=>crypto.randomUUID());
+ const m=Number(minutes);
+ const canSave=Boolean(serviceId&&date&&/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)
+    &&name.trim().length>=2&&phone.replace(/\D/g,"").length>=10
+    &&Number.isInteger(m)&&m>=5&&m<=Math.min(180,svc?.duration_min??0)&&m%5===0);
+ const send=useMutation({
+   mutationFn:()=>api.post("/barber/fit-in",{
+    serviceId,day:date,startTime,fitInDurationMin:m,name:name.trim(),
+    phone:phone.replace(/\D/g,""),idempotencyKey
+   }),
+   onSuccess:onDone,
+   onError:(e:any)=>toast.push("err",e.message||"Horário indisponível. Confira o encaixe."),
+ });
+ return <Modal open title="Encaixar cliente na minha agenda" onClose={onClose}>
+  <p className="mb-3 text-xs text-zinc-400">Use somente um intervalo livre. É possível reduzir a duração deste encaixe, mas nunca sobrepor outro cliente ou intervalo de almoço. Horário da barbearia: {tz}.</p>
+  <div className="space-y-3">
+   <Field label="Serviço"><select className="input-dark" value={serviceId}
+     onChange={e=>{const id=Number(e.target.value);setServiceId(id);
+       const chosen=services.find(s=>s.service_id===id);
+       setMinutes(String(Math.min(chosen?.duration_min??40,180)));}}>
+     {services.map(s=><option value={s.service_id} key={s.service_id}>{s.name} — {s.duration_min} min</option>)}
+   </select></Field>
+   <div className="grid grid-cols-2 gap-2">
+     <Field label="Dia"><Input type="date" value={date} onChange={e=>setDate(e.target.value)}/></Field>
+     <Field label="Início"><Input type="time" step={300} value={startTime}
+       onChange={e=>setStartTime(e.target.value)}/></Field>
+   </div>
+   <Field label="Duração do encaixe (minutos)"><Input type="number"
+     inputMode="numeric" min={5} max={Math.min(180,svc?.duration_min??180)} step={5}
+     value={minutes} onChange={e=>setMinutes(e.target.value)}/></Field>
+   <Field label="Cliente"><Input value={name} onChange={e=>setName(e.target.value)} placeholder="Nome do cliente"/></Field>
+   <Field label="WhatsApp do cliente"><Input type="tel" inputMode="tel"
+     value={phone} onChange={e=>setPhone(e.target.value)} placeholder="(75) 99999-0000"/></Field>
+   <p className="text-xs text-amber-200">Reserva manual, sem Pix automático. Só confirme com os dados fornecidos pelo cliente.</p>
+   <Button className="w-full" disabled={!canSave||send.isPending} onClick={()=>send.mutate()}>
+    {send.isPending?"Registrando…":"Confirmar encaixe"}
+   </Button>
+  </div>
+ </Modal>;
 }
