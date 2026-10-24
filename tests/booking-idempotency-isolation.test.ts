@@ -3,7 +3,7 @@ import { applyBookingMigrations } from "./helpers/booking-migrations";
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
 import schema from "../migrations/0001_init.sql";
-import { createBooking, type BookingMutationCtx } from "../api/lib/booking";
+import { createBooking, cancelBooking, markBookingArrived, type BookingMutationCtx } from "../api/lib/booking";
 import { DEFAULT_SETTINGS } from "../api/lib/settings";
 import { localToUtc } from "../api/lib/time";
 import { bookingPixEnabled } from "../api/lib/booking-payments";
@@ -81,5 +81,61 @@ describe("checkout do serviço", () => {
     expect(bookingPixEnabled({...configured,PAYMENTS_MOCK:"1"})).toBe(false);
     expect(bookingPixEnabled({...configured,MSG_ENC_KEY:undefined})).toBe(false);
     expect(bookingPixEnabled(configured)).toBe(true);
+  });
+});
+
+describe("check-in presencial e motivo de cancelamento",()=>{
+  it("a equipe confirma chegada sem finalizar serviço, liberar horário nem registrar pagamento",async()=>{
+    const a=await company();
+    const day=new Date(Date.now()+4*86400000).toISOString().slice(0,10);
+    const startsAt=localToUtc("America/Bahia",day,10*60).toISOString().replace(/\\.\\d{3}Z$/,"Z");
+    const created=await createBooking(a.ctx,{serviceId:a.serviceId,barberId:a.barberId,
+      startsAt,name:"Cliente chegou",phone:"5573999991432",consent:true,whatsappOptin:false,
+      idempotencyKey:crypto.randomUUID()});
+    expect(created.ok).toBe(true);
+    if(!created.ok)throw Error(created.message);
+    const admin={...a.ctx,origin:"admin" as const};
+    const at=new Date(Date.parse(startsAt)-20*60000);
+    expect(await markBookingArrived(admin,created.bookingId,new Date(Date.parse(startsAt)-3*3600000)))
+      .toMatchObject({ok:false,status:409});
+    expect(await markBookingArrived(a.ctx,created.bookingId,at))
+      .toMatchObject({ok:false,status:403});
+    const done=await markBookingArrived(admin,created.bookingId,at);
+    expect(done).toMatchObject({ok:true,checkedInAt:at.toISOString().replace(/\\.\\d{3}Z$/,"Z")});
+    expect(await markBookingArrived(admin,created.bookingId,at))
+      .toMatchObject({ok:false,status:409});
+    const status=await db.prepare("SELECT status,checked_in_at,cancel_reason,notes FROM bookings WHERE id=?1")
+      .bind(created.bookingId).first<{status:string;checked_in_at:string;cancel_reason:string;notes:string}>();
+    expect(status?.status).toBe("confirmado");
+    expect(status?.checked_in_at).toBe(at.toISOString().replace(/\\.\\d{3}Z$/,"Z"));
+    expect(status?.cancel_reason).toBe("");
+    expect(await db.prepare("SELECT COUNT(*) AS n FROM booking_slots WHERE booking_id=?1")
+      .bind(created.bookingId).first<number>("n")).toBeGreaterThan(0);
+    const cancelled=await cancelBooking(admin,created.bookingId,{
+      reason:"Avisou pelo WhatsApp — mudança de planos",actorRole:"admin"});
+    expect(cancelled).toMatchObject({ok:true});
+    const after=await db.prepare("SELECT status,cancel_reason,notes FROM bookings WHERE id=?1")
+      .bind(created.bookingId).first<{status:string;cancel_reason:string;notes:string}>();
+    expect(after?.status).toBe("cancelado");
+    expect(after?.cancel_reason).toBe("Avisou pelo WhatsApp — mudança de planos");
+    expect(after?.notes).toBe("");
+    expect(await db.prepare("SELECT COUNT(*) AS n FROM booking_slots WHERE booking_id=?1")
+      .bind(created.bookingId).first<number>("n")).toBe(0);
+    expect(await markBookingArrived(admin,created.bookingId,at)).toMatchObject({ok:false,status:409});
+  });
+  it("não permite registrar chegada de reserva pertencente a outra empresa",async()=>{
+    const a=await company(),b=await company();
+    const day=new Date(Date.now()+6*86400000).toISOString().slice(0,10);
+    const startsAt=localToUtc("America/Bahia",day,10*60).toISOString().replace(/\\.\\d{3}Z$/,"Z");
+    const created=await createBooking(a.ctx,{serviceId:a.serviceId,barberId:a.barberId,
+      startsAt,name:"Cliente separado",phone:"5573999991433",consent:true,whatsappOptin:false,
+      idempotencyKey:crypto.randomUUID()});
+    if(!created.ok)throw Error(created.message);
+    const at=new Date(Date.parse(startsAt)-600000);
+    expect(await markBookingArrived({...b.ctx,origin:"admin"},created.bookingId,at))
+      .toMatchObject({ok:false,status:404});
+    const still=await db.prepare("SELECT checked_in_at FROM bookings WHERE id=?1")
+      .bind(created.bookingId).first<{checked_in_at:string|null}>();
+    expect(still?.checked_in_at).toBeNull();
   });
 });
