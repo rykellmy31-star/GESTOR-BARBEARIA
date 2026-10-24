@@ -49,6 +49,7 @@ test("colunas de dinheiro e índices de auditoria/paginação foram criados",()=
     assert.ok(col("bookings").has("fit_in_duration_min"));
     assert.ok(col("bookings").has("checked_in_at"));
     assert.ok(col("bookings").has("checked_in_by_user_id"));
+    assert.ok(col("bookings").has("checked_in_source"));
     assert.ok(col("bookings").has("cancel_reason"));
     assert.ok(col("booking_payments").has("amount_cents"));
     assert.ok(col("service_barbers").has("duration_override_min"));
