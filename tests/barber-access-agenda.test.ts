@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
 import schema1 from "../migrations/0001_init.sql";
 import schema6 from "../migrations/0006_request_rate_limits.sql";
+import checkinSchema from "../migrations/0102_booking_checkin_cancel_reason.sql";
 import { app } from "../api/index";
 import { sha256hex } from "../api/lib/crypto";
 import { DEFAULT_SETTINGS } from "../api/lib/settings";
@@ -13,7 +14,7 @@ const e={...env,APP_ENV:"development",SESSION_SECRET:"barber-access-test-secret-
 const ctx={waitUntil:()=>{},passThroughOnException:()=>{}} as unknown as ExecutionContext;
 const day=new Date(Date.now()+3*86400000).toISOString().slice(0,10);
 beforeAll(async()=>{
-  for(const schema of [schema1,schema6]) for(const sql of schema.replace(/--[^\n]*/g,"").split(";").map(s=>s.trim()).filter(Boolean)) await db.prepare(sql).run();
+  for(const schema of [schema1,schema6,checkinSchema]) for(const sql of schema.replace(/--[^\n]*/g,"").split(";").map(s=>s.trim()).filter(Boolean)) await db.prepare(sql).run();
 });
 async function fixture(){
   const slug=`barber-access-${crypto.randomUUID()}`;
