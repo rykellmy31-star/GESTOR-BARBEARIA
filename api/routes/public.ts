@@ -13,7 +13,7 @@ import type { Env } from "../types";
 import { err, json, normalizePhone, nowIso, brl } from "../lib/utils";
 import { cid, ctxSettings, tenantMiddleware } from "../lib/tenant";
 import { computeDaySlots, monthSummary, type BarberRow, type ServiceRow } from "../lib/availability";
-import { createBooking, createBookingSchema, cancelBooking, rescheduleBooking } from "../lib/booking";
+import { createBooking, createBookingSchema, cancelBooking, rescheduleBooking, markBookingArrived } from "../lib/booking";
 import { normalizePhone as np } from "../lib/utils";
 
 async function findPublicBooking(db: D1Database, companyId: number, code: string, phone: string, listAll: boolean) {
@@ -21,7 +21,7 @@ async function findPublicBooking(db: D1Database, companyId: number, code: string
   const where = `WHERE b.company_id = ?1 AND UPPER(b.code) = ?2 AND b.customer_phone = ?3`;
   const { results } = await db
     .prepare(
-      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.price_cents, b.payment_choice, bp.status AS payment_status, b.notes, b.allowed_cancel_until, b.barber_id, b.service_id, b.customer_name,
+      `SELECT b.id, b.code, b.status, b.starts_at, b.ends_at, b.price_cents, b.payment_choice, bp.status AS payment_status, b.notes, b.checked_in_at, b.checked_in_source, b.allowed_cancel_until, b.barber_id, b.service_id, b.customer_name,
               s.name AS service_name, s.duration_min, br.name AS barber_name, br.photo AS barber_photo
        FROM bookings b JOIN services s ON s.id = b.service_id JOIN barbers br ON br.id = b.barber_id
        LEFT JOIN booking_payments bp ON bp.booking_id=b.id AND bp.company_id=b.company_id
@@ -231,6 +231,9 @@ publicRouter.get("/bookings/lookup", async (c) => {
       price: Number(b.price_cents) / 100,
       can_cancel: s.allow_online_cancel && ["pendente", "confirmado"].includes(String(b.status)) && Date.parse(String(b.allowed_cancel_until)) > nowMs,
       can_reschedule: s.allow_online_reschedule && ["pendente", "confirmado"].includes(String(b.status)) && Date.parse(String(b.starts_at)) - nowMs > s.reschedule_cutoff_min * 60000,
+      can_check_in: ["pendente","confirmado"].includes(String(b.status))&&!b.checked_in_at &&
+        nowMs>=Date.parse(String(b.starts_at))-30*60000 &&
+        nowMs<=Date.parse(String(b.ends_at))+30*60000,
     })),
     policy_text: s.cancel_policy_text,
   });
@@ -250,9 +253,39 @@ publicRouter.post("/bookings/lookup", async (c) => {
       price: Number(b.price_cents) / 100,
       can_cancel: s.allow_online_cancel && ["pendente", "confirmado"].includes(String(b.status)) && Date.parse(String(b.allowed_cancel_until)) > now,
       can_reschedule: s.allow_online_reschedule && ["pendente", "confirmado"].includes(String(b.status)) && Date.parse(String(b.starts_at)) - now > s.reschedule_cutoff_min * 60000,
+      can_check_in: ["pendente","confirmado"].includes(String(b.status))&&!b.checked_in_at &&
+        now>=Date.parse(String(b.starts_at))-30*60000 &&
+        now<=Date.parse(String(b.ends_at))+30*60000,
     })),
     policy_text: s.cancel_policy_text,
   });
+});
+
+/** O cliente pode anunciar a chegada pelo celular que guardou o token privado
+ * da reserva. Código+telefone sozinhos não autorizam o check-in.
+ * A origem fica explícita na agenda para conferência presencial da equipe. */
+publicRouter.post("/bookings/check-in",async c=>{
+ const ip=c.req.header("cf-connecting-ip")||"local";
+ const {rateLimit}=await import("../lib/auth");
+ if(!await rateLimit(c.env,"client-check-in:"+cid(c)+":"+ip,8,5*60_000))
+  return err(c,"Muitas tentativas. Aguarde alguns minutos.",429);
+ const parsed=lookupSchema.extend({cancel_token:z.string().uuid()})
+  .strict().safeParse(await c.req.json().catch(()=>null));
+ if(!parsed.success)return err(c,"Informe protocolo, WhatsApp e código privado da reserva.",422);
+ const row=await c.env.DB.prepare(`SELECT id FROM bookings
+   WHERE company_id=?1 AND UPPER(code)=?2 AND customer_phone=?3
+   AND cancel_token=?4 LIMIT 1`)
+  .bind(cid(c),parsed.data.code.trim().toUpperCase(),
+    np(parsed.data.phone),parsed.data.cancel_token).first<{id:number}>();
+ if(!row)return err(c,"Reserva não encontrada ou código de acesso inválido.",404);
+ const result=await markBookingArrived({
+  env:c.env,db:c.env.DB,companyId:cid(c),settings:ctxSettings(c),
+  origin:"cliente",user:null
+ },row.id,new Date(),true);
+ if(!result.ok)return err(c,result.message,result.status);
+ c.header("Cache-Control","no-store");
+ return json(c,{ok:true,checked_in_at:result.checkedInAt,
+   message:"Chegada informada ao profissional. Apresente-se para confirmar sua presença."});
 });
 
 publicRouter.post("/bookings/cancel", async (c) => {
