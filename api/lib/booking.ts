@@ -215,9 +215,9 @@ export async function cancelBooking(ctx: BookingMutationCtx, bookingId: number, 
  * Não significa conclusão do serviço nem confirmação de pagamento.
  * Confirmação duplicada, tardia ou em outra empresa não altera o registro.
  */
-export async function markBookingArrived(ctx:BookingMutationCtx,bookingId:number,at=new Date()):
+export async function markBookingArrived(ctx:BookingMutationCtx,bookingId:number,at=new Date(),verifiedClient=false):
  Promise<{ok:true;checkedInAt:string}|{ok:false;message:string;status:number}> {
- if(ctx.origin==="cliente")return {ok:false,message:"Check-in deve ser confirmado pela equipe.",status:403};
+ if(ctx.origin==="cliente"&&!verifiedClient)return {ok:false,message:"Check-in do cliente requer comprovante privado da reserva.",status:403};
  if(!Number.isSafeInteger(bookingId)||bookingId<1)
    return {ok:false,message:"Agendamento inválido.",status:400};
  const b=await ctx.db.prepare(`SELECT id,code,barber_id,status,starts_at,ends_at,checked_in_at
@@ -229,18 +229,23 @@ export async function markBookingArrived(ctx:BookingMutationCtx,bookingId:number
  if(b.checked_in_at)return {ok:false,message:"Chegada já registrada.",status:409};
  const now=at.getTime(),starts=Date.parse(b.starts_at),ends=Date.parse(b.ends_at);
  if(!Number.isFinite(now)||!Number.isFinite(starts)||!Number.isFinite(ends)||
-    now<starts-2*60*60_000||now>ends+60*60_000)
-  return {ok:false,message:"Check-in permitido de 2 horas antes até 1 hora após o fim previsto.",status:409};
+    now<starts-(ctx.origin==="cliente"?30:120)*60_000||
+    now>ends+(ctx.origin==="cliente"?30:60)*60_000)
+  return {ok:false,message:ctx.origin==="cliente"?
+    "A opção Cheguei fica disponível 30 minutos antes do horário marcado.":
+    "Check-in permitido de 2 horas antes até 1 hora após o fim previsto.",status:409};
  const checkedInAt=at.toISOString().replace(/\.\d{3}Z$/,"Z");
  const changed=await ctx.db.prepare(`UPDATE bookings
-  SET checked_in_at=?1,checked_in_by_user_id=?2,updated_at=?1
+  SET checked_in_at=?1,checked_in_by_user_id=?2,checked_in_source=?5,updated_at=?1
   WHERE id=?3 AND company_id=?4 AND status IN ('pendente','confirmado')
   AND checked_in_at IS NULL`)
-  .bind(checkedInAt,ctx.user?.id??null,b.id,ctx.companyId).run();
+  .bind(checkedInAt,ctx.user?.id??null,b.id,ctx.companyId,
+    ctx.origin==="cliente"?"cliente":"equipe").run();
  if(changed.meta.changes!==1)
    return {ok:false,message:"Agendamento alterado por outra operação; atualize a agenda.",status:409};
  await audit(ctx.db,ctx.user??null,"check_in","booking",b.id,{
-  code:b.code,barber_id:b.barber_id,checked_in_at:checkedInAt
+  code:b.code,barber_id:b.barber_id,checked_in_at:checkedInAt,
+  source:ctx.origin==="cliente"?"cliente":"equipe"
  },{companyId:ctx.companyId});
  return {ok:true,checkedInAt};
 }
