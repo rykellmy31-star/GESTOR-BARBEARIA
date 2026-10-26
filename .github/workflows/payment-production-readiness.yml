@@ -1,0 +1,24 @@
+name: TIGU - prontidao Pix real sem alteracoes
+on:
+  push:
+    branches: [audit/tigu-primeira-validacao]
+permissions:
+  contents: read
+jobs:
+  verificar-pagamento-producao:
+    if: ${{ github.event.head_commit.message == 'TIGU_PAYMENT_PROD_READINESS_READONLY_ONCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Provar que verificacao nao escreve na Cloudflare
+        run: node --test scripts/production-payment-readiness-readonly.node.test.mjs
+      - name: Inspecionar D1 R2 Worker e nomes de segredos de producao
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_PAYMENT_READONLY_APPROVED: 'YES'
+        run: node scripts/production-payment-readiness-readonly.mjs
