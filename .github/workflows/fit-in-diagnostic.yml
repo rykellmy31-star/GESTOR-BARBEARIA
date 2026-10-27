@@ -1,0 +1,38 @@
+name: "TIGU — diagnóstico isolado de duração e encaixe"
+on:
+  push:
+    branches: ["audit/tigu-primeira-validacao"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostico-sem-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - name: Instalar dependências sem publicar
+        run: npm ci --no-audit
+      - name: Diagnosticar pacote vulnerável sem mascarar auditoria principal
+        shell: bash
+        run: |
+          npm audit --json > /tmp/tigu-audit.json || true
+          node -e 'const x=require("/tmp/tigu-audit.json"); console.log("Pacotes sinalizados:",Object.entries(x.vulnerabilities||{}).map(([n,v])=>n+" ["+v.severity+"] fix="+JSON.stringify(v.fixAvailable)).join("; ")||"nenhum");'
+      - name: Verificar tipos
+        run: npm run check:types
+      - name: Testar migrações
+        run: npm run test:migrations
+      - name: Testar duração e encaixe no Worker local
+        run: npx vitest run tests/barber-duration-fit-in.test.ts tests/booking-idempotency-isolation.test.ts
+      - name: Testar suíte completa sem acesso remoto
+        run: npm test
+      - name: Construir front-end
+        run: npm run build
+      - name: Verificar Worker, D1 e R2 locais
+        run: node scripts/local-e2e.mjs
+      - name: Verificar navegação real Chromium local
+        run: node scripts/browser-smoke.mjs

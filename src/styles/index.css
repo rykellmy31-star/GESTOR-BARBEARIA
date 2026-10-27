@@ -1,0 +1,112 @@
+@import "tailwindcss";
+@config "../../tailwind.config.js";
+
+/* ── base premium ─────────────────────────────────────────────────────── */
+:root {
+  --c-gold: #d4af37;
+  --c-gold-soft: rgba(212, 175, 55, 0.14);
+  --c-ink: #0a0a0c;
+  --c-ink-soft: #111115;
+  --c-panel: #16161c;
+  --c-line: #26262f;
+}
+
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { background: var(--c-ink); overscroll-behavior-y: none; }
+
+/* Layout do telefone: conteúdos largos não podem alargar a viewport inteira.
+   Tabelas e faixas roláveis continuam com seu scroll-x local. */
+html, body, #root { width: 100%; max-width: 100%; min-width: 0; }
+img, video, canvas, svg { max-width: 100%; }
+button, a { touch-action: manipulation; }
+
+@media (max-width: 767px) {
+  html, body, #root { overflow-x: clip; }
+
+  /* Safari iOS amplia automaticamente campos com fonte menor que 16px.
+     Cobrir também inputs escritos diretamente fora do componente Input. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  textarea, select { font-size: 16px !important; }
+}
+
+::selection { background: var(--c-gold); color: #0a0a0c; }
+
+/* textura sutil de fundo */
+.texture {
+  background-image:
+    radial-gradient(1200px 500px at 80% -10%, rgba(212,175,55,0.07), transparent 60%),
+    radial-gradient(900px 420px at -10% 30%, rgba(212,175,55,0.05), transparent 55%),
+    repeating-linear-gradient(135deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 6px);
+}
+
+.gold-text {
+  background: linear-gradient(120deg, #f5e3a1 0%, #d4af37 35%, #9a7a1e 60%, #f0d879 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 7s linear infinite;
+}
+@keyframes shimmer { 0% {background-position: -200% 0;} 100% {background-position: 200% 0;} }
+
+.gold-hr { height: 1px; background: linear-gradient(90deg, transparent, var(--c-gold), transparent); opacity: .55; }
+
+/* scroll-reveal: .reveal recebe .in via IntersectionObserver */
+.reveal { opacity: 0; transform: translateY(26px); transition: opacity .8s cubic-bezier(.22,1,.36,1), transform .8s cubic-bezier(.22,1,.36,1); }
+.reveal.in { opacity: 1; transform: none; }
+
+/* card com brilho no hover */
+.card-luxe { transition: transform .35s cubic-bezier(.22,1,.36,1), box-shadow .35s ease, border-color .35s ease; }
+.card-luxe:hover { transform: translateY(-5px); border-color: rgba(212,175,55,.5); box-shadow: 0 24px 60px -24px rgba(0,0,0,.9), 0 0 0 1px rgba(212,175,55,.18); }
+
+/* botões */
+.btn-gold {
+  background: linear-gradient(135deg, #e8c95a 0%, #d4af37 45%, #b18a22 100%);
+  color: #100d02; font-weight: 650; letter-spacing: .01em;
+  box-shadow: 0 10px 30px -12px rgba(212,175,55,.6);
+  transition: filter .2s ease, transform .12s ease, box-shadow .2s ease;
+}
+.btn-gold:hover { filter: brightness(1.08); box-shadow: 0 14px 38px -12px rgba(212,175,55,.75); }
+.btn-gold:active { transform: translateY(1px) scale(.99); }
+.btn-ghost { border: 1px solid var(--c-line); transition: all .2s ease; }
+.btn-ghost:hover { border-color: var(--c-gold); color: var(--c-gold); background: var(--c-gold-soft); }
+
+/* inputs */
+.input-dark {
+  @apply w-full min-w-0 rounded-xl border border-line bg-ink-soft px-3.5 py-2.5 text-base sm:text-sm text-zinc-100 placeholder-zinc-500 outline-none;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.input-dark:focus { border-color: var(--c-gold); box-shadow: 0 0 0 3px rgba(212,175,55,.14); }
+
+/* scrollbar */
+* { scrollbar-width: thin; scrollbar-color: #33333d transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: #33333d; border-radius: 8px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--c-gold); }
+
+/* skeleton shimmer */
+.skeleton { position: relative; overflow: hidden; background: #1b1b22; }
+.skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.05), transparent); animation: sk 1.4s infinite; }
+@keyframes sk { 100% { transform: translateX(100%);} }
+
+/* calendário */
+.cal-day { position: relative; }
+.cal-dot { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; }
+
+/* modal */
+.modal-backdrop { backdrop-filter: blur(4px); background: rgba(4,4,6,.7); }
+
+@keyframes toast-in { from { opacity: 0; transform: translateY(14px) scale(.97);} to {opacity:1; transform:none;} }
+.toast-in { animation: toast-in .35s cubic-bezier(.22,1,.36,1) both; }
+
+@keyframes ping-dot { 75%, 100% { transform: scale(2.1); opacity: 0; } }
+.notif-ping { animation: ping-dot 1.4s cubic-bezier(0,0,.2,1) infinite; }
+
+@keyframes step-grow { from { opacity: 0; transform: translateX(18px);} to { opacity: 1; transform: none; } }
+.step-enter { animation: step-grow .45s cubic-bezier(.22,1,.36,1) both; }
+
+/* impressão leve p/ comprovante */
+@media print {
+  body { background: #fff; color: #000; }
+}
