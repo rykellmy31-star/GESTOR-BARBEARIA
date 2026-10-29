@@ -1003,6 +1003,12 @@ adminRouter.post("/whatsapp/check", async (c) => {
   const { provider } = await resolveProvider({ env: c.env as never, db, demo: conn.demo === 1, conn });
   if (!provider) return err(c, "Provedor indisponível", 503);
   const st = await provider.status({ env: c.env as never, db, conn, demo: conn.demo === 1 });
+  if (conn.provider === "evolution") {
+    await db.prepare(`UPDATE evolution_connections SET status=?1,last_error=?2,updated_at=?3,
+      connected_at=CASE WHEN ?1='connected' THEN COALESCE(connected_at,?3) ELSE connected_at END
+      WHERE company_id=?4 AND enabled=1`).bind(st.ok ? "connected" : "pending_setup", st.ok ? "" : String(st.error ?? "").slice(0, 300), nowIso(), id).run();
+    return json(c, { ok: st.ok, detail: st, message: st.ok ? "Evolution conectada." : "Aguardando leitura do QR Code na Evolution." });
+  }
   await db.prepare(`UPDATE whatsapp_connections SET status=?1, last_error=?2, last_check_at=?3, updated_at=?3 WHERE company_id=?4`).bind(st.ok ? "connected" : "error", st.ok ? "" : String(st.error ?? "").slice(0, 300), nowIso(), id).run();
   if (!st.ok && conn.status === "connected") {
     await db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin','Conexão WhatsApp com problema',?2,'connection')`).bind(id, `A verificação falhou: ${String(st.error).slice(0, 160)}. Envios ficam em espera até resolver.`).run();
