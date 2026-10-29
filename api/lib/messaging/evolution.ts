@@ -75,7 +75,7 @@ export function evolutionQR(data: any): string | null {
 
 export function renderEvolutionText(body: string, variables: { key: string; sample: string }[]): string {
   return body.replace(/\{\{(\d+)\}\}/g, (_match, index: string) => {
-    const found = variables.find((v) => v.key === `{{${index}}}`);
+    const found = variables.find((v) => v.key === index || v.key === `{{${index}}}`);
     return found?.sample ?? "";
   }).slice(0, 1800);
 }
