@@ -85,7 +85,7 @@ evolutionRouter.post("/start", async (c) => {
   return json(c, { ok: true, status: "pending_setup", qr: firstQR });
 });
 
-evolutionRouter.get("/qr", async (c) => {
+evolutionRouter.post("/qr", async (c) => {
   if (!evolutionReady(c.env) || c.env.TIGU_STAGING === "1") return err(c,"Evolution API indisponível.",503);
   const row = await getEvolutionRow(c.env.DB,cid(c));
   if (!row || row.enabled!==1) return err(c,"Inicie a integração primeiro.",404);
