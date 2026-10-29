@@ -34,6 +34,10 @@ export interface Env {
   WHATSAPP_APP_SECRET_FOR_OAUTH?: string;
   /** Liga o provedor 'mock' (NUNCA habilitar em produção) */
   WHATSAPP_MOCK?: string;
+  /** Evolution API v2: secrets globais, nunca expostos no frontend. */
+  EVOLUTION_API_URL?: string;
+  EVOLUTION_API_KEY?: string;
+  EVOLUTION_WEBHOOK_SECRET?: string;
 
   // ── Pagamentos (Pix) ──
   MERCHANT_PIX_ENABLED?: string; // kill-switch de checkout por conta própria da barbearia (não afeta assinatura/recarga)
