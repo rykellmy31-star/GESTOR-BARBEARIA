@@ -51,8 +51,8 @@ billingRouter.post("/plan-request",async c=>{
 });
 
 billingRouter.post("/pix",async c=>{
-  if(platformBillingMode(c.env)==="manual") return err(c,"Mensalidades são cobradas fora da plataforma. Solicite seu plano ao responsável.",409);
   if(!owner(c)) return err(c,"Apenas o proprietário pode contratar o plano.",403);
+  if(platformBillingMode(c.env)==="manual") return err(c,"Mensalidades são cobradas fora da plataforma. Solicite seu plano ao responsável.",409);
   const parsed=z.object({plan_code:z.enum(["free","pro","scale"])}).strict()
     .safeParse(await c.req.json().catch(()=>null));
   if(!parsed.success) return err(c,"Selecione Start, Pro ou Scale para gerar o Pix.",422);
