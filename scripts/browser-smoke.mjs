@@ -43,7 +43,7 @@ async function js(code){const res=await cmd("Runtime.evaluate",{expression:code,
   return res.result?.value;}
 async function until(label,condition,max=18000){const deadline=Date.now()+max;
   while(Date.now()<deadline){if(await js(condition))return;await pause(180);}
-  throw Error("Não apareceu: "+label+". Página: "+await js("location.pathname+' '+document.body.innerText.slice(0,200)"));}
+  throw Error("Não apareceu: "+label+". Página: "+await js("location.pathname+' '+document.body.innerText.slice(-1400)"));}
 async function go(url){const nav=await cmd("Page.navigate",{url});if(nav.errorText)throw Error(nav.errorText);
   await until("documento",'document.readyState==="complete"');}
 async function click(text){const found=await js('(()=>{const b=[...document.querySelectorAll("button")]'+
@@ -332,6 +332,13 @@ try{
     '(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("via Pix"));return !!b&&b.disabled})()');
   pass("Pix real bloqueado no ambiente local");
   await go(base+"/c/"+slug+"/admin/assinatura");
+  const billingDiagnostic=await api(base,"/api/c/"+slug+"/billing/status","GET",undefined,signup.cookie);
+  console.log("DIAGNOSTICO assinatura",JSON.stringify({
+    apiStatus:billingDiagnostic.status,billingMode:billingDiagnostic.data?.billing_mode,
+    responseError:billingDiagnostic.data?.error??null,
+    documentTitle:await js("document.title"),
+    pageExcerpt:await js("document.body.innerText.slice(-900)")
+  }));
   await until("painel de mensalidade externa",
     'document.body.innerText.includes("pagamento externo")&&document.body.innerText.includes("Solicitar plano selecionado")');
   pass("proprietário visualiza planos e solicitação manual sem checkout Pix");
