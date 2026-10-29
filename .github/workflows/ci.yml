@@ -9,6 +9,7 @@ on:
   pull_request:
     branches:
       - main
+      - audit/tigu-primeira-validacao
   workflow_dispatch:
     inputs:
       production_readonly_inventory:
