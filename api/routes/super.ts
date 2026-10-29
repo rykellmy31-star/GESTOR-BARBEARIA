@@ -21,6 +21,8 @@ import { leadUpdateSchema, listSalesLeads, updateSalesLead, salesRetentionSchema
 import { processDueJobs } from "../lib/messaging/jobs";
 import { globalMessageListFilter, parseGlobalMessageCursor, parseOptionalMessageCompanyId } from "../lib/messaging/super-message-filter";
 import { randomHex } from "../lib/utils";
+import { platformBillingMode } from "../lib/platform-billing-mode";
+import { applyManualRenewal } from "../lib/manual-subscriptions";
 
 export const superRouter = new Hono<{ Bindings: Env }>();
 superRouter.use("*", requireSuper);
@@ -243,6 +245,7 @@ superRouter.post("/companies/:id/resume", async (c) => {
   return json(c, { ok: true });
 });
 superRouter.put("/companies/:id/plan", async (c) => {
+  if(platformBillingMode(c.env)==="manual") return err(c,"Use a renovação manual com referência externa e auditoria.",409);
   const parsed = z.object({ plan_code: z.enum(["free", "pro", "scale"]), note: z.string().max(200).default("") }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return err(c, "plano inválido", 400);
   const db = c.env.DB; const id = idParam(c);
@@ -254,6 +257,57 @@ superRouter.put("/companies/:id/plan", async (c) => {
   await audit(db, c.get("user"), "company.plan", "company", id, { plan: parsed.data.plan_code, note: parsed.data.note }, { companyId: id, scope: "platform" });
   return json(c, { ok: true });
 });
+// Gestão interna do TIGU. Após a futura integração, a central chamará APIs administrativas protegidas.
+superRouter.get("/companies/:id/manual-billing",async c=>{
+  if(platformBillingMode(c.env)!=="manual") return err(c,"Mensalidade externa não habilitada.",409);
+  const id=idParam(c);
+  if(!Number.isSafeInteger(id)||id<=0) return err(c,"Empresa inválida.",422);
+  const [requests,renewals,subscription]=await Promise.all([
+    c.env.DB.prepare("SELECT id,plan_code,status,created_at FROM subscription_plan_requests WHERE company_id=?1 ORDER BY id DESC LIMIT 20").bind(id).all(),
+    c.env.DB.prepare("SELECT id,plan_code,period_months,amount_cents,external_reference,note,applied_at,created_at FROM manual_subscription_renewals WHERE company_id=?1 ORDER BY id DESC LIMIT 20").bind(id).all(),
+    c.env.DB.prepare("SELECT plan_code,status,period_end FROM subscriptions WHERE company_id=?1").bind(id).first(),
+  ]);
+  c.header("Cache-Control","no-store");
+  return json(c,{requests:requests.results,renewals:renewals.results,subscription});
+});
+
+superRouter.post("/companies/:id/manual-renew",async c=>{
+  if(platformBillingMode(c.env)!=="manual") return err(c,"Renovação manual não habilitada.",409);
+  const id=idParam(c);
+  if(!Number.isSafeInteger(id)||id<=0) return err(c,"Empresa inválida.",422);
+  const schema=z.object({
+    plan_code:z.enum(["free","pro","scale"]),
+    period_months:z.number().int().min(1).max(24),
+    amount_cents:z.number().int().min(0).max(100000000),
+    external_reference:z.string().trim().min(8).max(100).regex(/^[A-Za-z0-9._-]+$/),
+    note:z.string().trim().min(10).max(300),
+  }).strict();
+  const parsed=schema.safeParse(await c.req.json().catch(()=>null));
+  if(!parsed.success) return err(c,"Informe plano, meses, valor recebido, referência única e justificativa.",422);
+  const plan=await c.env.DB.prepare("SELECT code FROM plans WHERE code=?1 AND demo=0")
+    .bind(parsed.data.plan_code).first();
+  if(!plan) return err(c,"Plano indisponível.",422);
+  const result=await applyManualRenewal(c.env.DB,id,c.get("user"),parsed.data);
+  if(!result.ok) return err(c,result.error||"Não foi possível renovar.",409);
+  return json(c,result);
+});
+
+superRouter.post("/companies/:id/plan-requests/:requestId/reject",async c=>{
+  if(platformBillingMode(c.env)!=="manual") return err(c,"Solicitação manual indisponível.",409);
+  const id=idParam(c),requestId=Number(c.req.param("requestId"));
+  if(!Number.isSafeInteger(id)||id<=0||!Number.isSafeInteger(requestId)||requestId<=0) return err(c,"Identificador inválido.",422);
+  const parsed=z.object({note:z.string().trim().min(10).max(300)}).strict()
+    .safeParse(await c.req.json().catch(()=>null));
+  if(!parsed.success) return err(c,"Justificativa obrigatória (10+ caracteres).",422);
+  const result=await c.env.DB.prepare(`UPDATE subscription_plan_requests SET status='rejected',
+    handled_at=?1,handled_by=?2,note=?3 WHERE id=?4 AND company_id=?5 AND status='pending'`)
+    .bind(nowIso(),c.get("user").id,parsed.data.note,requestId,id).run();
+  if(result.meta.changes!==1) return err(c,"Solicitação não encontrada ou já atendida.",409);
+  await audit(c.env.DB,c.get("user"),"subscription.plan_request_rejected","subscription_plan_request",
+    requestId,{reason:parsed.data.note},{companyId:id,scope:"platform"});
+  return json(c,{ok:true});
+});
+
 superRouter.post("/companies/:id/seed-demo", async (c) => {
   // onboarding assistido: dados fictícios marcados demo=1 (apagáveis)
   const { seedDemoForCompany } = await import("../lib/demo-seed");
