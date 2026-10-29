@@ -70,7 +70,7 @@ const adminNav = [
   { to: "clientes", label: "Clientes", icon: Users },
   { to: "mensagens", label: "WhatsApp", icon: MessageSquare },
   { to: "carteira", label: "Carteira de créditos", icon: Wallet },
-  { to: "assinatura", label: "Assinatura e Pix", icon: CreditCard },
+  { to: "assinatura", label: "Assinatura", icon: CreditCard },
   { to: "configuracoes", label: "Configurações", icon: SettingsIcon },
   { to: "demonstracao", label: "Demonstração", icon: Sparkles },
 ];
@@ -89,9 +89,9 @@ function TrialStatusBanner({ end, cents }: { end: string; cents: number }) {
       </p>
       <p className="mt-1 text-xs leading-relaxed text-zinc-400">
         {expired
-          ? `Novas operações estão pausadas. O Start custa ${price}/mês. Acesse Assinatura e Pix para pagar e continuar.`
-          : `Após o prazo, escolha Start, Pro ou Scale e pague a mensalidade via Pix para continuar. O Start custa ${price}/mês.`}
-        {" "}A cobrança só acontece quando você gerar e pagar um Pix.
+          ? `Novas operações estão pausadas. O Start custa ${price}/mês. Acesse Assinatura para solicitar sua renovação ao responsável pela plataforma.`
+          : `Após o prazo, escolha Start, Pro ou Scale e solicite a renovação ao responsável pela plataforma. O Start custa ${price}/mês.`}
+        {" "}A mensalidade é cobrada diretamente pela CR Jornada, fora do TIGU.
       </p>
     </div>
   );
@@ -196,7 +196,7 @@ export function AdminLayout() {
             {trial && <TrialStatusBanner end={trial.end} cents={trial.cents} />}
             {expired && (
               <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                Sua assinatura venceu. <NavLink to="assinatura" className="font-semibold underline">Pagar mensalidade via Pix</NavLink>.
+                Sua assinatura venceu. <NavLink to="assinatura" className="font-semibold underline">Solicitar renovação</NavLink>.
               </div>
             )}
             <Outlet />
