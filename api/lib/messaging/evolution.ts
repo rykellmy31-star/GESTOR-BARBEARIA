@@ -81,8 +81,14 @@ export function renderEvolutionText(body: string, variables: { key: string; samp
 }
 
 export async function getEvolutionRow(db: D1Database, companyId: number): Promise<EvolutionRow | null> {
-  return db.prepare("SELECT company_id,instance_name,status,enabled,display_phone,last_error,connected_at,updated_at FROM evolution_connections WHERE company_id=?1")
-    .bind(companyId).first<EvolutionRow>();
+  try {
+    return await db.prepare("SELECT company_id,instance_name,status,enabled,display_phone,last_error,connected_at,updated_at FROM evolution_connections WHERE company_id=?1")
+      .bind(companyId).first<EvolutionRow>();
+  } catch (e) {
+    // Compatibilidade com testes/bancos legados durante preparação da migração.
+    if (String(e).includes("no such table: evolution_connections")) return null;
+    throw e;
+  }
 }
 
 export const evolutionProvider: Provider = {
