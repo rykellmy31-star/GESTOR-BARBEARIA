@@ -21,7 +21,6 @@ import { superRouter } from "./routes/super";
 import { webhooksRouter } from "./routes/webhooks";
 import { billingRouter } from "./routes/billing";
 import { reconcileSubscriptionPix } from "./lib/subscription-billing";
-import { platformBillingMode } from "./lib/platform-billing-mode";
 import { uploadsRouter } from "./routes/uploads";
 import { originGuard } from "./lib/auth";
 import { purgeRequestRateLimits } from "./lib/rate-limit";
