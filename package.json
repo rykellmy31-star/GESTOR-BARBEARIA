@@ -44,11 +44,11 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.4",
-    "zod": "^3.24.1"
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.4.5",
-    "@cloudflare/workers-types": "5.20261019.1",
+    "@cloudflare/vitest-plugin": "1.4.10",
+    "@cloudflare/workers-types": "5.20261029.1",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^22.20.5",
     "@types/react": "^18.3.12",
@@ -62,6 +62,6 @@
     "typescript": "~5.7.2",
     "vite": "^6.0.5",
     "vitest": "4.1.12",
-    "wrangler": "4.151.2"
+    "wrangler": "4.155.0"
   }
 }
