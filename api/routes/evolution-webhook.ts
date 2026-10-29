@@ -26,11 +26,38 @@ evolutionWebhookRouter.post("/", async (c) => {
   if (ev === "CONNECTION_UPDATE") {
     const state = String(data?.state ?? data?.instance?.state ?? "").toLowerCase();
     const status = state === "open" ? "connected" : "pending_setup";
-    const phone = String(data?.number || "").replace(/\D/g,"").slice(0,15);
+    const phone = String(data?.number || data?.wuid || "").replace(/@.*$/,"").replace(/\D/g,"").slice(0,15);
     await c.env.DB.prepare(`UPDATE evolution_connections SET status=?1,
       display_phone=CASE WHEN ?2<>'' THEN ?2 ELSE display_phone END,
       connected_at=CASE WHEN ?1='connected' THEN COALESCE(connected_at,?3) ELSE connected_at END,
       updated_at=?3 WHERE company_id=?4 AND enabled=1`).bind(status,phone,nowIso(),row.company_id).run();
+  }
+  if (ev === "MESSAGES_UPDATE") {
+    // Na Evolution v2 o ID WhatsApp está em data.keyId; messageId é
+    // identificador INTERNO da Evolution e não deve ser usado para cruzar jobs.
+    const keyId = typeof data?.keyId === "string" ? data.keyId
+      : typeof data?.key?.id === "string" ? data.key.id : "";
+    const deliveryStatus = String(data?.status || "").toUpperCase();
+    if (keyId.length > 0 && keyId.length <= 160 && data?.fromMe !== false) {
+      const db = c.env.DB;
+      if (deliveryStatus === "DELIVERY_ACK") {
+        await db.prepare(`UPDATE message_jobs SET status='delivered',
+          delivered_at=COALESCE(delivered_at,?1),updated_at=?1
+          WHERE company_id=?2 AND provider='evolution' AND provider_msg_id=?3 AND status='sent'`)
+          .bind(nowIso(),row.company_id,keyId).run();
+      } else if (deliveryStatus === "READ" || deliveryStatus === "PLAYED") {
+        await db.prepare(`UPDATE message_jobs SET status='read',
+          delivered_at=COALESCE(delivered_at,?1),
+          read_at=COALESCE(read_at,?1),updated_at=?1
+          WHERE company_id=?2 AND provider='evolution' AND provider_msg_id=?3
+          AND status IN ('sent','delivered')`).bind(nowIso(),row.company_id,keyId).run();
+      } else if (deliveryStatus === "ERROR") {
+        await db.prepare(`UPDATE message_jobs SET status='failed',
+          last_error='Falha de entrega informada pela Evolution',updated_at=?1
+          WHERE company_id=?2 AND provider='evolution' AND provider_msg_id=?3
+          AND status IN ('sent','delivered')`).bind(nowIso(),row.company_id,keyId).run();
+      }
+    }
   }
   if (ev === "MESSAGES_UPSERT" && data?.key?.fromMe === false) {
     const id = typeof data?.key?.id === "string" ? data.key.id : "";
