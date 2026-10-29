@@ -16,7 +16,8 @@ function withDir(fn) {
   try { return fn(root); } finally { rmSync(root,{force:true,recursive:true}); }
 }
 test("audita export SQL contendo todas as migrações e não divulga dados pessoais",()=>{
-  assert.equal(migrationNames.length,26);
+  assert.equal(migrationNames.length,27);
+  assert.ok(migrationNames.includes("0104_evolution_whatsapp.sql"));
   assert.ok(migrationNames.includes("0103_manual_platform_subscriptions.sql"));
   assert.ok(migrationNames.includes("0101_barber_service_duration.sql"));
   assert.ok(migrationNames.includes("0102_booking_checkin_cancel_reason.sql"));
