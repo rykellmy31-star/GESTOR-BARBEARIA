@@ -26,7 +26,11 @@ export function evolutionReady(env: EvolutionEnv): boolean {
   try {
     const api = new URL(env.EVOLUTION_API_URL);
     const publicUrl = new URL(env.PUBLIC_URL);
-    return api.protocol === "https:" && publicUrl.protocol === "https:" && !!api.hostname && !!publicUrl.hostname;
+    return api.protocol === "https:" && publicUrl.protocol === "https:"
+      && !!api.hostname && !!publicUrl.hostname
+      && api.pathname === "/" && publicUrl.pathname === "/"
+      && !api.username && !api.password && !api.search && !api.hash
+      && !publicUrl.username && !publicUrl.password && !publicUrl.search && !publicUrl.hash;
   } catch { return false; }
 }
 
