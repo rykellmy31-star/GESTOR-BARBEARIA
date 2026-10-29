@@ -10,6 +10,7 @@ on:
     branches:
       - main
       - audit/tigu-primeira-validacao
+      - feature/tigu-mensalidade-manual-preintegracao-20261028
   workflow_dispatch:
     inputs:
       production_readonly_inventory:
