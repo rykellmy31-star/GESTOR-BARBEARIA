@@ -113,7 +113,7 @@ superRouter.get("/companies/:id", async (c) => {
     db.prepare("SELECT plan_code,status,started_at,period_end FROM subscriptions WHERE company_id=?1").bind(id).first(),
   ]);
   c.header("Cache-Control", "no-store");
-  return json(c, { company: co, subscription, settings: safeParse(settings?.data), members: members.results, connection: conn ?? null, wallet, jobs: jobs.results });
+  return json(c, { company: co, billing_mode: platformBillingMode(c.env), subscription, settings: safeParse(settings?.data), members: members.results, connection: conn ?? null, wallet, jobs: jobs.results });
 });
 /** O Super Admin pode emitir uma nova senha de acesso do proprietário.
  * Nunca recupera hashes, nem altera contas vinculadas a múltiplas empresas
