@@ -21,6 +21,14 @@ export async function applyManualRenewal(db: D1Database, companyId: number,
   const before=await db.prepare("SELECT plan_code,period_end FROM subscriptions WHERE company_id=?1")
     .bind(companyId).first<{plan_code:string;period_end:string|null}>();
   if(!before) return {ok:false,error:"Assinatura da empresa não encontrada."};
+  // Uma fatura anterior ainda em conciliação não pode somar meses além da renovação externa.
+  // Preservar a confirmação legítima de Pix já emitidos antes da migração.
+  const unsettled=await db.prepare(`SELECT id FROM subscription_invoices
+    WHERE company_id=?1 AND provider_payment_id IS NOT NULL
+      AND status IN ('creating','pending','expired','failed')
+      AND created_at>=strftime('%Y-%m-%dT%H:%M:%SZ','now','-48 hours') LIMIT 1`)
+    .bind(companyId).first();
+  if(unsettled) return {ok:false,error:"Existe Pix anterior em conciliação. Aguarde a conclusão antes de registrar uma renovação externa."};
   const existing=await db.prepare("SELECT * FROM manual_subscription_renewals WHERE company_id=?1 AND external_reference=?2")
     .bind(companyId,input.external_reference).first<ManualRenewalInput & {applied_at:string|null}>();
   if(existing){
