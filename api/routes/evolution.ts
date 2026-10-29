@@ -56,7 +56,7 @@ evolutionRouter.post("/start", async (c) => {
     firstQR = evolutionQR(created.data);
   }
 
-  const callback = new URL("/api/webhooks/evolution", c.env.PUBLIC_URL).toString();
+  const callback = new URL("/api/webhooks/evolution/", c.env.PUBLIC_URL).toString();
   const hooked = await evolutionRequest(c.env, "POST", `/webhook/set/${instance}`, {
     webhook: {
       enabled: true, url: callback, webhookByEvents: false, byEvents: false,
