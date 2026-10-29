@@ -1500,6 +1500,32 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
   const request=(envOverride:Env,path:string,cookie:string,method="GET",body:object={})=>
     app.request(path,{method,headers:{"content-type":"application/json",cookie},
       ...(method==="GET"?{}:{body:JSON.stringify(body)})},envOverride,{waitUntil:()=>{},passThroughOnException:()=>{}} as unknown as ExecutionContext);
+  it("no modo manual não cria Pix e registra pedido de plano sem conceder acesso",async()=>{
+    const owner=await newOwner(),e={...billingEnv(),TIGU_PLATFORM_BILLING_MODE:"manual"} as Env;
+    const path="/api/c/"+owner.slug+"/billing";
+    const before=await db.prepare("SELECT plan_code,period_end FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+      .bind(owner.slug).first<any>();
+    const network=vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("não deveria chamar rede"));
+    try{
+      const status=await request(e,path+"/status",owner.cookie);
+      expect(status.status).toBe(200);
+      expect((await status.json() as any).billing_mode).toBe("manual");
+      const pix=await request(e,path+"/pix",owner.cookie,"POST",{plan_code:"pro"});
+      expect(pix.status).toBe(409);
+      const one=await request(e,path+"/plan-request",owner.cookie,"POST",{plan_code:"pro"});
+      expect(one.status).toBe(200);
+      const first:any=await one.json();
+      const repeat=await request(e,path+"/plan-request",owner.cookie,"POST",{plan_code:"pro"});
+      expect((await repeat.json() as any).request_id).toBe(first.request_id);
+      const conflict=await request(e,path+"/plan-request",owner.cookie,"POST",{plan_code:"scale"});
+      expect(conflict.status).toBe(409);
+      const after=await db.prepare("SELECT plan_code,period_end FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(owner.slug).first<any>();
+      expect(after).toEqual(before);
+      expect(network).not.toHaveBeenCalled();
+    }finally{network.mockRestore();}
+  });
+
   it("gera Pix do Start e só libera após aprovação real reconsultada, sem duplicar meses",async()=>{
     const owner=await newOwner(),e=billingEnv();
     const url="/api/c/"+owner.slug+"/billing";
