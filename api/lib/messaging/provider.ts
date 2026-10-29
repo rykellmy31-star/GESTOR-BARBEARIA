@@ -7,11 +7,12 @@
 // templates, receber webhook, desconectar, e "billing" (informativo).
 // ============================================================================
 import { decryptSecret, encryptSecret, sha256hex } from "../crypto";
+import { evolutionProvider } from "./evolution";
 
 export interface ProviderConnectionRow {
   id: number;
   company_id: number;
-  provider: "meta_cloud" | "mock";
+  provider: "meta_cloud" | "mock" | "evolution";
   waba_id: string;
   phone_number_id: string;
   display_phone: string;
@@ -27,7 +28,8 @@ export interface ProviderConnectionRow {
 
 export interface ProviderContext {
   env: { GRAPH_API_VERSION?: string; APP_ENV?: string; TIGU_STAGING?: string; SESSION_SECRET?: string; MSG_ENC_KEY?: string; WHATSAPP_MOCK?: string;
-         WHATSAPP_APP_ID?: string; WHATSAPP_APP_SECRET_FOR_OAUTH?: string; WHATSAPP_EMBEDDED_CONFIG_ID?: string };
+         WHATSAPP_APP_ID?: string; WHATSAPP_APP_SECRET_FOR_OAUTH?: string; WHATSAPP_EMBEDDED_CONFIG_ID?: string;
+         EVOLUTION_API_URL?: string; EVOLUTION_API_KEY?: string; EVOLUTION_WEBHOOK_SECRET?: string; PUBLIC_URL?: string };
   db: D1Database;
   conn: ProviderConnectionRow;
   /** true em empresas demo — mock liberado, nenhuma chamada externa real */
@@ -70,7 +72,7 @@ export interface ProviderTemplateInfo {
 }
 
 export interface Provider {
-  kind: "meta_cloud" | "mock";
+  kind: "meta_cloud" | "mock" | "evolution";
   /** Testa credenciais e sincroniza dados básicos do número. */
   status(ctx: ProviderContext): Promise<{ ok: boolean; error?: string; display_phone?: string; quality_rating?: string; verified_name?: string }>;
   sendTemplate(ctx: ProviderContext, input: SendTemplateInput): Promise<SendTemplateResult>;
@@ -259,8 +261,9 @@ export function mockAllowed(ctx: { env: { WHATSAPP_MOCK?: string }; demo: boolea
 
 export async function resolveProvider(ctx: Omit<ProviderContext, "conn"> & { conn: ProviderConnectionRow | null }): Promise<{ provider: Provider | null; error?: string }> {
   if (ctx.env.TIGU_STAGING === "1" && ctx.conn?.provider !== "mock")
-    return { provider: null, error: "Meta Cloud API real desativada no ambiente de homologação." };
+    return { provider: null, error: "Provedores reais desativados na homologação." };
   if (!ctx.conn || ctx.conn.status === "disconnected") return { provider: null, error: "WhatsApp não conectado a esta barbearia." };
+  if (ctx.conn.provider === "evolution") return { provider: evolutionProvider };
   if (ctx.conn.provider === "mock") {
     if (!mockAllowed(ctx)) return { provider: null, error: "Provedor mock desabilitado neste ambiente." };
     return { provider: mockProvider };
