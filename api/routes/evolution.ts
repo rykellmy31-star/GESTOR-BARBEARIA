@@ -22,9 +22,8 @@ evolutionRouter.get("/status", async (c) => {
   const remote = await evolutionRequest(c.env, "GET", `/instance/connectionState/${row.instance_name}`);
   const status = remote.ok ? evolutionState(remote.data) : "error";
   const error = remote.ok ? "" : "Evolution API indisponível ou sessão não encontrada.";
-  await db.prepare(`UPDATE evolution_connections SET status=?1,last_error=?2,updated_at=?3,
-      connected_at=CASE WHEN ?1='connected' THEN COALESCE(connected_at,?3) ELSE connected_at END
-      WHERE company_id=?4 AND enabled=1`).bind(status,error,nowIso(),companyId).run();
+  // GET permanece realmente somente leitura (inclusive em modo suporte Super Admin).
+  // O webhook autenticado atualiza o D1. A resposta mostra o estado remoto atual.
   return json(c, { configured, active: true, status, instance: row.instance_name, error });
 });
 
@@ -59,7 +58,7 @@ evolutionRouter.post("/start", async (c) => {
   const callback = new URL("/api/webhooks/evolution/", c.env.PUBLIC_URL).toString();
   const hooked = await evolutionRequest(c.env, "POST", `/webhook/set/${instance}`, {
     webhook: {
-      enabled: true, url: callback, webhookByEvents: false, byEvents: false,
+      enabled: true, url: callback, byEvents: false, base64: false,
       headers: { "x-tigu-webhook-token": c.env.EVOLUTION_WEBHOOK_SECRET },
       events: ["CONNECTION_UPDATE","MESSAGES_UPSERT","MESSAGES_UPDATE"],
     },
