@@ -1529,6 +1529,59 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
     }finally{network.mockRestore();}
   });
 
+
+  it("renovação externa exige Super Admin, audita e não aplica duas vezes",async()=>{
+    const owner=await newOwner(),e={...billingEnv(),TIGU_PLATFORM_BILLING_MODE:"manual"} as Env;
+    const co=await db.prepare("SELECT id FROM companies WHERE slug=?1").bind(owner.slug).first<{id:number}>();
+    expect(co).not.toBeNull();
+    const expire=new Date(Date.now()-86_400_000).toISOString().replace(/\\.\\d{3}Z$/,"Z");
+    await db.prepare("UPDATE subscriptions SET period_end=?1 WHERE company_id=?2").bind(expire,co!.id).run();
+    const requested=await request(e,"/api/c/"+owner.slug+"/billing/plan-request",owner.cookie,"POST",{plan_code:"pro"});
+    expect(requested.status).toBe(200);
+    const url="/api/super/companies/"+co!.id+"/manual-renew";
+    const info={plan_code:"pro",period_months:2,amount_cents:9980,
+      external_reference:"TESTE-EXTERNO-"+crypto.randomUUID(),note:"Recebimento externo confirmado pelo operador do teste."};
+    expect((await request(e,url,owner.cookie,"POST",info)).status).toBe(403);
+    expect((await request(e,url,"","POST",info)).status).toBe(401);
+    const email="super-manual-"+crypto.randomUUID()+"@tigu.test";
+    const at=new Date().toISOString().replace(/\\.\\d{3}Z$/,"Z");
+    await db.prepare("INSERT INTO users(platform_role,name,email,password_hash,active,created_at) VALUES ('superadmin','Admin financeiro manual',?1,?2,1,?3)")
+      .bind(email,await hashPassword(PW),at).run();
+    const login=await app.request("/api/auth/login",{method:"POST",
+      headers:{"content-type":"application/json","cf-connecting-ip":"198.51.100.244"},
+      body:JSON.stringify({email,password:PW})},e);
+    expect(login.status).toBe(200);
+    const superCookie=(login.headers.get("set-cookie")||"").split(";")[0];
+    const spy=vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("Gateway não pode ser usado na renovação externa"));
+    try {
+      const first=await request(e,url,superCookie,"POST",info);
+      expect(first.status).toBe(200);
+      expect((await first.json() as any).ok).toBe(true);
+      const sub=await db.prepare("SELECT status,plan_code,period_end FROM subscriptions WHERE company_id=?1")
+        .bind(co!.id).first<{status:string;plan_code:string;period_end:string}>();
+      expect(sub).toMatchObject({status:"active",plan_code:"pro"});
+      expect(new Date(sub!.period_end).getTime()).toBeGreaterThan(Date.now()+50*86_400_000);
+      const duplicate=await request(e,url,superCookie,"POST",info);
+      expect(duplicate.status).toBe(200);
+      expect((await duplicate.json() as any).already_applied).toBe(true);
+      const after=await db.prepare("SELECT period_end FROM subscriptions WHERE company_id=?1")
+        .bind(co!.id).first<{period_end:string}>();
+      expect(after?.period_end).toBe(sub?.period_end);
+      const conflict=await request(e,url,superCookie,"POST",{...info,amount_cents:10000});
+      expect(conflict.status).toBe(409);
+      const rows=await db.prepare("SELECT COUNT(*) n FROM manual_subscription_renewals WHERE company_id=?1")
+        .bind(co!.id).first<{n:number}>();
+      expect(rows?.n).toBe(1);
+      const req=await db.prepare("SELECT status FROM subscription_plan_requests WHERE company_id=?1")
+        .bind(co!.id).first<{status:string}>();
+      expect(req?.status).toBe("approved");
+      const wallet=await db.prepare("SELECT balance_cents FROM wallets WHERE company_id=?1")
+        .bind(co!.id).first<{balance_cents:number}>();
+      expect(wallet?.balance_cents).toBe(0);
+      expect(spy).not.toHaveBeenCalled();
+    }finally{spy.mockRestore();}
+  });
+
   it("gera Pix do Start e só libera após aprovação real reconsultada, sem duplicar meses",async()=>{
     const owner=await newOwner(),e=billingEnv();
     const url="/api/c/"+owner.slug+"/billing";
