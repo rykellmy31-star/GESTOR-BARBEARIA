@@ -1494,6 +1494,7 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
     return {cookie,slug,email};
   }
   const billingEnv=():Env=>({...env,DB:db,APP_ENV:"development",TIGU_STAGING:"0",
+    TIGU_PLATFORM_BILLING_MODE:"mercadopago",
     PAYMENTS_MOCK:"0",MP_ACCESS_TOKEN:"TOKEN_FICTICIO",MP_WEBHOOK_SECRET:"WH_FAKE",
     PUBLIC_URL:"https://tigu.example.test"} as Env);
   const request=(envOverride:Env,path:string,cookie:string,method="GET",body:object={})=>
