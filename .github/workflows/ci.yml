@@ -44,6 +44,21 @@ jobs:
           node -e 'const ok=process.env.TIGU_EVENT==="push" && process.env.TIGU_REF==="refs/heads/audit/tigu-primeira-validacao" && process.env.TIGU_HEAD_MESSAGE==="TIGU_PRODUCTION_READONLY_PREFLIGHT_ONCE"; console.log("Evento:",process.env.TIGU_EVENT); console.log("Branch permitida:",process.env.TIGU_REF==="refs/heads/audit/tigu-primeira-validacao"); console.log("Inventário remoto autorizado por gatilho:",ok);'
       - name: Instalar dependencias
         run: npm ci --no-audit --prefer-offline --fetch-retries=1 --fetch-timeout=20000
+      - name: Diagnosticar vulnerabilidades npm (sem enfraquecer o bloqueio)
+        run: |
+          npm audit --json --fetch-retries=0 --fetch-timeout=15000 > "$RUNNER_TEMP/tigu-audit.json" || true
+          node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const path=process.env.RUNNER_TEMP+'/tigu-audit.json';
+          let report={};
+          try {report=JSON.parse(readFileSync(path,'utf8'));} catch {console.log('Auditoria: resposta inválida ou indisponível.'); process.exit(0);}
+          if(report.error) console.log('Falha npm audit:',JSON.stringify({code:report.error.code,summary:report.error.summary}));
+          console.log('Vulnerabilidades:',JSON.stringify(report.metadata?.vulnerabilities||{}));
+          for(const [name,v] of Object.entries(report.vulnerabilities||{}).slice(0,35)){
+            const via=(v.via||[]).map(a=>typeof a==='string'?a:{title:a.title,severity:a.severity,range:a.range,url:a.url});
+            console.log(JSON.stringify({package:name,severity:v.severity,direct:v.isDirect,range:v.range,fixAvailable:v.fixAvailable,via:via.slice(0,4)}));
+          }
+          NODE
       - name: Verificar tipos e compilar sem depender do resultado da auditoria de dependências
         run: npm run check:types && npm run build && npm test
       - name: Validar auditoria, homologacao, tipos, build e testes
