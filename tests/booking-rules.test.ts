@@ -21,6 +21,7 @@ import schema0005 from "../migrations/0005_subscription_pix.sql";
 import schema0006 from "../migrations/0006_request_rate_limits.sql";
 import schema0007 from "../migrations/0007_last_superadmin_guard.sql";
 import schema0008 from "../migrations/0008_booking_overlap_guard.sql";
+import schema0103 from "../migrations/0103_manual_platform_subscriptions.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
@@ -73,6 +74,8 @@ beforeAll(async () => {
   await runSqlScript(schema0004);
   await runSqlScript(schema0005);
   await runSqlScript(schema0006);
+  // Tabelas aditivas de solicitação de plano e renovação manual da plataforma.
+  await runSqlScript(schema0103);
   // Migrações com triggers precisam preservar BEGIN/END como um único comando.
   for(const script of [schema0007,schema0008])
     for(const trigger of script.match(/CREATE TRIGGER[\s\S]+?END;/g)!) await db.prepare(trigger).run();
