@@ -138,8 +138,8 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
         `INSERT OR IGNORE INTO message_jobs
           (company_id, kind, booking_id, to_phone, template_code, language, payload_json,
            status, scheduled_at, fire_deadline, price_cents, cost_cents, capture_on, max_attempts,
-           idempotency_key, demo, created_at, updated_at)
-         SELECT ?1,?2,?3,?4,?5,?6,?7,'scheduled',?8,?9,?10,?11,?12,?13,?14,?15,?16,?16
+           idempotency_key, demo, created_at, updated_at, provider)
+         SELECT ?1,?2,?3,?4,?5,?6,?7,'scheduled',?8,?9,?10,?11,?12,?13,?14,?15,?16,?16,?19
          FROM bookings b WHERE b.id=?3 AND b.company_id=?1 AND b.status IN('pendente','confirmado')
          AND b.schedule_version=?17 AND b.starts_at=?18`
       )
@@ -169,7 +169,7 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
         Number(platform.msg_max_attempts),
         idem,
         company?.demo ?? 0,
-        nowIso(),version,vRow.starts_at
+        nowIso(),version,vRow.starts_at,conn.provider
       )
       .run();
     if (!ins.meta?.changes) {
@@ -309,6 +309,7 @@ interface MessageJobRow {
   company_status: string;
   company_demo: number;
   idempotency_key:string;
+  provider: string;
 }
 
 async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: DispatchResult): Promise<void> {
@@ -382,11 +383,13 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
     return;
   }
 
-  // Nunca cobrar/enviar jobs criados sob outro provedor quando mudar para Evolution.
-  if (conn.provider === "evolution" && job.price_cents > 0) {
-    await db.prepare("UPDATE message_jobs SET status='skipped',last_error='Provedor alterado: job antigo com tarifa',updated_at=?1 WHERE id=?2 AND status IN ('scheduled','blocked_funds')")
+  // Jobs nunca atravessam provedores no momento de envio: evita mensagens
+  // Evolution gratuitas disparadas pela Meta ou jobs Meta cobrados via Evolution.
+  // Linhas antigas sem snapshot foram persistidas com default meta_cloud.
+  if ((job.provider === "evolution" || conn.provider === "evolution") && job.provider !== conn.provider) {
+    const changed = await db.prepare("UPDATE message_jobs SET status='skipped',last_error='Provedor alterado: envio cancelado com segurança',updated_at=?1 WHERE id=?2 AND status IN ('scheduled','blocked_funds')")
       .bind(nowIso(), job.id).run();
-    await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
+    if (changed.meta.changes) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
     out.skipped++;
     return;
   }
@@ -666,8 +669,8 @@ export async function sendImmediate(
   const ins = await db
     .prepare(
       `INSERT INTO message_jobs (company_id, kind, booking_id, to_phone, template_code, language, payload_json, status, scheduled_at, fire_deadline,
-        price_cents, cost_cents, capture_on, max_attempts, idempotency_key, demo, created_at, updated_at)
-       VALUES (?1,?2,?3,?4,?5,'pt_BR',?6,'scheduled',?7,?8,?9,?10,'sent',1,?11,?12,?13,?13)`
+        price_cents, cost_cents, capture_on, max_attempts, idempotency_key, demo, created_at, updated_at, provider)
+       VALUES (?1,?2,?3,?4,?5,'pt_BR',?6,'scheduled',?7,?8,?9,?10,'sent',1,?11,?12,?13,?13,?14)`
     )
     .bind(
       companyId,
@@ -682,7 +685,7 @@ export async function sendImmediate(
       price.cost_cents,
       idem,
       company?.demo ?? 0,
-      nowIso()
+      nowIso(),connection?.provider ?? "meta_cloud"
     )
     .run();
   const jobId = ins.meta.last_row_id as number;
