@@ -19,7 +19,8 @@ export function EvolutionConnectionPanel({ onChange }: { onChange: () => void })
   useEffect(() => {
     if (status?.status === "connected") {
       setQr(null);
-      onChange();
+      // Confirma no D1 com POST autenticado; o GET de status não faz escrita.
+      void api.post("/admin/whatsapp/check", {}).then(onChange).catch(() => {});
     }
     // Notificar a consulta principal apenas quando o estado da integração mudou.
     // eslint-disable-next-line react-hooks/exhaustive-deps
