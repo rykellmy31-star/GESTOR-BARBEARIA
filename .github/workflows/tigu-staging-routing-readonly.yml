@@ -1,0 +1,33 @@
+name: TIGU - inventario somente leitura de staging e dominio oficial
+
+# Jamais publica, cria recurso, chama migration, troca rota ou usa POST/PUT.
+on:
+  push:
+    branches:
+      - feature/tigu-mensalidade-manual-preintegracao-20261028
+    paths:
+      - scripts/tigu-staging-routing-readonly.mjs
+      - scripts/tigu-staging-routing-readonly.node.test.mjs
+      - .github/workflows/tigu-staging-routing-readonly.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verificar-segregacao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Conferir que o inventario nunca altera contas
+        run: node --test scripts/tigu-staging-routing-readonly.node.test.mjs
+      - name: Conferir Worker/D1/R2 e associacao do dominio via GET
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_AUDIT_TOKEN: ${{ secrets.CLOUDFLARE_AUDIT_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/tigu-staging-routing-readonly.mjs
