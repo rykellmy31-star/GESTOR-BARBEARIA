@@ -159,7 +159,7 @@ export function SuperCompanyDetail() {
         <Kpi label="Política carteira" value={wallet?.allow_negative ? "permite negativo" : "saldo ≥ 0"} sub={`alerta baixo: ${money(wallet?.low_balance_alert_cents ?? 0)}`} />
       </div>
 
-      <ManualBillingPanel companyId={co.id} />
+      {q.data.billing_mode==="manual" && <ManualBillingPanel companyId={co.id} />}
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-[#26262f] bg-[#16161c] p-5">
           <h2 className="font-display text-base text-zinc-100">Ações da plataforma</h2>
