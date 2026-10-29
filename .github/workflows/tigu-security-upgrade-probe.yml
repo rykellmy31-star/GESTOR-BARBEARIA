@@ -23,7 +23,7 @@ jobs:
       - name: Instalar ambiente original
         run: npm ci --no-audit --prefer-offline
       - name: Simular atualizacao de dependencias vulneraveis sem commitar
-        run: npm install --save-exact --ignore-scripts --no-audit zod@4.6.7 wrangler@4.155.0 @cloudflare/vitest-plugin@1.4.10
+        run: npm install --save-exact --ignore-scripts --no-audit zod@4.6.7 wrangler@4.155.0 @cloudflare/vitest-plugin@1.4.10 @cloudflare/workers-types@5.20261029.1
       - name: Verificar vulnerabilidades apos atualizacao simulada
         id: audit
         continue-on-error: true
