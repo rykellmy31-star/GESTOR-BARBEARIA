@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { evolutionInstanceName, evolutionQR, evolutionReady, evolutionState, renderEvolutionText, evolutionRequest, evolutionProvider } from "../api/lib/messaging/evolution";
+import { evolutionWebhookRouter } from "../api/routes/evolution-webhook";
 
 const config = {
   EVOLUTION_API_URL: "https://evolution.example.com",
@@ -85,5 +86,26 @@ describe("Evolution API - comunicação segura com provedor v2", () => {
     expect(result.accepted).toBe(false);
     expect(result.uncertain).toBe(true);
     expect(result.providerCostCents).toBeUndefined();
+  });
+});
+
+describe("Evolution API - webhook sem acesso entre barbearias", () => {
+  const payload = JSON.stringify({event:"messages.upsert",instance:"tigu-company-17",data:{key:{id:"x",fromMe:false}}});
+  const req = (token:string) => evolutionWebhookRouter.request("https://tigu.example.com/", {
+    method:"POST",headers:{"Content-Type":"application/json","x-tigu-webhook-token":token},
+    body:payload,
+  }, {EVOLUTION_WEBHOOK_SECRET:config.EVOLUTION_WEBHOOK_SECRET,TIGU_STAGING:"0"} as never);
+
+  it("nega chamadas sem segredo antes de acessar o banco", async () => {
+    expect((await req("")).status).toBe(401);
+    expect((await req("wrong-secret")).status).toBe(401);
+  });
+
+  it("nega eventos reais em staging mesmo com o segredo correto", async () => {
+    const response = await evolutionWebhookRouter.request("https://tigu.example.com/",{
+      method:"POST",headers:{"Content-Type":"application/json","x-tigu-webhook-token":config.EVOLUTION_WEBHOOK_SECRET},
+      body:payload,
+    },{EVOLUTION_WEBHOOK_SECRET:config.EVOLUTION_WEBHOOK_SECRET,TIGU_STAGING:"1"} as never);
+    expect(response.status).toBe(403);
   });
 });
