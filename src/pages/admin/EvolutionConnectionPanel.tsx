@@ -38,7 +38,7 @@ export function EvolutionConnectionPanel({ onChange }: { onChange: () => void })
     onError: (e:Error) => toast.push("err",e.message),
   });
   const getQr = useMutation({
-    mutationFn: () => api.get<{ qr:string|null; message?:string|null }>("/admin/whatsapp/evolution/qr"),
+    mutationFn: () => api.post<{ qr:string|null; message?:string|null }>("/admin/whatsapp/evolution/qr", {}),
     onSuccess: (r) => { setQr(r.qr || null); if (!r.qr) toast.push("info",r.message || "QR ainda não disponível."); },
     onError: (e:Error) => toast.push("err",e.message),
   });
