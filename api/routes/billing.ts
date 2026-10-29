@@ -6,7 +6,6 @@ import { err, json } from "../lib/utils";
 import { billingSummary, createSubscriptionPix, confirmSubscriptionPix } from "../lib/subscription-billing";
 import { platformBillingMode } from "../lib/platform-billing-mode";
 import { audit } from "../lib/audit";
-import { nowIso } from "../lib/utils";
 
 export const billingRouter=new Hono<{Bindings:Env}>();
 billingRouter.use("*",tenantMiddleware({auth:"admin"}));
@@ -18,8 +17,10 @@ function owner(c: {get:(key:"company")=>any}): boolean {
 billingRouter.get("/status",async c=>{
   if(!owner(c)) return err(c,"Somente o proprietário pode consultar a assinatura.",403);
   const result=await billingSummary(c.env.DB,cid(c));
+  const mode=platformBillingMode(c.env);
+  const plan_request=mode==="manual"?await c.env.DB.prepare("SELECT id,plan_code,created_at FROM subscription_plan_requests WHERE company_id=?1 AND status='pending'").bind(cid(c)).first():null;
   c.header("Cache-Control","no-store");
-  return json(c,{ ...result, billing_mode: platformBillingMode(c.env) });
+  return json(c,{ ...result, plan_request, billing_mode: mode });
 });
 
 // Proprietário apenas SOLICITA um plano; nunca ativa o próprio acesso.
