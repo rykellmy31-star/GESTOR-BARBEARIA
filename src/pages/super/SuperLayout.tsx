@@ -10,7 +10,7 @@ const links = [
   { to: "users", label: "Usuários", icon: Users },
   { to: "wallets", label: "Carteiras", icon: Coins },
   { to: "topups", label: "Recargas & estornos", icon: Receipt },
-  { to: "subscription-invoices", label: "Mensalidades Pix", icon: CreditCard },
+  { to: "subscription-invoices", label: "Faturas Pix anteriores", icon: CreditCard },
   { to: "pricing", label: "Precificação", icon: Tag },
   { to: "messages", label: "Fila global", icon: Bot },
   { to: "audit", label: "Auditoria", icon: FileClock },
