@@ -360,7 +360,7 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
   if (!isManual && plan && plan.max_messages_month > 0) {
     const monthStart = `${now.toISOString().slice(0, 7)}-01T00:00:00Z`;
     const used = await db
-      .prepare(`SELECT COUNT(*) AS n FROM message_jobs WHERE company_id=?1 AND (captured_at>=?2 OR (status='sending' AND last_attempt_at>=?2))`)
+      .prepare(`SELECT COUNT(*) AS n FROM message_jobs WHERE company_id=?1 AND (captured_at>=?2 OR (status='sending' AND last_attempt_at>=?2) OR (price_cents=0 AND sent_at>=?2))`)
       .bind(job.company_id, monthStart)
       .first<{ n: number }>();
     if ((used?.n ?? 0) >= plan.max_messages_month) {
@@ -412,7 +412,7 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
         WHERE s.company_id=message_jobs.company_id AND s.status IN('trial','active') AND julianday(s.period_end)>julianday(?1)
         AND p.whatsapp_enabled=1 AND (p.max_messages_month<=0 OR (
           SELECT count(*) FROM message_jobs j WHERE j.company_id=message_jobs.company_id
-          AND (j.captured_at>=?4 OR (j.status='sending' AND j.last_attempt_at>=?4))
+          AND (j.captured_at>=?4 OR (j.status='sending' AND j.last_attempt_at>=?4) OR (j.price_cents=0 AND j.sent_at>=?4))
         )<p.max_messages_month)))`)
     .bind(isoZ(now),job.id,isManual?1:0,`${now.toISOString().slice(0,7)}-01T00:00:00Z`)
     .run();
@@ -438,7 +438,7 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
       db.prepare(`UPDATE message_jobs SET status='sent', provider_msg_id=?1, sent_at=?2, delivered_at=NULL, last_error='', updated_at=?2 WHERE id=?3 AND status='sending'`).bind(result.providerMessageId ?? "", at, job.id),
     ]);
     out.sent++;
-    if (job.capture_on === "sent") {
+    if (job.capture_on === "sent" && job.price_cents > 0) {
       await captureJobCharge(db, job.company_id, job.id, job.price_cents);
       await maybeLowBalanceAlert(db, job.company_id);
     }
