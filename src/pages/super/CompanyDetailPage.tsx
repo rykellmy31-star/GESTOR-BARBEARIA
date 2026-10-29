@@ -164,7 +164,7 @@ export function SuperCompanyDetail() {
         <div className="rounded-2xl border border-[#26262f] bg-[#16161c] p-5">
           <h2 className="font-display text-base text-zinc-100">Ações da plataforma</h2>
           <div className="mt-3 space-y-3 text-sm">
-            <Field label="Alterar plano"><div className="flex gap-2"><Select value={co.plan_code} onChange={(e) => mut.mutate(() => api.put(`/super/companies/${co.id}/plan`, { plan_code: e.target.value, note: "ajuste via suíte" }))} className="flex-1"><option value="free">free</option><option value="pro">pro</option><option value="scale">scale</option></Select></div></Field>
+            <p className="text-xs text-zinc-400">Para selecionar plano e renovar a assinatura, utilize o quadro de mensalidade externa acima. A alteração é auditada e não gera cobrança.</p>
             {susp.mode === "suspend" ? (
               <Field label="Motivo da suspensão (5+)"><div className="flex gap-2"><Input value={susp.reason} onChange={(e) => setSusp({ ...susp, reason: e.target.value })} className="flex-1" /><Button className="rounded-xl bg-red-500/80 px-4 py-2 text-sm" disabled={susp.reason.length < 5 || mut.isPending} onClick={async () => { await mut.mutateAsync(() => api.post(`/super/companies/${co.id}/suspend`, { reason: susp.reason })); setSusp({ mode: "", reason: "" }); }}>Confirmar</Button></div></Field>
             ) : (
