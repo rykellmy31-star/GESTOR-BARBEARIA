@@ -22,7 +22,7 @@ export function ManualBillingPanel({companyId}:{companyId:number}) {
     }),
     onSuccess:()=>{toast.push("ok","Mensalidade registrada e acesso renovado.");setReference("");setNote("");
       void qc.invalidateQueries({queryKey:["tigu-manual-billing",companyId]});
-      void qc.invalidateQueries({queryKey:["super-company",companyId]});},
+      void qc.invalidateQueries({queryKey:["super-co",String(companyId)]});},
     onError:(e:Error)=>toast.push("err",e.message)
   });
   const reject=useMutation({
