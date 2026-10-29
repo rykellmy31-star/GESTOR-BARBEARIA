@@ -22,7 +22,7 @@ export interface EvolutionEnv {
 }
 
 export function evolutionReady(env: EvolutionEnv): boolean {
-  if (!env.EVOLUTION_API_URL || !env.EVOLUTION_API_KEY || !env.EVOLUTION_WEBHOOK_SECRET || !env.PUBLIC_URL) return false;
+  if (!env.EVOLUTION_API_URL || !env.EVOLUTION_API_KEY || !env.EVOLUTION_WEBHOOK_SECRET || env.EVOLUTION_WEBHOOK_SECRET.length < 32 || !env.PUBLIC_URL) return false;
   try {
     const api = new URL(env.EVOLUTION_API_URL);
     const publicUrl = new URL(env.PUBLIC_URL);
