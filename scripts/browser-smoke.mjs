@@ -331,6 +331,10 @@ try{
   await until("Pix real bloqueado no ambiente local",
     '(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("via Pix"));return !!b&&b.disabled})()');
   pass("Pix real bloqueado no ambiente local");
+  await go(base+"/c/"+slug+"/admin/assinatura");
+  await until("painel de mensalidade externa",
+    'document.body.innerText.includes("pagamento externo")&&document.body.innerText.includes("Solicitar plano selecionado")');
+  pass("proprietário visualiza planos e solicitação manual sem checkout Pix");
 
   // Reserva criada de verdade pela interface do visitante.
   await go(base+"/c/"+slug+"/agendar");
@@ -774,7 +778,7 @@ try{
   pass("Superadmin faz ajuste financeiro auditável apenas na carteira local");
   await go(base+"/superadmin/subscription-invoices");
   await until("mensalidades sem pagamento de teste",
-    'document.body.innerText.includes("Mensalidades Pix")&&document.body.innerText.includes("Nenhuma fatura encontrada")');
+    'document.body.innerText.includes("Histórico de faturas Pix")&&document.body.innerText.includes("Nenhuma fatura encontrada")');
   pass("Superadmin consulta mensalidades sem ativação ou cobrança");
   await go(base+"/superadmin/topups");
   await until("painel de recargas",
