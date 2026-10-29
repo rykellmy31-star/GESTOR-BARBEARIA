@@ -21,13 +21,14 @@ function migrated(){
 }
 
 test("a cadeia base inclui o OAuth e o vínculo de recebedor 0100",()=>{
-  assert.equal(files.length,26);
+  assert.equal(files.length,27);
   files.slice(0,21).forEach((f,i)=>assert.equal(Number(f.slice(0,4)),i+1));
   assert.equal(files[21],"0099_seller_mercadopago_oauth.sql");
   assert.equal(files[22],"0100_seller_pix.sql");
   assert.equal(files[23],"0101_barber_service_duration.sql");
   assert.equal(files[24],"0102_booking_checkin_cancel_reason.sql");
   assert.equal(files[25],"0103_manual_platform_subscriptions.sql");
+  assert.equal(files[26],"0104_evolution_whatsapp.sql");
   const db=migrated();
   try{
     assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check,"ok");
