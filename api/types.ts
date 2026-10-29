@@ -11,6 +11,8 @@ export interface Env {
   APP_ENV?: string;
   /** Worker isolado de homologação: impede provedores e webhooks reais. */
   TIGU_STAGING?: string;
+  /** Modo da mensalidade da plataforma; por padrão manual. NÃO afeta pagamentos dos profissionais. */
+  TIGU_PLATFORM_BILLING_MODE?: "manual" | "mercadopago";
   /** Site key pública do Cloudflare Turnstile usada no formulário comercial. */
   SALES_TURNSTILE_SITE_KEY?: string;
   /** Secret privado do Turnstile para validar tokens no servidor. */
