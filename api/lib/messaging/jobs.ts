@@ -17,6 +17,7 @@ import { nowIso } from "../utils";
 import { loadPlatformSettings, type CompanySettings } from "../settings";
 import { ensureWallet, reserveForJob, captureJobCharge, releaseJobReservation, refundJobCharge } from "../wallet";
 import { resolveProvider, type ProviderContext, type ProviderConnectionRow } from "./provider";
+import { getEvolutionRow } from "./evolution";
 import type { BookingRow } from "./types";
 
 export type MessageKind = "reminder" | "confirmation" | "manual" | "test";
@@ -55,6 +56,15 @@ export async function resolvePricing(db: D1Database, companyId: number, category
 }
 
 export async function getConnection(db: D1Database, companyId: number): Promise<ProviderConnectionRow | null> {
+  const evolution = await getEvolutionRow(db, companyId);
+  if (evolution?.enabled === 1) return {
+    id: companyId, company_id: companyId, provider: "evolution",
+    phone_number_id: evolution.instance_name, waba_id: "", access_token_enc: "",
+    status: evolution.status as ProviderConnectionRow["status"],
+    display_phone: evolution.display_phone, business_name: "", coexistence: "unknown",
+    last_error: evolution.last_error, last_check_at: evolution.updated_at,
+    connected_at: evolution.connected_at, demo: 0,
+  };
   return db.prepare(`SELECT * FROM whatsapp_connections WHERE company_id = ?1`).bind(companyId).first<ProviderConnectionRow>();
 }
 
@@ -118,7 +128,7 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
     }
     const fireDeadlineMs = startMs + 15 * 60_000;
     const idem = currentIdempotencyKey;
-    const price = await resolvePricing(db, companyId, "utility");
+    const price = conn.provider === "evolution" ? { price_cents: 0, cost_cents: 0 } : await resolvePricing(db, companyId, "utility");
     const platform = await loadPlatformSettings(db);
     const company = await db.prepare(`SELECT demo FROM companies WHERE id = ?1`).bind(companyId).first<{ demo: number }>();
     const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -369,6 +379,15 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
       .bind(nowIso(), job.id)
       .run();
     out.blocked++;
+    return;
+  }
+
+  // Nunca cobrar/enviar jobs criados sob outro provedor quando mudar para Evolution.
+  if (conn.provider === "evolution" && job.price_cents > 0) {
+    await db.prepare("UPDATE message_jobs SET status='skipped',last_error='Provedor alterado: job antigo com tarifa',updated_at=?1 WHERE id=?2 AND status IN ('scheduled','blocked_funds')")
+      .bind(nowIso(), job.id).run();
+    await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
+    out.skipped++;
     return;
   }
 
@@ -641,7 +660,8 @@ export async function sendImmediate(
   if (!/^\d{10,15}$/.test(opts.to)) return { ok: false, error: "Número inválido (use DDI+DDD+numero, só dígitos)." };
   const now = new Date();
   const idem = `send-${opts.kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const price = await resolvePricing(db, companyId, opts.test ? "utility" : "utility");
+  const connection = await getConnection(db, companyId);
+  const price = connection?.provider === "evolution" ? { price_cents: 0, cost_cents: 0 } : await resolvePricing(db, companyId, "utility");
   const company = await db.prepare(`SELECT demo FROM companies WHERE id = ?1`).bind(companyId).first<{ demo: number }>();
   const ins = await db
     .prepare(
