@@ -4,6 +4,9 @@ import type { Env } from "../types";
 import { tenantMiddleware, cid } from "../lib/tenant";
 import { err, json } from "../lib/utils";
 import { billingSummary, createSubscriptionPix, confirmSubscriptionPix } from "../lib/subscription-billing";
+import { platformBillingMode } from "../lib/platform-billing-mode";
+import { audit } from "../lib/audit";
+import { nowIso } from "../lib/utils";
 
 export const billingRouter=new Hono<{Bindings:Env}>();
 billingRouter.use("*",tenantMiddleware({auth:"admin"}));
@@ -15,10 +18,39 @@ function owner(c: {get:(key:"company")=>any}): boolean {
 billingRouter.get("/status",async c=>{
   if(!owner(c)) return err(c,"Somente o proprietário pode consultar a assinatura.",403);
   const result=await billingSummary(c.env.DB,cid(c));
-  return json(c,result);
+  c.header("Cache-Control","no-store");
+  return json(c,{ ...result, billing_mode: platformBillingMode(c.env) });
+});
+
+// Proprietário apenas SOLICITA um plano; nunca ativa o próprio acesso.
+billingRouter.post("/plan-request",async c=>{
+  if(!owner(c)) return err(c,"Somente o proprietário pode solicitar um plano.",403);
+  if(platformBillingMode(c.env)!=="manual") return err(c,"Solicitação manual indisponível.",409);
+  const parsed=z.object({plan_code:z.enum(["free","pro","scale"])}).strict()
+    .safeParse(await c.req.json().catch(()=>null));
+  if(!parsed.success) return err(c,"Selecione um plano válido.",422);
+  const companyId=cid(c),db=c.env.DB;
+  const existing=await db.prepare("SELECT id,plan_code FROM subscription_plan_requests WHERE company_id=?1 AND status='pending'")
+    .bind(companyId).first<{id:number;plan_code:string}>();
+  if(existing){
+    if(existing.plan_code!==parsed.data.plan_code) return err(c,"Já existe uma solicitação pendente de outro plano. Contate o suporte.",409);
+    return json(c,{ok:true,request_id:existing.id,status:"pending",already_pending:true});
+  }
+  const found=await db.prepare("SELECT code FROM plans WHERE code=?1 AND demo=0").bind(parsed.data.plan_code).first();
+  if(!found) return err(c,"Plano não disponível.",422);
+  try {
+    await db.prepare("INSERT OR IGNORE INTO subscription_plan_requests(company_id,plan_code) VALUES (?1,?2)")
+      .bind(companyId,parsed.data.plan_code).run();
+  } catch {return err(c,"Não foi possível registrar a solicitação.",503);}
+  const req=await db.prepare("SELECT id,plan_code FROM subscription_plan_requests WHERE company_id=?1 AND status='pending'")
+    .bind(companyId).first<{id:number;plan_code:string}>();
+  if(!req||req.plan_code!==parsed.data.plan_code) return err(c,"Há uma solicitação pendente diferente.",409);
+  await audit(db,c.get("user"),"subscription.plan_requested","subscription_plan_request",req.id,{plan_code:req.plan_code},{companyId,scope:"platform"});
+  return json(c,{ok:true,request_id:req.id,status:"pending"});
 });
 
 billingRouter.post("/pix",async c=>{
+  if(platformBillingMode(c.env)==="manual") return err(c,"Mensalidades são cobradas fora da plataforma. Solicite seu plano ao responsável.",409);
   if(!owner(c)) return err(c,"Apenas o proprietário pode contratar o plano.",403);
   const parsed=z.object({plan_code:z.enum(["free","pro","scale"])}).strict()
     .safeParse(await c.req.json().catch(()=>null));
