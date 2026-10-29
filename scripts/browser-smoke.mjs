@@ -332,15 +332,11 @@ try{
     '(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("via Pix"));return !!b&&b.disabled})()');
   pass("Pix real bloqueado no ambiente local");
   await go(base+"/c/"+slug+"/admin/assinatura");
-  const billingDiagnostic=await api(base,"/api/c/"+slug+"/billing/status","GET",undefined,signup.cookie);
-  console.log("DIAGNOSTICO assinatura",JSON.stringify({
-    apiStatus:billingDiagnostic.status,billingMode:billingDiagnostic.data?.billing_mode,
-    responseError:billingDiagnostic.data?.error??null,
-    documentTitle:await js("document.title"),
-    pageExcerpt:await js("document.body.innerText.slice(-900)")
-  }));
+  const billingResponse=await api(base,"/api/c/"+slug+"/billing/status","GET",undefined,signup.cookie);
+  assert.equal(billingResponse.status,200,"API de assinatura deve estar acessível ao proprietário");
+  assert.equal(billingResponse.data.billing_mode,"manual","O fluxo de mensalidades da plataforma deve ser externo");
   await until("painel de mensalidade externa",
-    'document.body.innerText.includes("pagamento externo")&&document.body.innerText.includes("Solicitar plano selecionado")');
+    'document.body.innerText.toLowerCase().includes("pagamento externo")&&document.body.innerText.includes("Solicitar plano selecionado")');
   pass("proprietário visualiza planos e solicitação manual sem checkout Pix");
 
   // Reserva criada de verdade pela interface do visitante.
