@@ -6,7 +6,7 @@
 //   /api/c/:slug/admin/*   painel da barbearia (owner/manager)
 //   /api/c/:slug/painel/*  painel do barbeiro
 //   /api/super/*           suíte Tigu (superadmin)
-//   /api/webhooks/*        Meta + Mercado Pago (sem sessão)
+//   /api/webhooks/*        Evolution API + Mercado Pago (sem sessão)
 //   /uploads/*             R2 privado
 //   scheduled(ev,env,ctx)  cron ~1min → fila de mensagens + expiração topups
 // ============================================================================
@@ -65,7 +65,7 @@ app.get("/api/health", (c) =>
       session_secret_ready: Boolean(c.env.SESSION_SECRET && c.env.SESSION_SECRET.length >= 32),
       encryption_key_ready: Boolean(c.env.MSG_ENC_KEY && c.env.MSG_ENC_KEY.length >= 32),
     },
-    whatsapp: { embedded: Boolean(c.env.WHATSAPP_APP_ID && c.env.WHATSAPP_EMBEDDED_CONFIG_ID), mock: c.env.WHATSAPP_MOCK === "1" },
+    whatsapp: { provider:"evolution", configured:Boolean(c.env.EVOLUTION_API_URL && c.env.EVOLUTION_API_KEY && c.env.EVOLUTION_WEBHOOK_SECRET), mock: c.env.WHATSAPP_MOCK === "1" },
     payments: { mercadopago: Boolean(c.env.MP_ACCESS_TOKEN), mock: c.env.PAYMENTS_MOCK === "1" },
   })
 );
