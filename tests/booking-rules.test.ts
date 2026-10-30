@@ -1805,3 +1805,53 @@ describe("WhatsApp: cada barbearia configura seu próprio tempo de lembrete", ()
     }
   });
 });
+
+describe("WhatsApp: confirmação presencial por link individual", () => {
+  it("exige token da reserva, confirma uma só vez e não cruza barbearias", async () => {
+    const company = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
+      .first<{id:number}>())!;
+    const barber = (await db.prepare("SELECT id FROM barbers WHERE company_id=?1 LIMIT 1")
+      .bind(company.id).first<{id:number}>())!;
+    const service = (await db.prepare("SELECT id FROM services WHERE company_id=?1 LIMIT 1")
+      .bind(company.id).first<{id:number}>())!;
+    const key = crypto.randomUUID();
+    const code = "WALI" + Date.now().toString(36).slice(-7).toUpperCase();
+    const start = new Date(Date.now() + 4*86400000).toISOString().replace(/\.\d{3}Z$/,"Z");
+    const booked = await db.prepare(`
+      INSERT INTO bookings
+      (company_id,code,barber_id,service_id,starts_at,ends_at,price_cents,
+       status,origin,customer_name,customer_phone,whatsapp_optin,cancel_token)
+      VALUES (?1,?2,?3,?4,?5,?6,4500,'confirmado','cliente','Cliente com QR',
+              '5573999991234',1,?7)
+    `).bind(company.id,code,barber.id,service.id,start,
+      new Date(Date.parse(start)+30*60000).toISOString().replace(/\.\d{3}Z$/,"Z"),key).run();
+    const bookingId = booked.meta.last_row_id;
+    const req = (url:string,token:string) => api("/api/c/alfa"+url,{
+      method:"POST",body:JSON.stringify({code,token})
+    });
+    expect((await req("/bookings/action/lookup",crypto.randomUUID())).status).toBe(404);
+    expect((await req("/bookings/action/confirm",crypto.randomUUID())).status).toBe(404);
+    expect((await api("/api/c/bravo/bookings/action/confirm",{
+      method:"POST",body:JSON.stringify({code,token:key})
+    })).status).toBe(404);
+    const before = await req("/bookings/action/lookup",key);
+    expect(before.status).toBe(200);
+    expect(before.body.confirmed_by_customer).toBe(false);
+    expect((await req("/bookings/action/confirm",key)).status).toBe(200);
+    const repeat = await req("/bookings/action/confirm",key);
+    expect(repeat.status).toBe(200);
+    expect(repeat.body.already_confirmed).toBe(true);
+    const confirmed = await req("/bookings/action/lookup",key);
+    expect(confirmed.body.confirmed_by_customer).toBe(true);
+    const row = await db.prepare(
+      "SELECT COUNT(*) AS n FROM message_webhook_events WHERE event_uid=?1"
+    ).bind("tigu:rsvp:"+bookingId+":v1").first<{n:number}>();
+    expect(row!.n).toBe(1);
+    // Testa a passagem do agendamento para outra versão após remarcar.
+    await db.prepare("UPDATE bookings SET schedule_version=schedule_version+1 WHERE id=?1")
+      .bind(bookingId).run();
+    const after = await req("/bookings/action/lookup",key);
+    expect(after.status).toBe(200);
+    expect(after.body.confirmed_by_customer).toBe(false);
+  });
+});
