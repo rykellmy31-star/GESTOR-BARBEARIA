@@ -327,10 +327,9 @@ try{
     '[...document.querySelectorAll("label.block")].some(x=>x.firstElementChild?.textContent?.trim()==="Slogan"&&x.querySelector("input")?.value==="Barbearia Chromium - configuração validada")');
   pass("configurações persistem após nova abertura do painel");
   await go(base+"/c/"+slug+"/admin/carteira");
-  await until("carteira",'document.body.innerText.includes("Carteira de créditos")');
-  await until("Pix real bloqueado no ambiente local",
-    '(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("via Pix"));return !!b&&b.disabled})()');
-  pass("Pix real bloqueado no ambiente local");
+  await until("carteira antiga redirecionada ao Dashboard",
+    'location.pathname.endsWith("/admin/dashboard") && !document.body.innerText.includes("Carteira de créditos")');
+  pass("carteira e recarga por Pix removidas do painel da barbearia");
   await go(base+"/c/"+slug+"/admin/assinatura");
   const billingResponse=await api(base,"/api/c/"+slug+"/billing/status","GET",undefined,signup.cookie);
   assert.equal(billingResponse.status,200,"API de assinatura deve estar acessível ao proprietário");
@@ -743,7 +742,7 @@ try{
   assert.equal(detailResponse.status,200,
     "API de detalhes de barbearia deve funcionar: "+JSON.stringify(detailResponse));
   await until("detalhe da nova barbearia",'document.body.innerText.includes("Nova Barbearia Chromium")'+
-    '&&document.body.innerText.includes("AJUSTE MANUAL DE CRÉDITOS")');
+    '&&!document.body.innerText.includes("AJUSTE MANUAL DE CRÉDITOS")');
   pass("Superadmin abre detalhes e configurações de barbearia");
   await click("Copiar informações de login");
   await until("modal de dados para proprietário",
@@ -759,39 +758,21 @@ try{
   await click("Fechar");
   await until("modal de segundo acesso encerrado",'document.querySelector("#tigu-owner-details-message")===null');
   pass("Superadmin copia uma segunda via segura dos dados e link público da barbearia");
-  await fill('input[placeholder^="ex.: 5000"]',"1250");
-  await fill('input[placeholder^="Justificativa"]',"Teste isolado de auditoria de créditos");
-  await click("Aplicar");
-  await pause(700);
-  const walletAdjusted=await js('fetch("/api/super/wallets/'+newlyCreated.id+
-    '").then(r=>r.json())');
-  const adjustmentScreen=await js('(()=>({main:document.querySelector("main")?.innerText.slice(0,1000),'+
-    'value:document.querySelector("input[placeholder^=\\\"ex.: 5000\\\"]")?.value,'+
-    'alerts:document.body.innerText.slice(-350)}))()');
-  console.log("Diagnóstico local de ajuste financeiro:",JSON.stringify({
-    balance:walletAdjusted.wallet?.balance_cents,transactions:walletAdjusted.transactions?.length,
-    screen:adjustmentScreen
-  }));
-  assert.equal(walletAdjusted.wallet.balance_cents,1250,
-    "Ajuste manual deve registrar exatamente 1.250 centavos na carteira D1");
-  await until("carteira atualizada no painel",
-    'document.body.innerText.includes("12,50")');
-  assert.ok(walletAdjusted.transactions.some(x=>Number(x.amount_cents)===1250),
-    "Ajuste deve criar lançamento de auditoria financeira");
-  pass("Superadmin faz ajuste financeiro auditável apenas na carteira local");
+  assert.equal(await js('document.body.innerText.includes("AJUSTE MANUAL DE CRÉDITOS")'),false);
+  assert.equal(await js('document.body.innerText.includes("POLÍTICA CARTEIRA")'),false);
+  pass("Superadmin consulta barbearia sem saldos nem ajuste de créditos na interface");
   await go(base+"/superadmin/subscription-invoices");
   await until("mensalidades sem pagamento de teste",
     'document.body.innerText.includes("Histórico de faturas Pix")&&document.body.innerText.includes("Nenhuma fatura encontrada")');
   pass("Superadmin consulta mensalidades sem ativação ou cobrança");
-  await go(base+"/superadmin/topups");
-  await until("painel de recargas",
-    'document.body.innerText.includes("Recargas Pix")');
-  pass("Superadmin consulta recargas sem crédito automático");
-  await go(base+"/superadmin/pricing");
-  await until("tabela de precificação",
-    'document.body.innerText.includes("Precificação de mensagens")');
-  pass("Superadmin consulta precificação vigente");
-  console.log("50 verificações Chromium aprovadas: usuário, agendamentos, carteira e Suíte Tigu; sem cobranças reais.");
+  for(const [route,label] of [["wallets","carteiras"],["topups","recargas"],["pricing","precificação"]]){
+    await go(base+"/superadmin/"+route);
+    await until("rota antiga de "+label+" redireciona para visão geral",
+      'location.pathname.endsWith("/superadmin/overview")');
+    assert.equal(await js('document.body.innerText.includes("Recargas Pix")'),false);
+  }
+  pass("Superadmin não expõe mais carteiras, recargas nem precificação de mensagens");
+  console.log("Verificações Chromium aprovadas: usuário, agendamentos, Evolution, créditos removidos da interface e Suíte Tigu; sem cobranças reais.");
 }finally{
   if(ws)ws.close();
   for(const child of [chrome,worker])if(child&&child.exitCode===null){
