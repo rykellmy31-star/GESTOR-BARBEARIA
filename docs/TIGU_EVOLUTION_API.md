@@ -42,3 +42,11 @@ A publicação no domínio oficial só poderá prosseguir se os testes completos
 A versão Evolution-only substitui os endpoints e formulários Meta sem executar migrações adicionais no D1 já homologado.
 
 Atualização visual: os avisos de risco não são exibidos no painel. A carteira de créditos e as telas de recarga/precificação foram retiradas da navegação do TIGU, preservando o histórico financeiro no D1 para auditoria e conciliações.
+
+## Publicação direta no domínio oficial — 30/10/2026
+
+O Worker **existente** `tigu-staging` responde pelo domínio oficial `https://agendamentos.crjornada.com`, apesar do nome histórico. Não criar outro Worker, banco D1 ou ambiente de testes. A publicação do painel QR e do cron de mensagens Evolution é independente dos pagamentos: `TIGU_STAGING=1` e `PAYMENTS_MOCK=0` permanecem, inclusive o bloqueio de fluxos financeiros de homologação. A flag exclusiva `TIGU_EVOLUTION_LIVE=1` permite apenas a conexão e os webhooks da Evolution real. O cron despacha **somente** jobs `provider='evolution'`; não processa filas legadas Meta ou mock.
+
+O script de deploy mantém os segredos existentes e adiciona `EVOLUTION_API_URL=https://evolution.crjornada.com`, `PUBLIC_URL=https://agendamentos.crjornada.com`, `TIGU_EVOLUTION_LIVE=1`, além de um cron `* * * * *`. Não registra chaves no GitHub. Para ativar realmente o QR, o operador da plataforma precisa cadastrar **somente no Worker** dois segredos: `EVOLUTION_API_KEY` (chave global da instalação Evolution; nunca chave por instância) e `EVOLUTION_WEBHOOK_SECRET` (segredo aleatório exclusivo de ao menos 32 caracteres). Após salvar esses segredos, o painel de cada barbearia gera automaticamente sua instância e QR; o proprietário não precisa inserir URLs ou chaves.
+
+A ativação não é comprovada apenas pelo deploy: conferir `/api/health` (WhatsApp configured=true), realizar login do proprietário, criar instância e escanear QR com número controlado e enviar mensagem de teste antes do primeiro agendamento com cliente. Não reenvia automaticamente mensagens antigas.
