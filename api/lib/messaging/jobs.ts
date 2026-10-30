@@ -246,17 +246,16 @@ export async function bumpBookingVersion(db: D1Database, bookingId: number): Pro
 }
 
 /**
- * Tigu Start anuncia até 100 mensagens/mês, mas o plano legado tinha
- * whatsapp_enabled=0 quando usava somente Meta. No caminho Evolution gratuito
- * (nunca no mock/Meta), aplicar a franquia de mensagens que o plano anuncia.
- * Os demais planos continuam respeitando a flag de habilitação e as cotas.
+ * Evolution é a integração oficial em todos os planos TIGU e não possui
+ * limite de mensagens imposto pelo SaaS. Não estender esse acesso ao
+ * mock/Meta: os provedores antigos continuam isolados e protegidos.
+ * Assinatura válida, autorização, conexão, idempotência e anti-spam permanecem.
  */
 export function planAllowsAutomaticWhatsapp(
   plan: { code: string; whatsapp_enabled: number; max_messages_month: number },
   provider: string
 ): boolean {
-  return plan.whatsapp_enabled === 1 ||
-    (provider === "evolution" && plan.code === "free" && plan.max_messages_month > 0);
+  return provider === "evolution" || plan.whatsapp_enabled === 1;
 }
 
 // ── DISPATCH (cron a cada ~1 min; também chamado pelos testes) ──────────────
@@ -389,7 +388,9 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
     out.skipped++;
     return;
   }
-  if (!isManual && plan && plan.max_messages_month > 0) {
+  // O limite legado existe no D1 para compatibilidade histórica, mas NÃO
+  // limita o WhatsApp Evolution em nenhum plano. Nunca bloquear a fila real.
+  if (!isManual && job.provider !== "evolution" && plan && plan.max_messages_month > 0) {
     const monthStart = `${now.toISOString().slice(0, 7)}-01T00:00:00Z`;
     const used = await db
       .prepare(`SELECT COUNT(*) AS n FROM message_jobs WHERE company_id=?1 AND (captured_at>=?2 OR (status='sending' AND last_attempt_at>=?2) OR (price_cents=0 AND sent_at>=?2))`)
@@ -453,9 +454,8 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
       AND EXISTS(SELECT 1 FROM companies c WHERE c.id=message_jobs.company_id AND c.status='active')
       AND (?3=1 OR EXISTS(SELECT 1 FROM subscriptions s JOIN plans p ON p.code=s.plan_code
         WHERE s.company_id=message_jobs.company_id AND s.status IN('trial','active') AND julianday(s.period_end)>julianday(?1)
-        AND (p.whatsapp_enabled=1 OR (message_jobs.provider='evolution'
-          AND p.code='free' AND p.max_messages_month>0))
-        AND (p.max_messages_month<=0 OR (
+        AND (message_jobs.provider='evolution' OR p.whatsapp_enabled=1)
+        AND (message_jobs.provider='evolution' OR p.max_messages_month<=0 OR (
           SELECT count(*) FROM message_jobs j WHERE j.company_id=message_jobs.company_id
           AND (j.captured_at>=?4 OR (j.status='sending' AND j.last_attempt_at>=?4) OR (j.price_cents=0 AND j.sent_at>=?4))
         )<p.max_messages_month)))`)

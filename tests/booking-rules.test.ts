@@ -907,6 +907,8 @@ describe("Planos comerciais com preço dinâmico e permissão de Superadmin", ()
     expect(publicResult.status).toBe(200);
     expect(publicResult.body.automatic_billing).toBe(false);
     expect(publicResult.body.plans.map((p: any) => p.code)).toEqual(["free","pro","scale"]);
+    expect(publicResult.body.plans.every((p:any)=>
+      p.max_messages_month === -1 && p.whatsapp_enabled === 1)).toBe(true);
     const pro = publicResult.body.plans.find((p: any) => p.code === "pro");
     expect(pro.price_cents_month).toBeGreaterThan(0);
     const changed = {
@@ -939,6 +941,12 @@ describe("Planos comerciais com preço dinâmico e permissão de Superadmin", ()
       name:free.name,price_cents_month:1999,max_barbers:free.max_barbers,
       max_messages_month:free.max_messages_month,whatsapp_enabled:false,store_enabled:true
     })},cookie)).status).toBe(200);
+    // Mesmo que uma tela antiga envie valores de cota ou desative o WhatsApp,
+    // o cadastro do plano e o contrato efetivo permanecem ilimitados.
+    const freeAfter = (await api("/api/super/plans",{},cookie)).body.plans
+      .find((p:any)=>p.code==="free");
+    expect(freeAfter.max_messages_month).toBe(-1);
+    expect(freeAfter.whatsapp_enabled).toBe(1);
     expect((await api("/api/super/plans/pro",{method:"PUT",body:JSON.stringify({...changed,max_barbers:0})},cookie)).status).toBe(422);
     try {
       const saved = await api("/api/super/plans/pro",{method:"PUT",body:JSON.stringify(changed)},cookie);
@@ -1916,29 +1924,29 @@ describe("confirmação WhatsApp após reservar — autorização separada do LG
   });
 });
 
-describe("Tigu Start: mensagens automáticas na Evolution", () => {
-  it("respeita as 100 mensagens/mês do Start, sem liberar o mock nem outras restrições", async () => {
-    const start = await db.prepare("SELECT code,whatsapp_enabled,max_messages_month FROM plans WHERE code='free'")
-      .first<{code:string;whatsapp_enabled:number;max_messages_month:number}>();
-    expect(start).toMatchObject({code:"free",whatsapp_enabled:0,max_messages_month:100});
-    expect(planAllowsAutomaticWhatsapp(start!, "evolution")).toBe(true);
-    expect(planAllowsAutomaticWhatsapp(start!, "mock")).toBe(false);
-    expect(planAllowsAutomaticWhatsapp(start!, "meta_cloud")).toBe(false);
-    expect(planAllowsAutomaticWhatsapp({...start!,max_messages_month:0},"evolution")).toBe(false);
-    const pro = await db.prepare("SELECT code,whatsapp_enabled,max_messages_month FROM plans WHERE code='pro'")
-      .first<{code:string;whatsapp_enabled:number;max_messages_month:number}>();
-    expect(planAllowsAutomaticWhatsapp(pro!,"evolution")).toBe(true);
-    const denied = {...pro!,whatsapp_enabled:0};
-    expect(planAllowsAutomaticWhatsapp(denied,"evolution")).toBe(false);
-    // O claim atômico SQL usa a MESMA regra. Assim não para entre a
-    // verificação no aplicativo e a disputa de disparos por múltiplos Workers.
-    const flags=await db.prepare(`SELECT
-      (p.whatsapp_enabled=1 OR ('evolution'='evolution' AND p.code='free'
-       AND p.max_messages_month>0)) AS allowed_evolution,
-      (p.whatsapp_enabled=1 OR ('mock'='evolution' AND p.code='free'
-       AND p.max_messages_month>0)) AS allowed_mock
-      FROM plans p WHERE p.code='free'`).first<{allowed_evolution:number;allowed_mock:number}>();
-    expect(flags?.allowed_evolution).toBe(1);
-    expect(flags?.allowed_mock).toBe(0);
+describe("Todos os planos TIGU: Evolution automática sem franquia mensal", () => {
+  it("ignora cotas históricas de Start, Pro e Scale sem liberar mock ou Meta", async () => {
+    const rows = await db.prepare(
+      "SELECT code,whatsapp_enabled,max_messages_month FROM plans WHERE code IN ('free','pro','scale') ORDER BY code"
+    ).all<{code:string;whatsapp_enabled:number;max_messages_month:number}>();
+    expect(rows.results.length).toBe(3);
+    for (const plan of rows.results) {
+      // O limite numérico legado do D1 não deve impedir o envio Evolution.
+      expect(planAllowsAutomaticWhatsapp(plan,"evolution")).toBe(true);
+      expect(planAllowsAutomaticWhatsapp({...plan,max_messages_month:0},"evolution")).toBe(true);
+      expect(planAllowsAutomaticWhatsapp({...plan,max_messages_month:1,whatsapp_enabled:0},"evolution")).toBe(true);
+      expect(planAllowsAutomaticWhatsapp({...plan,whatsapp_enabled:0},"mock")).toBe(false);
+      expect(planAllowsAutomaticWhatsapp({...plan,whatsapp_enabled:0},"meta_cloud")).toBe(false);
+    }
+    const flags=await db.prepare(`SELECT code,
+      ('evolution'='evolution' OR whatsapp_enabled=1) AS allow_evolution,
+      ('evolution'='evolution' OR max_messages_month<=0 OR 1000000<max_messages_month) AS unlimited_evolution,
+      ('mock'='evolution' OR whatsapp_enabled=1) AS allow_mock
+      FROM plans WHERE code IN ('free','pro','scale') ORDER BY code`)
+      .all<{code:string;allow_evolution:number;unlimited_evolution:number;allow_mock:number}>();
+    expect(flags.results.every(x=>x.allow_evolution===1 && x.unlimited_evolution===1)).toBe(true);
+    const freeFlag = rows.results.find(x=>x.code==="free")?.whatsapp_enabled === 1 ? 1 : 0;
+    expect(flags.results.find(x=>x.code==="free")?.allow_mock).toBe(freeFlag);
   });
 });
+

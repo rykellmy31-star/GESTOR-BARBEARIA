@@ -16,8 +16,8 @@ interface SalesPlan {
 
 /** Valores de demonstração somente na prévia Pages, quando a API não existe. */
 const demo: SalesPlan[] = [
-  {code:"free",name:"Tigu Start",price_cents_month:1999,max_barbers:2,max_messages_month:100,whatsapp_enabled:0,store_enabled:1},
-  {code:"pro",name:"Tigu Pro",price_cents_month:4990,max_barbers:6,max_messages_month:3000,whatsapp_enabled:1,store_enabled:1},
+  {code:"free",name:"Tigu Start",price_cents_month:1999,max_barbers:2,max_messages_month:-1,whatsapp_enabled:1,store_enabled:1},
+  {code:"pro",name:"Tigu Pro",price_cents_month:4990,max_barbers:6,max_messages_month:-1,whatsapp_enabled:1,store_enabled:1},
   {code:"scale",name:"Tigu Scale",price_cents_month:12990,max_barbers:-1,max_messages_month:-1,whatsapp_enabled:1,store_enabled:1},
 ];
 const formatPrice = (cents: number) => (cents / 100).toLocaleString("pt-BR", {style:"currency",currency:"BRL"});
@@ -52,10 +52,8 @@ export function SalesPlansSection() {
           const benefits = [
             "Site público de agendamentos",
             plan.max_barbers === -1 ? "Profissionais ilimitados" : `${formatLimit(plan.max_barbers)} profissionais`,
-            plan.whatsapp_enabled ? "WhatsApp habilitado mediante conexão do número" : "WhatsApp automático não incluído",
-            plan.whatsapp_enabled
-              ? `Limite de mensagens: ${formatLimit(plan.max_messages_month)}/mês (créditos por envio)`
-              : "Sem envios automáticos de WhatsApp",
+            "Conecte seu WhatsApp por QR Code no painel",
+            "Mensagens automáticas ilimitadas pela Evolution API",
             plan.store_enabled ? "Loja de produtos com estoque" : "Sem módulo de loja",
           ];
           return (
@@ -101,7 +99,7 @@ export function SalesPlansSection() {
         })}
       </div>
       <p className="mt-4 text-center text-xs leading-relaxed text-zinc-500">
-        O teste dura 15 dias. Depois, escolha Start, Pro ou Scale no painel e pague a mensalidade via Pix para continuar. Não há débito automático; créditos para mensagens são cobrados separadamente.
+        O teste dura 15 dias. Depois, escolha Start, Pro ou Scale para continuar. Não há débito automático. A Evolution API não tem franquia mensal de mensagens no TIGU; a entrega depende da conexão e das regras do WhatsApp.
       </p>
     </section>
   );

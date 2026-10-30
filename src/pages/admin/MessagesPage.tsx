@@ -91,7 +91,7 @@ export function MessagesPage() {
         <p>Confirmação: <Badge tone={d.settings.whatsapp_confirm_enabled?"green":"gray"}>{d.settings.whatsapp_confirm_enabled?"ativada":"desativada"}</Badge></p>
         <p>Lembrete: <Badge tone={d.settings.whatsapp_reminders_enabled?"green":"gray"}>{d.settings.whatsapp_reminders_enabled?`ativo · ${d.settings.reminder_lead_min} min antes`:"desativado"}</Badge></p>
         <p>Plano: {d.plan?.name??"—"}</p>
-        <p>Limite: {d.plan?.max_messages_month===-1?"ilimitado":d.plan?.max_messages_month??"—"} mensagens/mês</p>
+        <p>Envios: <strong>ilimitados</strong> pela Evolution API</p>
       </div>
       <div className="mt-4 grid gap-3 rounded-xl border border-line bg-ink-soft p-4 sm:grid-cols-[1fr_1.4fr_auto] sm:items-end">
         <label className="flex items-center gap-2 text-sm text-zinc-200">
@@ -115,7 +115,8 @@ export function MessagesPage() {
         Exemplos: 30 min, 60 min, 120 min, 300 min (5 horas) ou 1.440 min (1 dia).
         A confirmação continua inalterada. Este horário vale somente para esta barbearia e para
         os próximos envios; lembretes futuros ainda pendentes são ajustados quando possível.
-        O limite mensal é definido pelo plano da assinatura.
+        O envio automático pela Evolution não tem franquia mensal no TIGU. A conexão do número,
+        a autorização do cliente e o funcionamento do WhatsApp continuam necessários.
       </p>
     </div>
 
