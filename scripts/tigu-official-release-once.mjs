@@ -2,11 +2,10 @@
 /**
  * Diagnóstico e atualização do Worker que ATENDE o domínio oficial existente.
  * Jamais troca DNS/rotas, D1, R2, secrets, sessões ou outros projetos.
- * Backup validado ANTES de qualquer migração; migrações aditivas 0103 e 0104 exclusivamente.
+ * Backup verificado antes das sete migrações pendentes, previamente auditadas.
  */
-import {readFileSync,writeFileSync,mkdtempSync,rmSync,readdirSync} from "node:fs";
+import {readFileSync,writeFileSync,existsSync,rmSync,readdirSync} from "node:fs";
 import {resolve,join} from "node:path";
-import {tmpdir} from "node:os";
 import {execFileSync} from "node:child_process";
 import {pathToFileURL} from "node:url";
 import {exportAndCheckStaging} from "./staging-d1-export-verify.mjs";
@@ -70,8 +69,12 @@ export function inspectOfficialInventory(dbs,media,workers,domains,settings,hist
     throw Error("Histórico de migrações remoto ou arquivos de código inválidos.");
   const pending=expectedNames.filter(x=>!history.includes(x));
   const unknown=history.filter(x=>!expectedNames.includes(x));
-  if(unknown.length||pending.length!==2||pending[0]!=="0103_manual_platform_subscriptions.sql"||
-    pending[1]!=="0104_evolution_whatsapp.sql"||history.length!==25)
+  const allowedPending=["0021_seller_mercadopago_oauth.sql",
+    "0099_seller_mercadopago_oauth.sql","0100_seller_pix.sql",
+    "0101_barber_service_duration.sql","0102_booking_checkin_cancel_reason.sql",
+    "0103_manual_platform_subscriptions.sql","0104_evolution_whatsapp.sql"];
+  if(unknown.length||pending.length!==allowedPending.length||
+    pending.some((name,i)=>name!==allowedPending[i])||history.length!==20)
     throw Error("Migrações D1 divergentes: aplicadas="+history.length+
       ", pendentes="+pending.join(",")+", desconhecidas="+unknown.join(",")+
       ". Nenhum SQL foi aplicado.");
@@ -147,8 +150,8 @@ export async function releaseOfficial({token,accountId,root=resolve(import.meta.
   for(const [k,v] of Object.entries(before.inventory.existingVars))
     if(Object.hasOwn(cfg.vars,k)&&cfg.vars[k]!==v&&k!=="TIGU_PLATFORM_BILLING_MODE")
       throw Error("Variável existente "+k+" diverge do template; recusar atualização.");
-  const tmp=mkdtempSync(join(tmpdir(),"tigu-official-"));
-  const path=join(tmp,"wrangler.official.jsonc");
+  const path=join(root,"wrangler.official.generated.jsonc");
+  if(existsSync(path))throw Error("Configuração temporária já existente; nenhuma publicação.");
   const env={...process.env,CLOUDFLARE_API_TOKEN:token,
     CLOUDFLARE_ACCOUNT_ID:accountId,CLOUDFLARE_SEND_METRICS:"false",
     WRANGLER_SEND_METRICS:"false"};
@@ -180,13 +183,13 @@ export async function releaseOfficial({token,accountId,root=resolve(import.meta.
     const postInv=await inspectOfficialBindingAfter({token,accountId,fetcher,
       initial:before.inventory});
     return {released:true,officialUrl:TARGET.url,worker:TARGET.worker,
-      backup_export_validated:true,d1_migrations:["0103_manual_platform_subscriptions.sql","0104_evolution_whatsapp.sql"],
+      backup_export_validated:true,d1_migrations:before.inventory.pendingMigrations,
       existing_users_and_subscriptions_preserved:true,
       vars_and_secrets_preserved:true,manual_billing:true,
       domain_route_preserved:postInv,health:now,
       note:"O Worker oficial já usava TIGU_STAGING=1; a atualização preservou esse estado."};
   } finally {
-    rmSync(tmp,{recursive:true,force:true});
+    rmSync(path,{force:true});
   }
 }
 async function inspectOfficialBindingAfter({token,accountId,fetcher,initial}){
