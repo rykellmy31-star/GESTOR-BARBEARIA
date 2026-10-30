@@ -31,9 +31,7 @@ evolutionRouter.post("/start", async (c) => {
   if (!evolutionReady(c.env) || c.env.TIGU_STAGING === "1")
     return err(c, "Evolution API ainda não instalada/configurada. A conexão real só será habilitada depois.", 503);
   const db = c.env.DB, companyId = cid(c);
-  const old = await db.prepare("SELECT status,provider FROM whatsapp_connections WHERE company_id=?1")
-    .bind(companyId).first<{status:string;provider:string}>();
-  if (old?.status === "connected") return err(c, "Desconecte primeiro a integração WhatsApp existente para evitar conflitos.", 409);
+  // Não reativamos nem reutilizamos credenciais da integração antiga.
   // Não converter silenciosamente jobs cobrados pela integração anterior.
   const charged = await db.prepare(`SELECT COUNT(*) n FROM message_jobs
     WHERE company_id=?1 AND status IN ('scheduled','blocked_funds') AND price_cents>0`).bind(companyId).first<{n:number}>();
@@ -70,7 +68,7 @@ evolutionRouter.post("/start", async (c) => {
       ON CONFLICT(company_id) DO UPDATE SET enabled=1,status='pending_setup',last_error='',updated_at=?3`)
     .bind(companyId,instance,nowIso()).run();
 
-  // Modelos locais para mensagens livres no canal Evolution; não dependem de aprovação Meta.
+  // Modelos locais para mensagens livres no canal Evolution.
   await db.batch([
     db.prepare(`INSERT OR IGNORE INTO whatsapp_templates
       (company_id,code,language,category,status,body_text,use_case)
