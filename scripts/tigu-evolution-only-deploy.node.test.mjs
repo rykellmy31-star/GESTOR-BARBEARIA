@@ -45,7 +45,7 @@ test("falha se Evolution 0104 estiver pendente, ou se histórico for alterado",(
 });
 test("script remoto não cria recursos, não migra SQL e preserva bindings",()=>{
  const code=readFileSync(resolve(import.meta.dirname,"tigu-evolution-only-deploy.mjs"),"utf8");
- assert.match(code,/\["deploy","--keep-vars","--config",path\]/);
+ assert.match(code,/\[cli,"deploy","--keep-vars","--config",path\]/);
  assert.doesNotMatch(code,/exec\([^\n]+migrations.*apply/);
  assert.match(code,/exportAndCheckStaging/);
  assert.match(code,/staging_preserved:true/);
