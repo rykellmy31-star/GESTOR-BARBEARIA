@@ -1,0 +1,43 @@
+name: "TIGU - publicar Evolution no dominio oficial com backup verificado"
+on:
+  push:
+    branches: [feature/tigu-mensalidade-manual-preintegracao-20261028]
+permissions:
+  contents: read
+concurrency:
+  group: tigu-official-evolution-release-once
+  cancel-in-progress: false
+jobs:
+  release:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/tigu-mensalidade-manual-preintegracao-20261028' && github.event.head_commit.message == 'TIGU_OFFICIAL_RELEASE_EVOLUTION_ONCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Instalar dependencias sem alterar bloqueios de seguranca
+        run: npm ci --no-audit --prefer-offline
+      - name: Provar limites do deploy oficial com sete migrations previamente auditadas
+        run: node --test scripts/tigu-official-release-once.node.test.mjs
+      - name: Validar tipagem, testes e build de produção
+        run: npm run validate
+      - name: Homologar Worker D1 R2 e jornada completa em ambiente local isolado
+        run: node scripts/local-e2e.mjs
+      - name: Homologar navegador Chromium local sem cobranças reais
+        run: node scripts/browser-smoke.mjs
+      - name: Aplicar migrations aditivas e atualizar apenas Worker oficial existente
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_OFFICIAL_DEPLOY_APPROVED: "YES"
+        run: node scripts/tigu-official-release-once.mjs
+      - name: Registrar resumo da publicação do código
+        run: |
+          echo '## TIGU Evolution API - publicação controlada' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Domínio: https://agendamentos.crjornada.com' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Worker existente: tigu-staging' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Banco/R2 existentes preservados; migrations apenas aditivas.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'TIGU_STAGING=1 permanece: WhatsApp real requer Evolution API externa.' >> "$GITHUB_STEP_SUMMARY"
