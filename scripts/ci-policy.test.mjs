@@ -323,12 +323,14 @@ test("API TIGU: credenciais presentes no staging não habilitam Pix nem mensagen
  const pay=readFileSync(new URL("../api/lib/payments.ts",import.meta.url),"utf8");
  const whatsapp=readFileSync(new URL("../api/lib/messaging/provider.ts",import.meta.url),"utf8");
  const webhooks=readFileSync(new URL("../api/routes/webhooks.ts",import.meta.url),"utf8");
+ const evoWebhooks=readFileSync(new URL("../api/routes/evolution-webhook.ts",import.meta.url),"utf8");
  const smoke=readFileSync(new URL("./staging-smoke.mjs",import.meta.url),"utf8");
  assert.match(pay,/if \(env\.TIGU_STAGING === "1"\) return \{ provider: null/);
  assert.match(pay,/if \(env\.TIGU_STAGING === "1"\) return \{ ok: false/);
- assert.match(whatsapp,/if \(ctx\.env\.TIGU_STAGING === "1"\) return \{ accepted: false/);
+ assert.match(whatsapp,/if \(ctx\.env\.TIGU_STAGING === "1"\)[\s\S]*?provider:null/);
  assert.match(webhooks,/webhooksRouter\.post\("\/mercadopago",[\s\S]*?TIGU_STAGING === "1"/);
- assert.match(webhooks,/webhooksRouter\.post\("\/whatsapp",[\s\S]*?TIGU_STAGING === "1"/);
+ assert.doesNotMatch(webhooks,/webhooksRouter\.(get|post)\("\/whatsapp"/);
+ assert.match(evoWebhooks,/evolutionWebhookRouter\.post\("\/",[\s\S]*?TIGU_STAGING === "1"/);
  assert.match(smoke,/typeof health\.body\?\.payments\?\.mercadopago === "boolean"/);
  assert.match(smoke,/health\.body\?\.payments\?\.mock === false/);
  assert.match(smoke,/health\.body\?\.whatsapp\?\.mock === true/);
