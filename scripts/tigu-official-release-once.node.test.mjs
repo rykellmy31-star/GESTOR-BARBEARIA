@@ -6,7 +6,7 @@ import {TARGET,inspectOfficialInventory} from "./tigu-official-release-once.mjs"
 const UUID="78228a5b-4e4c-4710-b89c-664ef15f8da3";
 const expected=readdirSync(resolve(import.meta.dirname,"../migrations"))
   .filter(x=>/^\d+.*\.sql$/.test(x)).sort();
-const existing=expected.slice(0,-1);
+const existing=expected.slice(0,-6);
 const settings={bindings:[
   {type:"d1",name:"DB",id:UUID},
   {type:"r2_bucket",name:"MEDIA",bucket_name:TARGET.bucket},
@@ -25,11 +25,11 @@ const good=[
   [{hostname:TARGET.hostname,service:TARGET.worker,enabled:true}],
   settings,existing,expected
 ];
-test("liberar somente migração aditiva 0103 no banco existente",()=>{
+test("liberar somente as seis migrações aditivas pendentes no banco existente",()=>{
   assert.equal(expected.length,26);
   const r=inspectOfficialInventory(...good);
-  assert.equal(r.pendingMigration,"0103_manual_platform_subscriptions.sql");
-  assert.equal(r.appliedMigrationCount,25);
+  assert.deepEqual(r.pendingMigrations,expected.slice(20));
+  assert.equal(r.appliedMigrationCount,20);
   assert.equal(r.existingSecretNames.includes("MP_ACCESS_TOKEN"),true);
 });
 test("recusar troca de domínio, banco, bucket e Worker",()=>{
