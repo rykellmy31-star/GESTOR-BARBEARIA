@@ -327,10 +327,7 @@ async function actionBooking(c: any, value: { code: string; token: string }) {
        JOIN services s ON s.id=b.service_id
        WHERE b.company_id=?1 AND UPPER(b.code)=?2 AND b.cancel_token=?3
        LIMIT 1`
-  ).bind(cid(c),value.code.toUpperCase(),value.token).first<{
-    id:number;code:string;customer_name:string;starts_at:string;status:string;
-    barber_id:number;service_id:number;barber_name:string;service_name:string
-  }>();
+  ).bind(cid(c),value.code.toUpperCase(),value.token).first();
 }
 async function actionGuard(c: any) {
   const ip = c.req.header("cf-connecting-ip") || "local";
