@@ -1,0 +1,45 @@
+name: TIGU - ATUALIZAR DOMINIO OFICIAL COM BACKUP
+
+on:
+  push:
+    branches:
+      - release/tigu-manual-oficial-20261029
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tigu-official-deploy-20261029
+  cancel-in-progress: false
+
+jobs:
+  publicar-oficial:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/release/tigu-manual-oficial-20261029' && github.event.head_commit.message == 'TIGU_OFFICIAL_RELEASE_DEPLOY_ONCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Instalar dependencias com lockfile protegido
+        run: npm ci --no-audit --prefer-offline
+      - name: Confirmar guardas de preservacao do dominio oficial e banco existente
+        run: node --test scripts/tigu-official-release-once.node.test.mjs
+      - name: Auditoria, migracoes, compilacao, tipos e todos os testes
+        run: npm run validate
+      - name: Fluxos HTTP reais locais com D1 e R2 isolados
+        run: node scripts/local-e2e.mjs
+      - name: Fazer backup exportado e conferido ANTES de migrar; atualizar SOMENTE o Worker atual
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_OFFICIAL_DEPLOY_APPROVED: "YES"
+        run: node scripts/tigu-official-release-once.mjs
+      - name: Relatorio final
+        run: |
+          echo "## TIGU publicado no domínio oficial existente" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://agendamentos.crjornada.com/" >> "$GITHUB_STEP_SUMMARY"
+          echo "Sem troca de domínio, Worker, D1, R2, credenciais ou dados das barbearias." >> "$GITHUB_STEP_SUMMARY"
+          echo "Migrações aditivas autorizadas: 0021, 0099, 0100, 0101, 0102 e 0103." >> "$GITHUB_STEP_SUMMARY"
