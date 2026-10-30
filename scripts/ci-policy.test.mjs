@@ -295,7 +295,7 @@ test("Superadmin abre detalhe correto sem carteira de créditos e mantém audito
   assert.doesNotMatch(detail,/(Ajuste manual de créditos|Política carteira)/);
   assert.match(pricing,/q\.isError \|\| !q\.data/);
   assert.match(route,/FROM pricing_rules pr LEFT JOIN companies c ON c.id=pr.company_id WHERE pr.active=1/);
-  assert.match(browser,/Superadmin faz ajuste financeiro auditável apenas na carteira local/);
+  assert.match(browser,/Superadmin consulta barbearia sem saldos nem ajuste de créditos na interface/);
   assert.match(browser,/Superadmin consulta mensalidades sem ativação ou cobrança/);
 });
 
