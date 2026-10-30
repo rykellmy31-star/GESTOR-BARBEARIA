@@ -26,6 +26,8 @@ export interface Env {
   EVOLUTION_API_URL?: string;
   EVOLUTION_API_KEY?: string;
   EVOLUTION_WEBHOOK_SECRET?: string;
+  /** Habilita exclusivamente WhatsApp Evolution no domínio oficial, sem liberar pagamentos ou simuladores. */
+  TIGU_EVOLUTION_LIVE?: string;
 
   // ── Pagamentos (Pix) ──
   MERCHANT_PIX_ENABLED?: string; // kill-switch de checkout por conta própria da barbearia (não afeta assinatura/recarga)
