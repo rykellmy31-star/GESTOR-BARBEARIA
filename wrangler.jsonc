@@ -4,8 +4,7 @@
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "APP_ENV": "development",
-    "GRAPH_API_VERSION": "v23.0"
+    "APP_ENV": "development"
   },
   "observability": { "enabled": true },
   "assets": {
