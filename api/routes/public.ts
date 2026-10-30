@@ -320,7 +320,7 @@ const actionSchema = z.object({
 }).strict();
 async function actionBooking(c: any, value: { code: string; token: string }) {
   return c.env.DB.prepare(
-    `SELECT b.id, b.code, b.customer_name, b.starts_at, b.status,
+    `SELECT b.id, b.code, b.customer_name, b.starts_at, b.status, b.schedule_version,
        b.barber_id, b.service_id, br.name AS barber_name, s.name AS service_name
        FROM bookings b
        JOIN barbers br ON br.id=b.barber_id
@@ -343,7 +343,7 @@ publicRouter.post("/bookings/action/lookup", async (c) => {
   const s=ctxSettings(c);
   const response=await c.env.DB.prepare(
     "SELECT 1 AS ok FROM message_webhook_events WHERE event_uid=?1 AND company_id=?2"
-  ).bind("tigu:rsvp:"+b.id,cid(c)).first<{ok:number}>();
+  ).bind("tigu:rsvp:"+b.id+":v"+b.schedule_version,cid(c)).first<{ok:number}>();
   c.header("Cache-Control","no-store");
   return json(c,{
     booking:{code:b.code,customer_name:b.customer_name,starts_at:b.starts_at,
@@ -371,7 +371,7 @@ publicRouter.post("/bookings/action/confirm", async (c) => {
     `INSERT OR IGNORE INTO message_webhook_events
       (company_id,event_uid,status,raw_json,processed)
       VALUES (?1,?2,'customer_confirmed',?3,1)`
-  ).bind(cid(c),"tigu:rsvp:"+b.id,JSON.stringify({booking_code:b.code})).run();
+  ).bind(cid(c),"tigu:rsvp:"+b.id+":v"+b.schedule_version,JSON.stringify({booking_code:b.code})).run();
   if(inserted.meta?.changes) {
     await c.env.DB.prepare(
       "INSERT INTO notifications (company_id,audience,title,body,kind) VALUES (?1,'admin','Cliente confirmou agendamento',?2,'message')"
