@@ -81,7 +81,6 @@ export function SuperIntegrations() {
           <FieldStatus label="EVOLUTION_WEBHOOK_SECRET (Secret)" configured={q.data.whatsapp.webhook_secret_set} />
           <FieldStatus label="PUBLIC_URL (callback HTTPS)" configured={q.data.whatsapp.callback_public_url_set} />
           <p className="mt-3 text-sm text-zinc-400">Sem servidor e segredos configurados não há conexão real por QR Code. As credenciais devem ficar exclusivamente em Secrets do Worker; não cole tokens no navegador nem no GitHub.</p>
-          <p className="mt-2 text-xs text-amber-300">Aviso: Evolution via WhatsApp Web/Baileys não é API oficial e pode sofrer desconexões ou bloqueios.</p>
         </section>
         <p className="text-xs text-zinc-500">Esta tela verifica presença das credenciais, não valida cobranças ou envios reais. Após salvar os segredos na Cloudflare, atualize o painel. Nenhuma cobrança ou mensagem é disparada aqui.</p>
       </>
