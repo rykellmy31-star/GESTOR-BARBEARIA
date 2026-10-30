@@ -29,7 +29,6 @@ import { scheduleBookingMessage, cancelPendingJobs, processDueJobs } from "../ap
 import { resolveProvider } from "../api/lib/messaging/provider";
 import { mpProvider, pickPaymentProvider } from "../api/lib/payments";
 import { app } from "../api/index";
-import { encryptSecret } from "../api/lib/crypto";
 import { loadCompanySettings } from "../api/lib/settings";
 import { resolveApiUrl } from "../api/lib/url";
 import { purgeExpiredSalesLeads, purgeOldSalesRateLimits, getSalesRetentionDays } from "../api/lib/sales-leads";
@@ -107,6 +106,11 @@ beforeAll(async () => {
   ]);
   const { results: links } = await db.prepare(`SELECT s.id sid, br.id bid, s.company_id cid FROM services s JOIN barbers br ON br.company_id=s.company_id ORDER BY s.id, br.id`).all<{ sid: number; bid: number; cid: number }>();
   for (const l of links) await db.prepare(`INSERT OR IGNORE INTO service_barbers (service_id,barber_id) VALUES (?1,?2)`).bind(l.sid, l.bid).run();
+  // Simulador exclusivamente nos testes. Conexão Meta antiga nunca é usada.
+  await db.batch([
+    db.prepare("INSERT OR IGNORE INTO whatsapp_connections (company_id,provider,status,phone_number_id) VALUES (?1,'mock','connected','mock-Alfa')").bind(a),
+    db.prepare("INSERT OR IGNORE INTO whatsapp_connections (company_id,provider,status,phone_number_id) VALUES (?1,'mock','connected','mock-Bravo')").bind(b),
+  ]);
   const la = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email: "dono@a.test", password: PW }) });
   const lb = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email: "dono@b.test", password: PW }) });
   cookieA = la.cookie ?? ""; cookieB = lb.cookie ?? "";
