@@ -32,7 +32,7 @@ test('no invalid company id may fallback to global dispatch',()=>{
   assert.match(route,/parseOptionalMessageCompanyId\(c\.req\.query\("companyId"\)\)/);
   assert.match(route,/if \(companyId === null\) return err/);
   assert.match(jobs,/Number\.isSafeInteger\(opts\.companyId\)/);
-  assert.match(jobs,/sweepStuckJobs\(db, opts\.companyId\)/);
+  assert.match(jobs,/sweepStuckJobs\(db, opts\.companyId, opts\.provider\)/);
 });
 
 test('stale webhook cleanup for one barber shop does not mutate another',async()=>{
