@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   inspecionar:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/release/tigu-manual-oficial-20261029' && github.event.head_commit.message == 'TIGU_OFFICIAL_DIAGNOSTIC' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/release/tigu-manual-oficial-20261029' && github.event.head_commit.message == 'TIGU_OFFICIAL_D1_GUARDED_PREFLIGHT' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
