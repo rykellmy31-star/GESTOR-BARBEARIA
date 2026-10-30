@@ -4,7 +4,7 @@ import { ArrowLeft, Copy, Loader2, KeyRound } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Badge, Button, Field, Input, Select, Spinner, Modal, useToast } from "@/components/ui";
-import { H, Kpi, Table, Td, Tr } from "./shared";
+import { H, Kpi, Money, Table, Td, Tr } from "./shared";
 import { buildOwnerAccessMessage, formatTrialEnd, type OwnerAccessDetails } from "@/lib/owner-welcome";
 import { ManualBillingPanel } from "./ManualBillingPanel";
 
