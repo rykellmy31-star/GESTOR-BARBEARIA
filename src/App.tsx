@@ -15,7 +15,6 @@ import { CustomersPage } from "./pages/admin/CustomersPage";
 import { SettingsPage } from "./pages/admin/SettingsPage";
 import { DemoPage } from "./pages/admin/DemoPage";
 import { TeamPage } from "./pages/admin/TeamPage";
-import { WalletPage } from "./pages/admin/WalletPage";
 import { SubscriptionBillingPage } from "./pages/admin/SubscriptionBillingPage";
 import { MessagesPage } from "./pages/admin/MessagesPage";
 import { BarberPanelPage } from "./pages/barber/BarberPanelPage";
@@ -34,9 +33,6 @@ import { SuperOverview } from "./pages/super/OverviewPage";
 import { SuperCompanies } from "./pages/super/CompaniesPage";
 import { SuperCompanyDetail } from "./pages/super/CompanyDetailPage";
 import { SuperUsers } from "./pages/super/UsersPage";
-import { SuperWallets } from "./pages/super/TopupsPage";
-import { SuperPricing } from "./pages/super/PricingPage";
-import { SuperTopups } from "./pages/super/TopupsPage";
 import { SuperMessages } from "./pages/super/MessagesPage";
 import { SuperAudit } from "./pages/super/AuditPage";
 import { SuperSettings } from "./pages/super/SettingsPage";
@@ -121,7 +117,7 @@ export default function App() {
         <Route path="pedidos" element={<OrdersPage />} />
         <Route path="clientes" element={<CustomersPage />} />
         <Route path="mensagens" element={<MessagesPage />} />
-        <Route path="carteira" element={<WalletPage />} />
+        <Route path="carteira" element={<Navigate to="../dashboard" replace />} />
         <Route path="assinatura" element={<SubscriptionBillingPage />} />
         <Route path="configuracoes" element={<SettingsPage />} />
         <Route path="demonstracao" element={<DemoPage />} />
@@ -138,9 +134,9 @@ export default function App() {
         <Route path="companies" element={<SuperCompanies />} />
         <Route path="companies/:id" element={<SuperCompanyDetail />} />
         <Route path="users" element={<SuperUsers />} />
-        <Route path="wallets" element={<SuperWallets />} />
-        <Route path="pricing" element={<SuperPricing />} />
-        <Route path="topups" element={<SuperTopups />} />
+        <Route path="wallets" element={<Navigate to="../overview" replace />} />
+        <Route path="pricing" element={<Navigate to="../overview" replace />} />
+        <Route path="topups" element={<Navigate to="../overview" replace />} />
         <Route path="subscription-invoices" element={<SuperSubscriptionInvoices />} />
         <Route path="messages" element={<SuperMessages />} />
         <Route path="audit" element={<SuperAudit />} />
