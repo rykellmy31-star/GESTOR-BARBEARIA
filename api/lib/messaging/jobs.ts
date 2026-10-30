@@ -510,7 +510,8 @@ async function renderTemplateVars(db: D1Database, job: MessageJobRow): Promise<{
   const p = JSON.parse(job.payload_json || "{}") as Record<string, string>;
   const tz = p.tz || "America/Bahia";
   const when = b?.starts_at
-    ? new Date(b.starts_at).toLocaleString("pt-BR", { timeZone: tz, weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    ? new Date(b.starts_at).toLocaleDateString("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric" }) +
+      " às " + new Date(b.starts_at).toLocaleTimeString("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false })
     : "";
   return [
     { key: "1", sample: b?.customer_name ?? "" },
