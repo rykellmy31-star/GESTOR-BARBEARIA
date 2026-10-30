@@ -870,6 +870,53 @@ adminRouter.post("/notifications/read", async (c) => {
   return json(c, { ok: true });
 });
 
+// Ajuste exclusivo da unidade autenticada: não modifica plano, confirmação
+// nem outras empresas. Reposiciona somente lembretes ainda pendentes e futuros.
+const reminderSettingsSchema = z.object({
+  whatsapp_reminders_enabled: z.boolean(),
+  reminder_lead_min: z.number().int().min(5).max(24 * 60),
+});
+adminRouter.put("/whatsapp/reminder-settings", async (c) => {
+  const parsed = reminderSettingsSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return err(c, "Selecione um tempo entre 5 minutos e 24 horas.", 422);
+  const db = P(c), companyId = cid(c);
+  const old = ctxSettings(c);
+  const next = {
+    ...old,
+    whatsapp_reminders_enabled: parsed.data.whatsapp_reminders_enabled,
+    reminder_lead_min: parsed.data.reminder_lead_min
+  };
+  await saveCompanySettings(db, companyId, next);
+  let repositioned = 0;
+  if (next.whatsapp_reminders_enabled && old.reminder_lead_min !== next.reminder_lead_min) {
+    // Apenas agendamentos em que o novo momento ainda é futuro; nunca reenvia
+    // lembretes já enviados, não toca cobranças nem outros tenants.
+    const result = await db.prepare(`
+      UPDATE message_jobs SET scheduled_at=(
+        SELECT strftime('%Y-%m-%dT%H:%M:%SZ', b.starts_at,
+          '-' || ?1 || ' minutes')
+        FROM bookings b WHERE b.id=message_jobs.booking_id
+          AND b.company_id=message_jobs.company_id
+      ), updated_at=?2
+      WHERE company_id=?3 AND provider='evolution'
+        AND kind='reminder' AND status='scheduled' AND attempts=0
+        AND booking_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM bookings b
+          WHERE b.id=message_jobs.booking_id
+            AND b.company_id=?3 AND b.status IN ('pendente','confirmado')
+            AND (julianday(b.starts_at) - (?1 / 1440.0)) > julianday('now')
+        )
+    `).bind(next.reminder_lead_min, nowIso(), companyId).run();
+    repositioned = Number(result.meta?.changes ?? 0);
+  }
+  await audit(db, c.get("user"), "whatsapp.reminder.settings", "company_settings", companyId,
+    { previousMinutes: old.reminder_lead_min, minutes: next.reminder_lead_min,
+      enabled: next.whatsapp_reminders_enabled, repositioned }, { companyId });
+  return json(c, { ok: true, reminder_lead_min: next.reminder_lead_min,
+    whatsapp_reminders_enabled: next.whatsapp_reminders_enabled, repositioned });
+});
+
 // ── WhatsApp: conexão, templates, histórico, disparo ────────────────────────
 adminRouter.get("/whatsapp", async (c) => {
   const db = P(c); const id = cid(c);
