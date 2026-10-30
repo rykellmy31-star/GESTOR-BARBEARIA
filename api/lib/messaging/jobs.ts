@@ -255,7 +255,7 @@ export interface DispatchResult {
   retried: number;
 }
 
-export async function processDueJobs(env: Env, opts: { now?: Date; limit?: number; companyId?: number } = {}): Promise<DispatchResult> {
+export async function processDueJobs(env: Env, opts: { now?: Date; limit?: number; companyId?: number; provider?: "evolution" } = {}): Promise<DispatchResult> {
   // Fail closed: invalid manual scope must never become a global sweep.
   if (opts.companyId !== undefined && (!Number.isSafeInteger(opts.companyId) || opts.companyId <= 0)) {
     throw new RangeError("Identificador de barbearia inválido para despacho");
@@ -264,14 +264,15 @@ export async function processDueJobs(env: Env, opts: { now?: Date; limit?: numbe
   const now = opts.now ?? new Date();
   const limit = Math.min(100, Math.max(1, opts.limit ?? 40));
   const out: DispatchResult = { processed: 0, sent: 0, failed: 0, blocked: 0, skipped: 0, retried: 0 };
-  await sweepStuckJobs(db, opts.companyId);
+  await sweepStuckJobs(db, opts.companyId, opts.provider);
 
   const companyFilter = opts.companyId === undefined ? "" : " AND j.company_id = ?2";
+  const providerFilter = opts.provider === "evolution" ? " AND j.provider = 'evolution'" : "";
   const { results } = await db
     .prepare(
       `SELECT j.*, c.status AS company_status, c.demo AS company_demo
        FROM message_jobs j JOIN companies c ON c.id = j.company_id
-       WHERE j.status IN ('scheduled','blocked_funds') AND j.scheduled_at <= ?1${companyFilter}
+       WHERE j.status IN ('scheduled','blocked_funds') AND j.scheduled_at <= ?1${companyFilter}${providerFilter}
          AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= ?1)
        ORDER BY j.scheduled_at ASC LIMIT ${limit}`
     )
@@ -522,14 +523,15 @@ async function renderTemplateVars(db: D1Database, job: MessageJobRow): Promise<{
 }
 
 /** reconcilia jobs 'sending' que órfão por crash/timeout do Worker */
-async function sweepStuckJobs(db: D1Database, companyId?: number): Promise<void> {
+async function sweepStuckJobs(db: D1Database, companyId?: number, provider?: "evolution"): Promise<void> {
+  const providerFilter = provider === "evolution" ? " AND provider='evolution'" : "";
   const companyFilter = companyId === undefined ? "" : " AND company_id=?2";
   await db
-    .prepare(`UPDATE message_jobs SET status='sent', last_error='reconciliado: aceito no provedor antes do timeout', sent_at=COALESCE(sent_at, ?1), updated_at=?1 WHERE status='sending' AND provider_msg_id <> '' AND last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes')${companyFilter}`)
+    .prepare(`UPDATE message_jobs SET status='sent', last_error='reconciliado: aceito no provedor antes do timeout', sent_at=COALESCE(sent_at, ?1), updated_at=?1 WHERE status='sending' AND provider_msg_id <> '' AND last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes')${companyFilter}${providerFilter}`)
     .bind(nowIso(), ...(companyId === undefined ? [] : [companyId]))
     .run();
   await db
-    .prepare(`UPDATE message_jobs SET status='sending', last_error='Pendente de conferência: resposta desconhecida do provedor', updated_at=?1, next_attempt_at=NULL WHERE status='sending' AND provider_msg_id = '' AND last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes') AND last_error NOT LIKE 'Pendente de conferência:%' AND last_error NOT LIKE 'Envio sem confirmação%'${companyFilter}`)
+    .prepare(`UPDATE message_jobs SET status='sending', last_error='Pendente de conferência: resposta desconhecida do provedor', updated_at=?1, next_attempt_at=NULL WHERE status='sending' AND provider_msg_id = '' AND last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes') AND last_error NOT LIKE 'Pendente de conferência:%' AND last_error NOT LIKE 'Envio sem confirmação%'${companyFilter}${providerFilter}`)
     .bind(nowIso(), ...(companyId === undefined ? [] : [companyId]))
     .run();
 }
