@@ -25,7 +25,7 @@ import schema0103 from "../migrations/0103_manual_platform_subscriptions.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
-import { scheduleBookingMessage, cancelPendingJobs, processDueJobs } from "../api/lib/messaging/jobs";
+import { planAllowsAutomaticWhatsapp, scheduleBookingMessage, cancelPendingJobs, processDueJobs } from "../api/lib/messaging/jobs";
 import { resolveProvider } from "../api/lib/messaging/provider";
 import { mpProvider, pickPaymentProvider } from "../api/lib/payments";
 import { app } from "../api/index";
@@ -1913,5 +1913,32 @@ describe("confirmação WhatsApp após reservar — autorização separada do LG
     const ownerJob=await db.prepare("SELECT COUNT(*) n FROM message_jobs WHERE booking_id=?1 AND kind='confirmation'")
       .bind(ownerYes.body.id).first<{n:number}>();
     expect(ownerJob?.n).toBe(1);
+  });
+});
+
+describe("Tigu Start: mensagens automáticas na Evolution", () => {
+  it("respeita as 100 mensagens/mês do Start, sem liberar o mock nem outras restrições", async () => {
+    const start = await db.prepare("SELECT code,whatsapp_enabled,max_messages_month FROM plans WHERE code='free'")
+      .first<{code:string;whatsapp_enabled:number;max_messages_month:number}>();
+    expect(start).toMatchObject({code:"free",whatsapp_enabled:0,max_messages_month:100});
+    expect(planAllowsAutomaticWhatsapp(start!, "evolution")).toBe(true);
+    expect(planAllowsAutomaticWhatsapp(start!, "mock")).toBe(false);
+    expect(planAllowsAutomaticWhatsapp(start!, "meta_cloud")).toBe(false);
+    expect(planAllowsAutomaticWhatsapp({...start!,max_messages_month:0},"evolution")).toBe(false);
+    const pro = await db.prepare("SELECT code,whatsapp_enabled,max_messages_month FROM plans WHERE code='pro'")
+      .first<{code:string;whatsapp_enabled:number;max_messages_month:number}>();
+    expect(planAllowsAutomaticWhatsapp(pro!,"evolution")).toBe(true);
+    const denied = {...pro!,whatsapp_enabled:0};
+    expect(planAllowsAutomaticWhatsapp(denied,"evolution")).toBe(false);
+    // O claim atômico SQL usa a MESMA regra. Assim não para entre a
+    // verificação no aplicativo e a disputa de disparos por múltiplos Workers.
+    const flags=await db.prepare(`SELECT
+      (p.whatsapp_enabled=1 OR ('evolution'='evolution' AND p.code='free'
+       AND p.max_messages_month>0)) AS allowed_evolution,
+      (p.whatsapp_enabled=1 OR ('mock'='evolution' AND p.code='free'
+       AND p.max_messages_month>0)) AS allowed_mock
+      FROM plans p WHERE p.code='free'`).first<{allowed_evolution:number;allowed_mock:number}>();
+    expect(flags?.allowed_evolution).toBe(1);
+    expect(flags?.allowed_mock).toBe(0);
   });
 });
