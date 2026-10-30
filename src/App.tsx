@@ -4,6 +4,7 @@ import { PublicLayout } from "./components/layout/PublicLayout";
 import { HomePage } from "./pages/public/HomePage";
 import { BookingPage } from "./pages/public/BookingPage";
 import { MyBookingsPage } from "./pages/public/MyBookingsPage";
+import { WhatsappBookingActionPage } from "./pages/public/WhatsappBookingActionPage";
 import { AdminLayout, RequireRole } from "./components/layout/PanelLayout";
 import { DashboardPage } from "./pages/admin/DashboardPage";
 import { AgendaPage } from "./pages/admin/AgendaPage";
@@ -103,6 +104,7 @@ export default function App() {
         <Route index element={<HomePage />} />
         <Route path="agendar" element={<BookingPage />} />
         <Route path="meus-agendamentos" element={<MyBookingsPage />} />
+        <Route path="whatsapp-agendamento" element={<WhatsappBookingActionPage />} />
       </Route>
 
       {/* barbearia — painel do dono/gerente */}
