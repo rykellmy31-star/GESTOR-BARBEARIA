@@ -2,7 +2,7 @@
 /**
  * Diagnóstico e atualização do Worker que ATENDE o domínio oficial existente.
  * Jamais troca DNS/rotas, D1, R2, secrets, sessões ou outros projetos.
- * Backup validado ANTES de qualquer migração; migrações aditivas 0103 e 0104 exclusivamente.
+ * Backup validado ANTES de qualquer migração; migração aditiva 0103 exclusivamente.
  */
 import {readFileSync,writeFileSync,existsSync,unlinkSync,readdirSync} from "node:fs";
 import {resolve,join} from "node:path";
@@ -65,15 +65,14 @@ export function inspectOfficialInventory(dbs,media,workers,domains,settings,hist
   if(vars.APP_ENV!=="production"||vars.TIGU_STAGING!=="1"||
     vars.WHATSAPP_MOCK!=="1"||vars.PAYMENTS_MOCK!=="0")
     throw Error("Flags Cloudflare mudaram; modo operacional precisa ser revisado.");
-  if(!Array.isArray(history)||!Array.isArray(expectedNames)||expectedNames.length!==27)
+  if(!Array.isArray(history)||!Array.isArray(expectedNames)||expectedNames.length!==26)
     throw Error("Histórico de migrações remoto ou arquivos de código inválidos.");
   const pending=expectedNames.filter(x=>!history.includes(x));
   const unknown=history.filter(x=>!expectedNames.includes(x));
-  if(unknown.length||pending.length!==2||pending[0]!=="0103_manual_platform_subscriptions.sql"||
-    pending[1]!=="0104_evolution_whatsapp.sql"||history.length!==25)
+  if(unknown.length||pending.length!==1||pending[0]!=="0103_manual_platform_subscriptions.sql"||history.length!==25)
     throw Error("Migrações no banco existente divergentes; publicar somente após análise, sem importar SQL.");
   return {dbId:db.uuid,existingVars:vars,existingSecretNames:secretNames,
-    existingBindingTypes:raw.map(x=>x.type),pendingMigrations:pending,
+    existingBindingTypes:raw.map(x=>x.type),pendingMigration:pending[0],
     appliedMigrationCount:history.length,
     domainBound:true,officialWorker:TARGET.worker};
 }
@@ -115,7 +114,7 @@ export async function inspectRemote({token,accountId,fetcher=fetch,root=resolve(
     throw Error("Flags reais do Worker mudaram desde a auditoria; abortar.");
   return {inventory:inv,health,
     summary:{officialDomain:TARGET.hostname,worker:TARGET.worker,
-      database:TARGET.database,bucket:TARGET.bucket,pendingMigrations:inv.pendingMigrations,
+      database:TARGET.database,bucket:TARGET.bucket,pendingMigration:inv.pendingMigration,
       secretsPreserved:true,appliedMigrationCount:inv.appliedMigrationCount}};
 }
 
@@ -178,7 +177,7 @@ export async function releaseOfficial({token,accountId,root=resolve(import.meta.
     const postInv=await inspectOfficialBindingAfter({token,accountId,fetcher,
       initial:before.inventory});
     return {released:true,officialUrl:TARGET.url,worker:TARGET.worker,
-      backup_export_validated:true,d1_migrations:["0103_manual_platform_subscriptions.sql","0104_evolution_whatsapp.sql"],
+      backup_export_validated:true,d1_migration:"0103_manual_platform_subscriptions.sql",
       existing_users_and_subscriptions_preserved:true,
       vars_and_secrets_preserved:true,manual_billing:true,
       domain_route_preserved:postInv,health:now,
