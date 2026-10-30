@@ -312,6 +312,95 @@ publicRouter.post("/bookings/reschedule", async (c) => {
   return json(c, { ok: true, starts_at: res.startsAt, starts_local: fmtLocal(res.startsAt, s.timezone), ends_at: res.endsAt });
 });
 
+// Acesso individual a partir da mensagem. O token é uma credencial aleatória
+// já criada no agendamento: não usar apenas telefone ou protocolo para confirmar.
+const actionSchema = z.object({
+  code: z.string().min(4).max(32),
+  token: z.string().uuid()
+}).strict();
+async function actionBooking(c: any, value: { code: string; token: string }) {
+  return c.env.DB.prepare(
+    `SELECT b.id, b.code, b.customer_name, b.starts_at, b.status,
+       b.barber_id, b.service_id, br.name AS barber_name, s.name AS service_name
+       FROM bookings b
+       JOIN barbers br ON br.id=b.barber_id
+       JOIN services s ON s.id=b.service_id
+       WHERE b.company_id=?1 AND UPPER(b.code)=?2 AND b.cancel_token=?3
+       LIMIT 1`
+  ).bind(cid(c),value.code.toUpperCase(),value.token).first<{
+    id:number;code:string;customer_name:string;starts_at:string;status:string;
+    barber_id:number;service_id:number;barber_name:string;service_name:string
+  }>();
+}
+async function actionGuard(c: any) {
+  const ip = c.req.header("cf-connecting-ip") || "local";
+  const { rateLimit } = await import("../lib/auth");
+  return rateLimit(c.env, "booking-wa-action:" + cid(c) + ":" + ip, 25, 5*60_000);
+}
+publicRouter.post("/bookings/action/lookup", async (c) => {
+  if (!await actionGuard(c)) return err(c,"Muitas tentativas. Aguarde alguns minutos.",429);
+  const parsed=actionSchema.safeParse(await c.req.json().catch(()=>null));
+  if(!parsed.success) return err(c,"Link de acesso inválido.",422);
+  const b=await actionBooking(c,parsed.data);
+  if(!b) return err(c,"Agendamento não encontrado ou link inválido.",404);
+  const s=ctxSettings(c);
+  const response=await c.env.DB.prepare(
+    "SELECT 1 AS ok FROM message_webhook_events WHERE event_uid=?1 AND company_id=?2"
+  ).bind("tigu:rsvp:"+b.id,cid(c)).first<{ok:number}>();
+  c.header("Cache-Control","no-store");
+  return json(c,{
+    booking:{code:b.code,customer_name:b.customer_name,starts_at:b.starts_at,
+      service_name:b.service_name,barber_name:b.barber_name,
+      barber_id:b.barber_id,service_id:b.service_id,status:b.status},
+    confirmed_by_customer:!!response,
+    can_confirm:["pendente","confirmado"].includes(b.status) &&
+      Date.parse(b.starts_at)>Date.now(),
+    can_reschedule:s.allow_online_reschedule &&
+      ["pendente","confirmado"].includes(b.status) &&
+      Date.parse(b.starts_at)-Date.now()>s.reschedule_cutoff_min*60000,
+    timezone:s.timezone
+  });
+});
+publicRouter.post("/bookings/action/confirm", async (c) => {
+  if(!await actionGuard(c))return err(c,"Muitas tentativas. Aguarde alguns minutos.",429);
+  const parsed=actionSchema.safeParse(await c.req.json().catch(()=>null));
+  if(!parsed.success)return err(c,"Link de acesso inválido.",422);
+  const b=await actionBooking(c,parsed.data);
+  if(!b)return err(c,"Agendamento não encontrado.",404);
+  if(!["pendente","confirmado"].includes(b.status) || Date.parse(b.starts_at)<=Date.now())
+    return err(c,"Agendamento encerrado ou cancelado.",409);
+  // Chave única e escrita atômica: toques repetidos não duplicam a confirmação.
+  const inserted=await c.env.DB.prepare(
+    `INSERT OR IGNORE INTO message_webhook_events
+      (company_id,event_uid,status,raw_json,processed)
+      VALUES (?1,?2,'customer_confirmed',?3,1)`
+  ).bind(cid(c),"tigu:rsvp:"+b.id,JSON.stringify({booking_code:b.code})).run();
+  if(inserted.meta?.changes) {
+    await c.env.DB.prepare(
+      "INSERT INTO notifications (company_id,audience,title,body,kind) VALUES (?1,'admin','Cliente confirmou agendamento',?2,'message')"
+    ).bind(cid(c),b.customer_name+" confirmou sua presença no agendamento "+b.code+".").run();
+  }
+  c.header("Cache-Control","no-store");
+  return json(c,{ok:true,already_confirmed:!inserted.meta?.changes,
+    message:"Presença confirmada! Esperamos você no horário agendado."});
+});
+publicRouter.post("/bookings/action/reschedule", async (c) => {
+  if(!await actionGuard(c))return err(c,"Muitas tentativas. Aguarde alguns minutos.",429);
+  const parsed=actionSchema.extend({
+    startsAt:z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?Z$/)
+  }).safeParse(await c.req.json().catch(()=>null));
+  if(!parsed.success)return err(c,"Escolha um novo horário disponível.",422);
+  const b=await actionBooking(c,parsed.data);
+  if(!b)return err(c,"Agendamento não encontrado.",404);
+  const res=await rescheduleBooking({
+    env:c.env,db:c.env.DB,companyId:cid(c),settings:ctxSettings(c),
+    origin:"cliente",user:null
+  },b.id,parsed.data.startsAt,"cliente");
+  if(!res.ok)return err(c,res.message,res.status);
+  c.header("Cache-Control","no-store");
+  return json(c,{ok:true,starts_at:res.startsAt,message:"Agendamento remarcado com sucesso."});
+});
+
 // avaliação pós-atendimento
 publicRouter.post("/reviews", async (c) => {
   const parsed = z.object({ code: z.string().min(4), phone: z.string().min(8), rating: z.number().int().min(1).max(5), comment: z.string().max(500).default("") }).safeParse(await c.req.json().catch(() => null));
