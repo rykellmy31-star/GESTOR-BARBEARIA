@@ -65,7 +65,7 @@ export function SuperSubscriptionInvoices() {
   const list = results.data?.invoices ?? [];
   return (
     <div>
-      <H title="Mensalidades Pix" sub="Faturas de assinatura Start, Pro e Scale. Separadas das recargas para WhatsApp e sem aprovação manual de comprovantes." action={
+      <H title="Histórico de faturas Pix" sub="Faturas Pix anteriores do TIGU. A partir do modo manual, renovações externas são registradas no cadastro da barbearia; recargas do WhatsApp permanecem separadas." action={
         <button onClick={() => void results.refetch()} type="button"
           className="inline-flex items-center gap-2 rounded-xl border border-[#35313b] px-3 py-2 text-xs text-zinc-300 hover:text-[#d4af37]">
           <RefreshCcw size={15}/> Atualizar

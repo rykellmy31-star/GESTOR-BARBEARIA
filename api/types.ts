@@ -11,6 +11,8 @@ export interface Env {
   APP_ENV?: string;
   /** Worker isolado de homologação: impede provedores e webhooks reais. */
   TIGU_STAGING?: string;
+  /** Modo da mensalidade da plataforma; por padrão manual. NÃO afeta pagamentos dos profissionais. */
+  TIGU_PLATFORM_BILLING_MODE?: "manual" | "mercadopago";
   /** Site key pública do Cloudflare Turnstile usada no formulário comercial. */
   SALES_TURNSTILE_SITE_KEY?: string;
   /** Secret privado do Turnstile para validar tokens no servidor. */
@@ -32,6 +34,10 @@ export interface Env {
   WHATSAPP_APP_SECRET_FOR_OAUTH?: string;
   /** Liga o provedor 'mock' (NUNCA habilitar em produção) */
   WHATSAPP_MOCK?: string;
+  /** Evolution API v2: secrets globais, nunca expostos no frontend. */
+  EVOLUTION_API_URL?: string;
+  EVOLUTION_API_KEY?: string;
+  EVOLUTION_WEBHOOK_SECRET?: string;
 
   // ── Pagamentos (Pix) ──
   MERCHANT_PIX_ENABLED?: string; // kill-switch de checkout por conta própria da barbearia (não afeta assinatura/recarga)

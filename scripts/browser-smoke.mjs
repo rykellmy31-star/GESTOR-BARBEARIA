@@ -43,7 +43,7 @@ async function js(code){const res=await cmd("Runtime.evaluate",{expression:code,
   return res.result?.value;}
 async function until(label,condition,max=18000){const deadline=Date.now()+max;
   while(Date.now()<deadline){if(await js(condition))return;await pause(180);}
-  throw Error("Não apareceu: "+label+". Página: "+await js("location.pathname+' '+document.body.innerText.slice(0,200)"));}
+  throw Error("Não apareceu: "+label+". Página: "+await js("location.pathname+' '+document.body.innerText.slice(-1400)"));}
 async function go(url){const nav=await cmd("Page.navigate",{url});if(nav.errorText)throw Error(nav.errorText);
   await until("documento",'document.readyState==="complete"');}
 async function click(text){const found=await js('(()=>{const b=[...document.querySelectorAll("button")]'+
@@ -331,6 +331,13 @@ try{
   await until("Pix real bloqueado no ambiente local",
     '(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("via Pix"));return !!b&&b.disabled})()');
   pass("Pix real bloqueado no ambiente local");
+  await go(base+"/c/"+slug+"/admin/assinatura");
+  const billingResponse=await api(base,"/api/c/"+slug+"/billing/status","GET",undefined,signup.cookie);
+  assert.equal(billingResponse.status,200,"API de assinatura deve estar acessível ao proprietário");
+  assert.equal(billingResponse.data.billing_mode,"manual","O fluxo de mensalidades da plataforma deve ser externo");
+  await until("painel de mensalidade externa",
+    'document.body.innerText.toLowerCase().includes("pagamento externo")&&document.body.innerText.includes("Solicitar plano selecionado")');
+  pass("proprietário visualiza planos e solicitação manual sem checkout Pix");
 
   // Reserva criada de verdade pela interface do visitante.
   await go(base+"/c/"+slug+"/agendar");
@@ -774,7 +781,7 @@ try{
   pass("Superadmin faz ajuste financeiro auditável apenas na carteira local");
   await go(base+"/superadmin/subscription-invoices");
   await until("mensalidades sem pagamento de teste",
-    'document.body.innerText.includes("Mensalidades Pix")&&document.body.innerText.includes("Nenhuma fatura encontrada")');
+    'document.body.innerText.includes("Histórico de faturas Pix")&&document.body.innerText.includes("Nenhuma fatura encontrada")');
   pass("Superadmin consulta mensalidades sem ativação ou cobrança");
   await go(base+"/superadmin/topups");
   await until("painel de recargas",

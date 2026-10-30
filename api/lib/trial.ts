@@ -31,14 +31,14 @@ export function isTrialExpired(sub: SubscriptionAccess | null, now: Date = new D
 /** Somente bloqueia criação de novas reservas/pedidos, não cancelamentos existentes. */
 export function requiresSubscriptionToWrite(method: string, route: string, authenticatedArea: boolean): boolean {
   if (!["POST","PUT","PATCH","DELETE"].includes(method)) return false;
-  // Pagamento de renovação precisa permanecer possível mesmo após 15 dias.
-  if (/^\/api\/c\/[a-z0-9-]+\/billing\/pix(?:\/verify)?$/.test(route)) return false;
+  // A solicitação de renovação permanece possível mesmo com plano vencido.
+  if (/^\/api\/c\/[a-z0-9-]+\/billing\/(?:plan-request|pix(?:\/verify)?)$/.test(route)) return false;
   if (authenticatedArea) return true;
   return /^\/api\/c\/[a-z0-9-]+\/(?:bookings|orders)$/.test(route) && method === "POST";
 }
 
-/** Cobrança e verificação de Pix continuam acessíveis após o teste expirar. */
+/** Solicitações manuais e conciliação de cobranças antigas são possíveis após expiração. */
 export function isSubscriptionBillingAction(method: string, path: string): boolean {
   return method === "POST" &&
-    /^\/api\/c\/[a-z0-9-]+\/billing\/pix(?:\/verify)?$/.test(path);
+    /^\/api\/c\/[a-z0-9-]+\/billing\/(?:plan-request|pix(?:\/verify)?)$/.test(path);
 }

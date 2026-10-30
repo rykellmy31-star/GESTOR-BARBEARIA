@@ -1,0 +1,43 @@
+name: TIGU - corrigir Vite 6.4.4 e confirmar seguranca
+
+# Executa uma única atualização do manifesto e lockfile na PR #2.
+# Não publica, migra ou usa credenciais Cloudflare.
+on:
+  push:
+    branches:
+      - feature/tigu-mensalidade-manual-preintegracao-20261028
+
+permissions:
+  contents: write
+
+jobs:
+  patch-vite:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/tigu-mensalidade-manual-preintegracao-20261028' && github.event.head_commit.message == 'TIGU_PATCH_VITE_SECURITY_ONCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Instalar versão anterior conforme lockfile
+        run: npm ci --no-audit --prefer-offline
+      - name: Atualizar SOMENTE Vite para versão sem CVE-2026-118662
+        run: npm install --save-dev --save-exact vite@6.4.5 --no-audit
+      - name: Verificar nenhuma vulnerabilidade moderada ou superior
+        run: npm audit --audit-level=moderate
+      - name: Tipos, compilação, testes e migrações
+        run: npm run validate
+      - name: Regressão HTTP local com Worker, D1 e R2
+        run: node scripts/local-e2e.mjs
+      - name: Persistir somente package.json e package-lock.json, sem deploy
+        run: |
+          git config user.name "TIGU Segurança CI"
+          git config user.email "tigu-ci@users.noreply.github.com"
+          git add -- package.json package-lock.json
+          git diff --cached --quiet && { echo "Não há mudança a gravar."; exit 0; }
+          git commit -m "TIGU: corrigir Vite CVE-2026-118662 com testes aprovados"
+          git push origin HEAD:refs/heads/feature/tigu-mensalidade-manual-preintegracao-20261028

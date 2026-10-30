@@ -114,7 +114,7 @@ export const tenantMiddleware =
     if (writeRequiresSubscription && !isSubscriptionBillingAction(c.req.method,c.req.path)) {
       const subscription = await subscriptionAccess(c.env.DB, company.id);
       if (!canOperateSubscription(subscription)) return err(c,
-        "Seu teste ou assinatura venceu. Acesse Assinatura e Pix no painel para escolher um plano e continuar após a confirmação do pagamento.", 402);
+        "Seu teste ou assinatura venceu. Acesse Assinatura no painel e solicite a renovação ao responsável pela plataforma.", 402);
     }
 
     c.set("settings", settings);

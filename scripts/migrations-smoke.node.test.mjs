@@ -21,12 +21,14 @@ function migrated(){
 }
 
 test("a cadeia base inclui o OAuth e o vínculo de recebedor 0100",()=>{
-  assert.equal(files.length,25);
+  assert.equal(files.length,27);
   files.slice(0,21).forEach((f,i)=>assert.equal(Number(f.slice(0,4)),i+1));
   assert.equal(files[21],"0099_seller_mercadopago_oauth.sql");
   assert.equal(files[22],"0100_seller_pix.sql");
   assert.equal(files[23],"0101_barber_service_duration.sql");
   assert.equal(files[24],"0102_booking_checkin_cancel_reason.sql");
+  assert.equal(files[25],"0103_manual_platform_subscriptions.sql");
+  assert.equal(files[26],"0104_evolution_whatsapp.sql");
   const db=migrated();
   try{
     assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check,"ok");
@@ -56,10 +58,13 @@ test("colunas de dinheiro e índices de auditoria/paginação foram criados",()=
     assert.ok(col("booking_payments").has("receiver_barber_id"));
     assert.ok(col("booking_payments").has("receiver_mp_user_id"));
     assert.ok(col("topup_orders").has("notification_sent_at"));
+    assert.ok(col("subscription_plan_requests").has("handled_at"));
+    assert.ok(col("manual_subscription_renewals").has("external_reference"));
+    assert.ok(col("manual_subscription_renewals").has("operator_user_id"));
     assert.ok(col("payment_webhook_events").has("attempt_count"));
     assert.ok(col("message_conflict_reviews").has("audit_snapshot_version"));
     const indexes=new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all().map(x=>x.name));
-    for(const name of ["idx_orders_company_paid_at","idx_topups_notification_reconcile","idx_payment_webhook_retry","idx_message_conflict_reviews_job","idx_audit_message_conflict_lookup","idx_message_jobs_meta_conflict_page","idx_message_jobs_status_page","idx_booking_payments_company_status","idx_order_payments_company_status","idx_orders_checkout_key","idx_bookings_fit_in_company"]){
+    for(const name of ["idx_orders_company_paid_at","idx_topups_notification_reconcile","idx_payment_webhook_retry","idx_message_conflict_reviews_job","idx_audit_message_conflict_lookup","idx_message_jobs_meta_conflict_page","idx_message_jobs_status_page","idx_booking_payments_company_status","idx_order_payments_company_status","idx_orders_checkout_key","idx_bookings_fit_in_company","idx_tigu_one_pending_plan_request","idx_tigu_manual_renewals_latest"]){
       assert.ok(indexes.has(name),"index missing: "+name);
     }
   }finally{db.close();}

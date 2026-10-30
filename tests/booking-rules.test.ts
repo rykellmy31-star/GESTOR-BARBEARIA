@@ -21,6 +21,7 @@ import schema0005 from "../migrations/0005_subscription_pix.sql";
 import schema0006 from "../migrations/0006_request_rate_limits.sql";
 import schema0007 from "../migrations/0007_last_superadmin_guard.sql";
 import schema0008 from "../migrations/0008_booking_overlap_guard.sql";
+import schema0103 from "../migrations/0103_manual_platform_subscriptions.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
@@ -73,6 +74,8 @@ beforeAll(async () => {
   await runSqlScript(schema0004);
   await runSqlScript(schema0005);
   await runSqlScript(schema0006);
+  // Tabelas aditivas de solicitação de plano e renovação manual da plataforma.
+  await runSqlScript(schema0103);
   // Migrações com triggers precisam preservar BEGIN/END como um único comando.
   for(const script of [schema0007,schema0008])
     for(const trigger of script.match(/CREATE TRIGGER[\s\S]+?END;/g)!) await db.prepare(trigger).run();
@@ -1494,11 +1497,91 @@ describe("Assinaturas Pix mensais via Mercado Pago", () => {
     return {cookie,slug,email};
   }
   const billingEnv=():Env=>({...env,DB:db,APP_ENV:"development",TIGU_STAGING:"0",
+    TIGU_PLATFORM_BILLING_MODE:"mercadopago",
     PAYMENTS_MOCK:"0",MP_ACCESS_TOKEN:"TOKEN_FICTICIO",MP_WEBHOOK_SECRET:"WH_FAKE",
     PUBLIC_URL:"https://tigu.example.test"} as Env);
   const request=(envOverride:Env,path:string,cookie:string,method="GET",body:object={})=>
     app.request(path,{method,headers:{"content-type":"application/json",cookie},
       ...(method==="GET"?{}:{body:JSON.stringify(body)})},envOverride,{waitUntil:()=>{},passThroughOnException:()=>{}} as unknown as ExecutionContext);
+  it("no modo manual não cria Pix e registra pedido de plano sem conceder acesso",async()=>{
+    const owner=await newOwner(),e={...billingEnv(),TIGU_PLATFORM_BILLING_MODE:"manual"} as Env;
+    const path="/api/c/"+owner.slug+"/billing";
+    const before=await db.prepare("SELECT plan_code,period_end FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+      .bind(owner.slug).first<any>();
+    const network=vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("não deveria chamar rede"));
+    try{
+      const status=await request(e,path+"/status",owner.cookie);
+      expect(status.status).toBe(200);
+      expect((await status.json() as any).billing_mode).toBe("manual");
+      const pix=await request(e,path+"/pix",owner.cookie,"POST",{plan_code:"pro"});
+      expect(pix.status).toBe(409);
+      const one=await request(e,path+"/plan-request",owner.cookie,"POST",{plan_code:"pro"});
+      expect(one.status).toBe(200);
+      const first:any=await one.json();
+      const repeat=await request(e,path+"/plan-request",owner.cookie,"POST",{plan_code:"pro"});
+      expect((await repeat.json() as any).request_id).toBe(first.request_id);
+      const conflict=await request(e,path+"/plan-request",owner.cookie,"POST",{plan_code:"scale"});
+      expect(conflict.status).toBe(409);
+      const after=await db.prepare("SELECT plan_code,period_end FROM subscriptions WHERE company_id=(SELECT id FROM companies WHERE slug=?1)")
+        .bind(owner.slug).first<any>();
+      expect(after).toEqual(before);
+      expect(network).not.toHaveBeenCalled();
+    }finally{network.mockRestore();}
+  });
+
+
+  it("renovação externa exige Super Admin, audita e não aplica duas vezes",async()=>{
+    const owner=await newOwner(),e={...billingEnv(),TIGU_PLATFORM_BILLING_MODE:"manual"} as Env;
+    const co=await db.prepare("SELECT id FROM companies WHERE slug=?1").bind(owner.slug).first<{id:number}>();
+    expect(co).not.toBeNull();
+    const expire=new Date(Date.now()-86_400_000).toISOString().replace(/\\.\\d{3}Z$/,"Z");
+    await db.prepare("UPDATE subscriptions SET period_end=?1 WHERE company_id=?2").bind(expire,co!.id).run();
+    const requested=await request(e,"/api/c/"+owner.slug+"/billing/plan-request",owner.cookie,"POST",{plan_code:"pro"});
+    expect(requested.status).toBe(200);
+    const url="/api/super/companies/"+co!.id+"/manual-renew";
+    const info={plan_code:"pro",period_months:2,amount_cents:9980,
+      external_reference:"TESTE-EXTERNO-"+crypto.randomUUID(),note:"Recebimento externo confirmado pelo operador do teste."};
+    expect((await request(e,url,owner.cookie,"POST",info)).status).toBe(403);
+    expect((await request(e,url,"","POST",info)).status).toBe(401);
+    const email="super-manual-"+crypto.randomUUID()+"@tigu.test";
+    const at=new Date().toISOString().replace(/\\.\\d{3}Z$/,"Z");
+    await db.prepare("INSERT INTO users(platform_role,name,email,password_hash,active,created_at) VALUES ('superadmin','Admin financeiro manual',?1,?2,1,?3)")
+      .bind(email,await hashPassword(PW),at).run();
+    const login=await app.request("/api/auth/login",{method:"POST",
+      headers:{"content-type":"application/json","cf-connecting-ip":"198.51.100.244"},
+      body:JSON.stringify({email,password:PW})},e);
+    expect(login.status).toBe(200);
+    const superCookie=(login.headers.get("set-cookie")||"").split(";")[0];
+    const spy=vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("Gateway não pode ser usado na renovação externa"));
+    try {
+      const first=await request(e,url,superCookie,"POST",info);
+      expect(first.status).toBe(200);
+      expect((await first.json() as any).ok).toBe(true);
+      const sub=await db.prepare("SELECT status,plan_code,period_end FROM subscriptions WHERE company_id=?1")
+        .bind(co!.id).first<{status:string;plan_code:string;period_end:string}>();
+      expect(sub).toMatchObject({status:"active",plan_code:"pro"});
+      expect(new Date(sub!.period_end).getTime()).toBeGreaterThan(Date.now()+50*86_400_000);
+      const duplicate=await request(e,url,superCookie,"POST",info);
+      expect(duplicate.status).toBe(200);
+      expect((await duplicate.json() as any).already_applied).toBe(true);
+      const after=await db.prepare("SELECT period_end FROM subscriptions WHERE company_id=?1")
+        .bind(co!.id).first<{period_end:string}>();
+      expect(after?.period_end).toBe(sub?.period_end);
+      const conflict=await request(e,url,superCookie,"POST",{...info,amount_cents:10000});
+      expect(conflict.status).toBe(409);
+      const rows=await db.prepare("SELECT COUNT(*) n FROM manual_subscription_renewals WHERE company_id=?1")
+        .bind(co!.id).first<{n:number}>();
+      expect(rows?.n).toBe(1);
+      const req=await db.prepare("SELECT status FROM subscription_plan_requests WHERE company_id=?1")
+        .bind(co!.id).first<{status:string}>();
+      expect(req?.status).toBe("approved");
+      const wallet=await db.prepare("SELECT balance_cents FROM wallets WHERE company_id=?1")
+        .bind(co!.id).first<{balance_cents:number}>();
+      expect(wallet?.balance_cents).toBe(0);
+      expect(spy).not.toHaveBeenCalled();
+    }finally{spy.mockRestore();}
+  });
+
   it("gera Pix do Start e só libera após aprovação real reconsultada, sem duplicar meses",async()=>{
     const owner=await newOwner(),e=billingEnv();
     const url="/api/c/"+owner.slug+"/billing";

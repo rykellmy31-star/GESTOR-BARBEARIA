@@ -1,0 +1,46 @@
+name: TIGU - preflight DO DOMINIO OFICIAL
+
+on:
+  push:
+    branches:
+      - feature/tigu-mensalidade-manual-preintegracao-20261028
+
+permissions:
+  contents: read
+
+jobs:
+  inspecionar:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/tigu-mensalidade-manual-preintegracao-20261028' && github.event.head_commit.message == 'TIGU_OFFICIAL_PREFLIGHT_ONCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verificar guardas de preservacao de dados
+        run: node --test scripts/tigu-official-release-once.node.test.mjs
+      - name: Conferir roteamento e historico D1 em modo SOMENTE LEITURA
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import {inspectRemote} from "./scripts/tigu-official-release-once.mjs";
+          try {
+            const v=await inspectRemote({
+              token:process.env.CLOUDFLARE_STAGING_TOKEN,
+              accountId:process.env.CLOUDFLARE_ACCOUNT_ID,
+            });
+            console.log("TIGU DOMINIO OFICIAL PREPARADO:",JSON.stringify({
+              ...v.summary,
+              flags:v.health,
+              bindingTypes:v.inventory.existingBindingTypes,
+              secretNames:v.inventory.existingSecretNames,
+              migrationCount:v.inventory.appliedMigrationCount,
+            },null,2));
+          }catch(e){
+            console.error("PRE-VERIFICACAO BLOQUEADA:",e.message);
+            process.exitCode=1;
+          }
+          NODE

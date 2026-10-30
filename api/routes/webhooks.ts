@@ -6,6 +6,7 @@
 // ficam registrados na tabela de eventos para reprocessamento manual.
 // ============================================================================
 import { Hono } from "hono";
+import { evolutionWebhookRouter } from "./evolution-webhook";
 import type { Env } from "../types";
 import { ingestWhatsappWebhook } from "../lib/messaging/jobs";
 import { verifyWebhookSignature } from "../lib/messaging/provider";
@@ -19,6 +20,7 @@ import { confirmSubscriptionPix } from "../lib/subscription-billing";
 import { nowIso } from "../lib/utils";
 
 export const webhooksRouter = new Hono<{ Bindings: Env }>();
+webhooksRouter.route("/evolution", evolutionWebhookRouter);
 
 webhooksRouter.get("/whatsapp", async (c) => {
   if (c.env.TIGU_STAGING === "1") return c.json({ error: "Verificação Meta desativada na homologação." }, 403);

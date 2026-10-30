@@ -7,6 +7,7 @@ import { Badge, Button, Field, Input, Select, Spinner, Modal, useToast } from "@
 import { money } from "@/lib/format";
 import { H, Kpi, Money, Table, Td, Tr } from "./shared";
 import { buildOwnerAccessMessage, formatTrialEnd, type OwnerAccessDetails } from "@/lib/owner-welcome";
+import { ManualBillingPanel } from "./ManualBillingPanel";
 
 type OwnerMember = { user_id: number; name: string; email: string; role: string; active: number };
 
@@ -158,11 +159,12 @@ export function SuperCompanyDetail() {
         <Kpi label="Política carteira" value={wallet?.allow_negative ? "permite negativo" : "saldo ≥ 0"} sub={`alerta baixo: ${money(wallet?.low_balance_alert_cents ?? 0)}`} />
       </div>
 
+      {q.data.billing_mode==="manual" && <ManualBillingPanel companyId={co.id} />}
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-[#26262f] bg-[#16161c] p-5">
           <h2 className="font-display text-base text-zinc-100">Ações da plataforma</h2>
           <div className="mt-3 space-y-3 text-sm">
-            <Field label="Alterar plano"><div className="flex gap-2"><Select value={co.plan_code} onChange={(e) => mut.mutate(() => api.put(`/super/companies/${co.id}/plan`, { plan_code: e.target.value, note: "ajuste via suíte" }))} className="flex-1"><option value="free">free</option><option value="pro">pro</option><option value="scale">scale</option></Select></div></Field>
+            <p className="text-xs text-zinc-400">Para selecionar plano e renovar a assinatura, utilize o quadro de mensalidade externa acima. A alteração é auditada e não gera cobrança.</p>
             {susp.mode === "suspend" ? (
               <Field label="Motivo da suspensão (5+)"><div className="flex gap-2"><Input value={susp.reason} onChange={(e) => setSusp({ ...susp, reason: e.target.value })} className="flex-1" /><Button className="rounded-xl bg-red-500/80 px-4 py-2 text-sm" disabled={susp.reason.length < 5 || mut.isPending} onClick={async () => { await mut.mutateAsync(() => api.post(`/super/companies/${co.id}/suspend`, { reason: susp.reason })); setSusp({ mode: "", reason: "" }); }}>Confirmar</Button></div></Field>
             ) : (

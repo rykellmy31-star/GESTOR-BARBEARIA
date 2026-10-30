@@ -1,0 +1,23 @@
+name: "TIGU - verificar predeploy oficial sem modificar Cloudflare"
+on:
+  push:
+    branches: [feature/tigu-mensalidade-manual-preintegracao-20261028]
+    paths:
+      - scripts/tigu-official-deploy-readonly.mjs
+      - .github/workflows/tigu-official-deploy-readonly.yml
+permissions:
+  contents: read
+jobs:
+  somente-leitura:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validar vínculo oficial, banco e recursos existentes sem segredos
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/tigu-official-deploy-readonly.mjs

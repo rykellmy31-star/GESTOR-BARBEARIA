@@ -151,6 +151,8 @@ export default {
           // e recuperando pagamentos aprovados que perderam o webhook.
           if (new Date().getUTCMinutes() % 10 === 0) {
             await reconcilePendingTopups(env, 20);
+            // Conciliação de faturas anteriores continua ativa: pagamentos já emitidos
+            // nunca devem ficar órfãos ao migrar para cobrança externa.
             await reconcileSubscriptionPix(env, 20);
           }
         } catch (e) {

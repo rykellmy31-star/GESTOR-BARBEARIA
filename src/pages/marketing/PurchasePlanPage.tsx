@@ -1,95 +1,38 @@
-import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CreditCard, LockKeyhole, Scissors, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Scissors, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 
 type Code = "pro" | "scale";
 type Plan = {code:string;name:string;price_cents_month:number};
-const money=(cents:number)=>(cents/100).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const brl=(c:number)=>(c/100).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 
-/**
- * Entrada do checkout direto. NUNCA cria uma barbearia ou coleta uma senha
- * antes de um pagamento efetivamente homologado.
- * Não redirecionar para MP nem inventar um Pix enquanto o fluxo protegido
- * de pré-cadastro, idempotência e webhook de ativação não estiver completo.
- */
+/** Contratação comercial assistida: não coleta pagamento nem cria empresa automaticamente. */
 export function PurchasePlanPage(){
   const [params]=useSearchParams();
   const selected:Code=params.get("plano")==="scale"?"scale":"pro";
-  const [email,setEmail]=useState("");
-  const [accepted,setAccepted]=useState(false);
-  const plans=useQuery({
-    queryKey:["purchase-plan-prices"],
-    queryFn:()=>api.get<{plans:Plan[];automatic_billing:boolean}>("/marketing/plans"),
-    retry:false,staleTime:30_000
-  });
-  const health=useQuery({
-    queryKey:["purchase-live-gateway-health"],
-    queryFn:()=>api.get<{staging:boolean;payments:{mercadopago:boolean}} >("/health"),
-    retry:false,staleTime:30_000
-  });
+  const plans=useQuery({queryKey:["purchase-plan-prices"],
+    queryFn:()=>api.get<{plans:Plan[]}>("/marketing/plans"),retry:false,staleTime:30_000});
   const plan=plans.data?.plans?.find(p=>p.code===selected);
-  const safeDisplay=Boolean(plan&&Number.isInteger(plan.price_cents_month)&&plan.price_cents_month>0);
-  // Um token presente não prova que o webhook está configurado ou que
-  // a compra poderá provisionar uma nova barbearia após a confirmação.
-  const ready=false;
-  const contactHref=`/contratar?plano=${selected}`;
   return <div className="texture min-h-screen bg-[#0a0a0c] px-4 py-9 text-zinc-100">
     <div className="mx-auto max-w-2xl">
-      <Link to="/#planos" className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-400">
-        <ArrowLeft size={16}/> Voltar aos planos
-      </Link>
+      <Link to="/#planos" className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-400"><ArrowLeft size={16}/> Voltar aos planos</Link>
       <div className="rounded-3xl border border-[#35313b] bg-[#16161c] p-5 sm:p-9">
-        <p className="flex items-center gap-2 text-sm text-[var(--c-gold)]">
-          <Scissors size={18}/> TIGU · Contratação direta
-        </p>
-        <h1 className="mt-4 font-display text-3xl">Adquirir {selected==="pro"?"Tigu Pro":"Tigu Scale"}</h1>
+        <p className="flex items-center gap-2 text-sm text-[var(--c-gold)]"><Scissors size={18}/> TIGU · Contratação assistida</p>
+        <h1 className="mt-4 font-display text-3xl">Escolher {selected==="pro"?"TIGU Pro":"TIGU Scale"}</h1>
         <p className="mt-2 text-sm text-zinc-400">
-          {safeDisplay?money(plan!.price_cents_month)+"/mês":"Consultando preço oficial do plano…"}
+          {plan?brl(plan.price_cents_month)+"/mês":"Consulte o preço oficial com o responsável."}
         </p>
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          {["1. Confirmar plano e pagamento","2. Verificar aprovação do Pix","3. Criar login e barbearia"].map(step=>
-            <div key={step} className="rounded-xl border border-[#33343a] p-3 text-xs text-zinc-300">
-              <ShieldCheck size={17} className="mb-2 text-[var(--c-gold)]"/>{step}
-            </div>
-          )}
+        <div className="mt-6 rounded-xl border border-[var(--c-gold)]/30 bg-[var(--c-gold)]/5 p-5">
+          <p className="flex gap-2 text-sm text-zinc-200"><ShieldCheck size={18} className="shrink-0 text-[var(--c-gold)]"/>
+            A mensalidade é combinada e cobrada diretamente pelo responsável pela CR Jornada, fora do TIGU.</p>
+          <p className="mt-3 text-sm text-zinc-400">A seleção do plano não gera Pix nem cobrança. O cadastro e a liberação são realizados pelo Super Admin após a contratação.</p>
+          <p className="mt-3 text-xs text-zinc-500">Os pagamentos opcionais pelos serviços dos barbeiros são independentes da assinatura da plataforma.</p>
         </div>
-        <div className="mt-6 space-y-4">
-          <label className="block text-sm">E-mail do futuro proprietário
-            <input type="email" autoComplete="email" maxLength={160} value={email}
-              onChange={e=>setEmail(e.target.value)}
-              placeholder="voce@exemplo.com"
-              className="input-dark mt-2 w-full"/>
-          </label>
-          <label className="flex items-start gap-2 text-xs text-zinc-300">
-            <input type="checkbox" className="mt-0.5" checked={accepted}
-              onChange={e=>setAccepted(e.target.checked)}/>
-            Entendi que a barbearia será criada somente depois da confirmação do pagamento.
-          </label>
-          {!ready&&<div role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm text-amber-100">
-            <p className="flex items-center gap-2 font-semibold"><LockKeyhole size={16}/>
-              Checkout direto em homologação
-            </p>
-            <p className="mt-2 leading-relaxed">
-              Para sua segurança, o Pix direto ainda não está liberado neste ambiente.
-              A integração de pagamento e a criação automática da barbearia precisam
-              passar pelos testes de aprovação, webhook e prevenção de cobranças duplicadas.
-              Nenhuma cobrança nem cadastro é feito nesta página.
-            </p>
-          </div>}
-          <button type="button" disabled className="btn-gold flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl px-5 py-3 opacity-50">
-            <CreditCard size={18}/> Pagar e continuar — aguardando homologação
-          </button>
-          <Link to={contactHref} className="flex w-full justify-center rounded-xl border border-[#45454b] px-5 py-3 text-sm font-semibold text-zinc-200">
-            Solicitar atendimento comercial
-          </Link>
-          {health.data?.staging&&
-            <p className="text-xs text-zinc-500">Ambiente de homologação: cobranças reais bloqueadas.</p>}
-          {plans.isError&&<p role="alert" className="text-xs text-amber-200">
-            Não foi possível consultar o preço oficial. Nenhuma cobrança está disponível.
-          </p>}
-        </div>
+        <Link to={`/contratar?plano=${selected}`} className="btn-gold mt-6 flex w-full justify-center rounded-xl px-5 py-3 text-sm font-semibold">
+          Solicitar contratação do plano
+        </Link>
+        {plans.isError&&<p role="alert" className="mt-3 text-xs text-amber-200">Preço indisponível. Confirme as condições com o responsável.</p>}
       </div>
     </div>
   </div>;

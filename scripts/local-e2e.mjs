@@ -69,7 +69,7 @@ try {
   const fakePhoto=new FormData();fakePhoto.append("file",new Blob(["<script>alert(1)</script>"],{type:"image/png"}),"foto.png");
   check("Foto com tipo falsificado é recusada por HTTP",(await owner("POST",c+"/admin/upload",fakePhoto)).status===415);
   check("Teste grátis com duração exata de quinze dias",billing.status===200&&sub.status==="trial"&&Date.parse(sub.period_end)-Date.parse(sub.started_at)===15*86400000);
-  check("Pix real continua indisponível",(await owner("POST",c+"/billing/pix",{plan_code:"free"})).status===503);
+  check("Assinatura externa não gera Pix da plataforma",(await owner("POST",c+"/billing/pix",{plan_code:"free"})).status===409);
   const second=await other("POST","/api/auth/register",{company_name:"Segunda Local E2E",name:"Outro dono",email:"other@local-e2e.test",password});
   check("Outra barbearia não acessa o painel da primeira",second.status===201&&(await other("GET",c+"/admin/dashboard")).status===403);
   const settings=(await owner("GET",c+"/admin/settings")).data.settings;
@@ -256,7 +256,10 @@ try {
   wrangler(["d1","execute","tigu-local-e2e-db","--command",`UPDATE subscriptions SET period_end='2000-01-01T00:00:00Z' WHERE company_id=(SELECT id FROM companies WHERE slug=${q(slug)})`]);
   check("Teste vencido impede novas reservas sem cobrança automática",(await visitor("POST",c+"/bookings",{barberId:bid,serviceId:service.data.id,startsAt:free[2].t,name:"Cliente local",phone:"5573999990000",consent:true,whatsappOptin:false,idempotencyKey:randomBytes(16).toString("hex")})).status===402);
   check("Vencimento preserva consulta do painel e assinatura",(await owner("GET",c+"/admin/dashboard")).status===200&&(await owner("GET",c+"/billing/status")).status===200);
-  check("Renovação permanece acessível mas Pix real bloqueado",(await owner("POST",c+"/billing/pix",{plan_code:"pro"})).status===503);
+  const planRequest=await owner("POST",c+"/billing/plan-request",{plan_code:"pro"});
+  const blockedPix=await owner("POST",c+"/billing/pix",{plan_code:"pro"});
+  const manualBilling=await owner("GET",c+"/billing/status");
+  check("Plano vencido aceita solicitação manual sem Pix nem liberação automática",planRequest.status===200&&blockedPix.status===409&&manualBilling.data.plan_request?.plan_code==="pro"&&manualBilling.data.subscription?.status==="trial");
   check("Cliente ainda pode cancelar reserva existente após vencer o teste",(await visitor("POST",c+"/bookings/cancel",{code:expiring.data.booking.code,phone:"5573999990000"})).status===200);
   const uid=login.data.user.id;
   check("Último Superadmin não pode ser desativado",(await superadmin("PUT",`/api/super/users/${uid}`,{active:false})).status===409);

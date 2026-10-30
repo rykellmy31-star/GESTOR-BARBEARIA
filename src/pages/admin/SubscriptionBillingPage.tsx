@@ -5,6 +5,7 @@ import { CreditCard, Copy, CheckCircle2, RefreshCw, ShieldCheck, Clock3 } from "
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui";
 import { useAuth } from "@/lib/hooks";
+import { ManualSubscriptionView } from "./ManualSubscriptionView";
 
 type PlanCode = "free" | "pro" | "scale";
 type Plan = {code:PlanCode;name:string;price_cents_month:number;max_barbers:number;max_messages_month:number;whatsapp_enabled:number;store_enabled:number};
@@ -16,7 +17,7 @@ type Subscription = {
   plan_code:string;status:string;period_end:string|null;
   name:string;price_cents_month:number;
 };
-type Summary = {subscription:Subscription|null;invoice:Invoice|null;plans:Plan[]};
+type Summary = {subscription:Subscription|null;invoice:Invoice|null;plans:Plan[];billing_mode?:"manual"|"mercadopago";plan_request?:{id:number;plan_code:string;created_at:string}|null};
 const brl=(cents:number)=>(cents/100).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 
 export function SubscriptionBillingPage() {
@@ -61,6 +62,8 @@ export function SubscriptionBillingPage() {
   const rank:Record<PlanCode,number>={free:0,pro:1,scale:2};
   const downgradeBlocked=Boolean(valid&&sub?.status==="active"&&rank[chosenCode] < rank[sub?.plan_code as PlanCode]);
   const changing=Boolean(sub&&chosenCode!==sub.plan_code);
+
+  if(q.data?.billing_mode==="manual") return <ManualSubscriptionView data={{subscription:q.data.subscription,plans:q.data.plans,plan_request:q.data.plan_request??null}} />;
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
