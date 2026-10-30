@@ -328,7 +328,7 @@ test("API TIGU: credenciais presentes no staging não habilitam Pix nem mensagen
  const smoke=readFileSync(new URL("./staging-smoke.mjs",import.meta.url),"utf8");
  assert.match(pay,/if \(env\.TIGU_STAGING === "1"\) return \{ provider: null/);
  assert.match(pay,/if \(env\.TIGU_STAGING === "1"\) return \{ ok: false/);
- assert.match(whatsapp,/if \(ctx\.env\.TIGU_STAGING === "1"\)[\s\S]*?provider:null/);
+ assert.match(whatsapp,/if \(ctx\.env\.TIGU_STAGING === "1" && ctx\.env\.TIGU_EVOLUTION_LIVE !== "1"\)[\s\S]*?provider:null/);
  assert.match(webhooks,/webhooksRouter\.post\("\/mercadopago",[\s\S]*?TIGU_STAGING === "1"/);
  assert.doesNotMatch(webhooks,/webhooksRouter\.(get|post)\("\/whatsapp"/);
  assert.match(evoWebhooks,/evolutionWebhookRouter\.post\("\/",[\s\S]*?TIGU_STAGING === "1"/);
