@@ -88,3 +88,19 @@ Agora ambos registram **permissão específica, opcional e separada para WhatsAp
 Validado na PR #7, 352 testes aprovados, preservando pagamentos, dados, instâncias e agendamentos existentes. Sem migrações D1.
 
 Atualização de integração: PR #8 validada com 353 testes.
+
+
+## Mensagens ilimitadas em Start, Pro e Scale — outubro/2026
+
+A Evolution API está incluída nos três planos sem franquia mensal de mensagens
+imposta pelo TIGU. O bloqueio antigo de 100/3.000 mensagens foi retirado do
+agendador e da confirmação atômica na fila. O proprietário e o Super Admin
+visualizam "envios ilimitados"; o editor não aceita mais configurar cotas.
+
+A ativação de cada WhatsApp, a autorização dos clientes, a assinatura ativa,
+as medidas de segurança e a prevenção de duplicações permanecem obrigatórias.
+Limites ou restrições externas da plataforma WhatsApp/Evolution continuam
+sendo responsabilidade dos respectivos serviços. Registros históricos do D1
+não foram alterados e nenhum pagamento foi modificado.
+
+PR #9: 353 testes aprovados, sem migrações de banco.
