@@ -86,3 +86,5 @@ Foi detectado que os formulários do site público e da agenda manual enviavam o
 Agora ambos registram **permissão específica, opcional e separada para WhatsApp**, inicializada como desmarcada. Só após aceite a fila de confirmação e o lembrete podem ser programados. A tela de sucesso do cliente e o aviso da reserva manual mostram se o WhatsApp foi programado ou se a conexão impede o envio. A entrega real depende da conexão Evolution e do cron. Não marcar antigos clientes automaticamente; nenhuma mensagem retroativa automática.
 
 Validado na PR #7, 352 testes aprovados, preservando pagamentos, dados, instâncias e agendamentos existentes. Sem migrações D1.
+
+Atualização de integração: PR #8 validada com 353 testes.
