@@ -31,3 +31,5 @@ Não precisa de n8n. A fila de mensagens já existente (confirmações e lembret
 
 ## Verificação de publicação oficial
 A implementação da Evolution API foi incorporada à branch de preparação do TIGU. O diagnóstico de D1 permanece bloqueado até o histórico de migrações existentes ser reconciliado sem alterações destrutivas. Antes de qualquer publicação no domínio agendamentos.crjornada.com, o GitHub Actions precisa confirmar o vínculo com o Worker tigu-staging e os recursos D1/R2 já existentes, bem como a aplicação segura das migrações aditivas 0103 e 0104. O servidor Evolution API não foi instalado e o modo TIGU_STAGING=1 não permite conectar números reais.
+
+A publicação oficial permanece condicionada ao backup validado, histórico D1 e testes sem regressões.
