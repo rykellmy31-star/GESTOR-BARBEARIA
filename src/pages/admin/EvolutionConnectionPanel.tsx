@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Loader2, QrCode, RefreshCw, Smartphone, Unplug } from "lucide-react";
+import { Loader2, QrCode, RefreshCw, Smartphone, Unplug } from "lucide-react";
 import { api } from "@/lib/api";
 import { Badge, Button, useToast } from "@/components/ui";
 
@@ -59,8 +59,7 @@ export function EvolutionConnectionPanel({ onChange }: { onChange: () => void })
         </Badge>
       </header>
       <p className="mt-2 text-xs leading-relaxed text-zinc-400">
-        Cada barbearia conecta seu próprio número. Não precisa n8n, token Meta ou comprar créditos
-        de mensagens TIGU para os envios pela Evolution.
+        Cada barbearia conecta seu próprio número. Conecte pelo QR Code e gerencie sua sessão diretamente no painel.
       </p>
       {!status?.configured ? (
         <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
@@ -98,11 +97,7 @@ export function EvolutionConnectionPanel({ onChange }: { onChange: () => void })
         </div>
       )}
       {status?.error && <p className="mt-2 text-xs text-amber-200">{status.error}</p>}
-      <p className="mt-3 flex gap-2 text-[11px] text-amber-200/80">
-        <AlertTriangle className="mt-0.5 shrink-0" size={13}/>
-        Integração via WhatsApp Web não oficial. O número pode desconectar ou sofrer restrições do WhatsApp.
-        Use somente para contatos com consentimento.
-      </p>
+
     </section>
   );
 }
