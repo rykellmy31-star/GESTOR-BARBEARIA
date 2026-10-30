@@ -25,10 +25,10 @@ const good=[
   [{hostname:TARGET.hostname,service:TARGET.worker,enabled:true}],
   settings,existing,expected
 ];
-test("liberar somente migrações aditivas 0103 e 0104 no banco existente",()=>{
-  assert.equal(expected.length,27);
+test("liberar somente migração aditiva 0103 no banco existente",()=>{
+  assert.equal(expected.length,26);
   const r=inspectOfficialInventory(...good);
-  assert.deepEqual(r.pendingMigrations,["0103_manual_platform_subscriptions.sql","0104_evolution_whatsapp.sql"]);
+  assert.equal(r.pendingMigration,"0103_manual_platform_subscriptions.sql");
   assert.equal(r.appliedMigrationCount,25);
   assert.equal(r.existingSecretNames.includes("MP_ACCESS_TOKEN"),true);
 });
