@@ -25,7 +25,7 @@ import { barberScheduleFields, barberScheduleSchema } from "../lib/schedule-vali
 import { getWallet, manualAdjustment } from "../lib/wallet";
 import { createTopup, confirmTopupFromProvider, getTopupLimits } from "../lib/topup";
 import { getConnection, sendImmediate, resolvePricing, processDueJobs } from "../lib/messaging/jobs";
-import { resolveProvider, exchangeEmbeddedSignupCode, mockAllowed } from "../lib/messaging/provider";
+import { resolveProvider } from "../lib/messaging/provider";
 import { pickPaymentProvider } from "../lib/payments";
 import { merchantStatus, configureMerchant, disconnectMerchant } from "../lib/merchant-payments";
 import { todayLocal, addDays, formatDayPtBr } from "../lib/time";
@@ -889,17 +889,15 @@ adminRouter.get("/whatsapp", async (c) => {
   const pricing = await resolvePricing(db, id, "any");
   const stats = await db.prepare(`SELECT COUNT(*) total, SUM(status IN ('sent','delivered','read')) sent, SUM(captured_at IS NOT NULL) charged, COALESCE(SUM(CASE WHEN captured_at IS NOT NULL THEN price_cents END),0) revenue_cents, COALESCE(SUM(CASE WHEN captured_at IS NOT NULL THEN cost_cents END),0) cost_cents FROM message_jobs WHERE company_id=?1 AND created_at>=strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')`).bind(id).first();
   const plan = await db.prepare(`SELECT p.name, p.whatsapp_enabled, p.max_messages_month FROM plans p JOIN subscriptions s ON s.plan_code=p.code WHERE s.company_id=?1`).bind(id).first();
-  const embedded = { available: Boolean(c.env.WHATSAPP_APP_ID && c.env.WHATSAPP_APP_SECRET_FOR_OAUTH && c.env.WHATSAPP_EMBEDDED_CONFIG_ID), config_id: c.env.WHATSAPP_EMBEDDED_CONFIG_ID || "" };
   return json(c, {
     connection: conn
-      ? { provider: conn.provider, status: conn.status, display_phone: conn.display_phone, business_name: conn.business_name, waba_id: conn.waba_id, phone_number_id: conn.phone_number_id, coexistence: conn.coexistence, last_error: conn.last_error, last_check_at: conn.last_check_at, connected_at: conn.connected_at, demo: conn.demo, token_present: conn.access_token_enc !== "" }
-      : { status: "disconnected", coexistence: "unknown" },
+      ? { provider: conn.provider, status: conn.status, display_phone: conn.display_phone, last_error: conn.last_error, last_check_at: conn.last_check_at, connected_at: conn.connected_at }
+      : { provider: "evolution", status: "disconnected" },
     templates,
     jobs: jobs.map((j) => ({ ...j, to_phone: maskPhoneLite(String(j.to_phone)) })),
     pricing,
     stats,
     plan,
-    embedded,
     settings: {
       whatsapp_reminders_enabled: ctxSettings(c).whatsapp_reminders_enabled,
       whatsapp_confirm_enabled: ctxSettings(c).whatsapp_confirm_enabled,
@@ -909,121 +907,32 @@ adminRouter.get("/whatsapp", async (c) => {
       reminder_template_code: ctxSettings(c).reminder_template_code,
       confirm_template_code: ctxSettings(c).confirm_template_code,
     },
-    mock_available: c.env.WHATSAPP_MOCK === "1",
   });
 });
 function maskPhoneLite(p: string): string { return p.length > 7 ? `${p.slice(0, 4)}••••${p.slice(-3)}` : "•••"; }
 
-const connectSchema = z.object({
-  provider: z.enum(["meta_cloud", "mock"]),
-  phone_number_id: z.string().max(40).default(""),
-  waba_id: z.string().max(40).default(""),
-  access_token: z.string().max(2000).default(""),
-  display_phone: z.string().max(30).default(""),
-  business_name: z.string().max(80).default(""),
-  coexistence: z.enum(["unknown", "enabled", "not_eligible"]).default("unknown"),
-});
-adminRouter.post("/whatsapp/connect", async (c) => {
-  const parsed = connectSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "Dados inválidos", 422, parsed.error.flatten().fieldErrors);
-  const db = P(c); const id = cid(c);
-  const companyDemo = (await db.prepare(`SELECT demo FROM companies WHERE id=?1`).bind(id).first<{ demo: number }>())?.demo === 1;
-  const d = parsed.data;
-  const evo = await (await import("../lib/messaging/evolution")).getEvolutionRow(db, id);
-  if (evo?.enabled === 1) return err(c, "Desconecte primeiro a Evolution API para trocar de provedor.", 409);
-  if (c.env.TIGU_STAGING === "1" && d.provider !== "mock") return err(c, "Somente o WhatsApp de demonstração está permitido na homologação.", 403);
-  if (d.provider === "mock") {
-    if (!mockAllowed({ env: { WHATSAPP_MOCK: c.env.WHATSAPP_MOCK } as Env, demo: companyDemo })) return err(c, "Provedor mock indisponível neste ambiente.", 403);
-    await db.prepare(
-      `INSERT INTO whatsapp_connections (company_id, provider, status, display_phone, demo, created_at, updated_at) VALUES (?1,'mock','connected','5500MOCK0000',0,?2,?2)
-       ON CONFLICT(company_id) DO UPDATE SET provider='mock', status='connected', last_error='', updated_at=?2`
-    ).bind(id, nowIso()).run();
-    await audit(db, c.get("user"), "whatsapp.connect.mock", "whatsapp_connection", id, {}, { companyId: id });
-    return json(c, { ok: true, connected: true, note: "Conexão SIMULADA para demonstração — nenhum WhatsApp real é usado." });
-  }
-  if (!d.phone_number_id || !d.access_token) return err(c, "Para conectar de verdade informe o Phone Number ID e o token de acesso (System User token).", 422);
-  const { encryptSecret } = await import("../lib/crypto");
-  const tokenEnc = await encryptSecret(c.env, d.access_token);
-  await db.prepare(
-    `INSERT INTO whatsapp_connections (company_id, provider, status, phone_number_id, waba_id, display_phone, business_name, access_token_enc, coexistence, demo, created_at, updated_at)
-     VALUES (?1,'meta_cloud','pending_setup',?2,?3,?4,?5,?6,?7,0,?8,?8)
-     ON CONFLICT(company_id) DO UPDATE SET provider='meta_cloud', status='pending_setup', phone_number_id=excluded.phone_number_id, waba_id=excluded.waba_id, display_phone=excluded.display_phone,
-       business_name=excluded.business_name, access_token_enc=excluded.access_token_enc, coexistence=excluded.coexistence, last_error='', updated_at=?8`
-  ).bind(id, d.phone_number_id, d.waba_id, d.display_phone, d.business_name, tokenEnc, d.coexistence, nowIso()).run();
-
-  // valida credencial ANTES de marcar conectado
-  const connRow = await getConnection(db, id);
-  const { provider } = await resolveProvider({ env: c.env as never, db, demo: false, conn: connRow });
-  const st = provider ? await provider.status({ env: c.env as never, db, conn: connRow!, demo: false }) : { ok: false, error: "provedor indisponível" };
-  await db.batch([
-    db.prepare(`UPDATE whatsapp_connections SET status=?1, last_error=?2, last_check_at=?3, connected_at=CASE WHEN ?1='connected' THEN ?3 ELSE connected_at END, display_phone=COALESCE(NULLIF(?4,''),display_phone), business_name=COALESCE(NULLIF(?5,''),business_name), updated_at=?3 WHERE company_id=?6`)
-      .bind(st.ok ? "connected" : "error", st.ok ? "" : String(st.error ?? "").slice(0, 300), nowIso(), st.ok ? String(st.display_phone ?? "") : "", st.ok ? String(st.verified_name ?? "") : "", id),
-    db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin',?2,?3,'connection')`).bind(id, st.ok ? "WhatsApp conectado" : "Falha ao conectar WhatsApp", st.ok ? `Número ${st.display_phone ?? connRow?.display_phone} ativo para lembretes automáticos.` : `Erro: ${String(st.error).slice(0, 200)}`),
-  ]);
-  await audit(db, c.get("user"), "whatsapp.connect", "whatsapp_connection", id, { ok: st.ok, phone_number_id: d.phone_number_id }, { companyId: id });
-  if (!st.ok) return json(c, { ok: true, connected: false, error: st.error, message: "Credenciais salvas, mas a verificação com a Meta falhou. Confira token/Phone Number ID e o webhook." }, 201);
-  return json(c, { ok: true, connected: true }, 201);
-});
-
-adminRouter.post("/whatsapp/embedded/state", async (c) => {
-  if (c.env.TIGU_STAGING === "1") return err(c, "Conexão com WhatsApp real indisponível na homologação. Use apenas o provedor de demonstração.", 403);
-  const available = Boolean(c.env.WHATSAPP_APP_ID && c.env.WHATSAPP_APP_SECRET_FOR_OAUTH && c.env.WHATSAPP_EMBEDDED_CONFIG_ID);
-  if (!available) return err(c, "Embedded Signup ainda não está provisionado para esta instância da plataforma (WHATSAPP_APP_ID/APP_SECRET/CONFIG_ID). Conecte manualmente com os IDs do painel da Meta ou fale com o suporte Tigu — veja docs/WHATSAPP.md.", 501);
-  return json(c, { ok: true, app_id: c.env.WHATSAPP_APP_ID, config_id: c.env.WHATSAPP_EMBEDDED_CONFIG_ID });
-});
-
-adminRouter.post("/whatsapp/embedded/exchange", async (c) => {
-  if (c.env.TIGU_STAGING === "1") return err(c, "Conexão com WhatsApp real indisponível na homologação. Use apenas o provedor de demonstração.", 403);
-  const parsed = z.object({ code: z.string().min(10), config_id: z.string().min(1) }).safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "code/config_id obrigatórios", 400);
-  const res = await exchangeEmbeddedSignupCode(c.env, parsed.data.code, parsed.data.config_id);
-  if (!res.ok) return err(c, res.error ?? "Falha na troca de código", 502);
-  const { encryptSecret } = await import("../lib/crypto");
-  const db = P(c); const id = cid(c);
-  await db.prepare(
-    `INSERT INTO whatsapp_connections (company_id, provider, status, phone_number_id, waba_id, access_token_enc, demo, created_at, updated_at)
-     VALUES (?1,'meta_cloud','pending_setup',?2,?3,?4,0,?5,?5)
-     ON CONFLICT(company_id) DO UPDATE SET provider='meta_cloud', status='pending_setup', phone_number_id=?2, waba_id=?3, access_token_enc=?4, updated_at=?5`
-  ).bind(id, res.phone_number_id ?? "", res.waba_id ?? "", await encryptSecret(c.env, res.access_token ?? ""), nowIso()).run();
-  const connRow = await getConnection(db, id);
-  const st = await metaProviderStatus(c, connRow!);
-  await db.prepare(`UPDATE whatsapp_connections SET status=?1, last_error=?2, last_check_at=?3, connected_at=CASE WHEN ?1='connected' THEN ?3 ELSE NULL END WHERE company_id=?4`).bind(st.ok ? "connected" : "pending_setup", st.ok ? "" : String(st.error ?? ""), nowIso(), id).run();
-  await audit(db, c.get("user"), "whatsapp.embedded.connect", "whatsapp_connection", id, { waba_id: res.waba_id }, { companyId: id });
-  return json(c, { ok: true, connected: st.ok, detail: st });
-});
-async function metaProviderStatus(c: { env: Env }, connRow: import("../lib/messaging/provider").ProviderConnectionRow) {
-  const { metaProvider } = await import("../lib/messaging/provider");
-  return metaProvider.status({ env: c.env as never, db: c.env.DB, conn: connRow, demo: false });
-}
-
 adminRouter.post("/whatsapp/check", async (c) => {
-  const db = P(c); const id = cid(c);
-  const conn = await getConnection(db, id);
-  if (!conn || conn.status === "disconnected") return err(c, "Sem conexão para verificar", 404);
-  const { provider } = await resolveProvider({ env: c.env as never, db, demo: conn.demo === 1, conn });
-  if (!provider) return err(c, "Provedor indisponível", 503);
-  const st = await provider.status({ env: c.env as never, db, conn, demo: conn.demo === 1 });
-  if (conn.provider === "evolution") {
-    await db.prepare(`UPDATE evolution_connections SET status=?1,last_error=?2,updated_at=?3,
-      connected_at=CASE WHEN ?1='connected' THEN COALESCE(connected_at,?3) ELSE connected_at END
-      WHERE company_id=?4 AND enabled=1`).bind(st.ok ? "connected" : "pending_setup", st.ok ? "" : String(st.error ?? "").slice(0, 300), nowIso(), id).run();
-    return json(c, { ok: st.ok, detail: st, message: st.ok ? "Evolution conectada." : "Aguardando leitura do QR Code na Evolution." });
-  }
-  await db.prepare(`UPDATE whatsapp_connections SET status=?1, last_error=?2, last_check_at=?3, updated_at=?3 WHERE company_id=?4`).bind(st.ok ? "connected" : "error", st.ok ? "" : String(st.error ?? "").slice(0, 300), nowIso(), id).run();
-  if (!st.ok && conn.status === "connected") {
-    await db.prepare(`INSERT INTO notifications (company_id, audience, title, body, kind) VALUES (?1,'admin','Conexão WhatsApp com problema',?2,'connection')`).bind(id, `A verificação falhou: ${String(st.error).slice(0, 160)}. Envios ficam em espera até resolver.`).run();
-  }
-  return json(c, { ok: st.ok, detail: st });
+  const db=P(c), id=cid(c);
+  const conn=await getConnection(db,id);
+  if (!conn || conn.provider !== "evolution") return err(c,"Conecte a Evolution API primeiro.",404);
+  const {provider,error}=await resolveProvider({env:c.env as never,db,conn,demo:false});
+  if (!provider) return err(c,error||"Evolution indisponível.",503);
+  const st=await provider.status({env:c.env as never,db,conn,demo:false});
+  await db.prepare(`UPDATE evolution_connections SET status=?1,last_error=?2,updated_at=?3,
+    connected_at=CASE WHEN ?1='connected' THEN COALESCE(connected_at,?3) ELSE connected_at END
+    WHERE company_id=?4 AND enabled=1`)
+    .bind(st.ok?"connected":"pending_setup",st.ok?"":String(st.error||"").slice(0,300),nowIso(),id).run();
+  return json(c,{ok:st.ok,detail:st,message:st.ok?"Evolution conectada.":"Aguardando conexão via QR Code."});
 });
 
 adminRouter.post("/whatsapp/disconnect", async (c) => {
-  const db = P(c); const id = cid(c);
-  const conn = await getConnection(db, id);
-  if (!conn) return err(c, "Nada conectado", 404);
-  const { provider } = await resolveProvider({ env: c.env as never, db, demo: conn.demo === 1, conn });
-  if (provider) await provider.disconnect({ env: c.env as never, db, conn, demo: conn.demo === 1 });
-  await audit(db, c.get("user"), "whatsapp.disconnect", "whatsapp_connection", id, {}, { companyId: id });
-  return json(c, { ok: true, message: "Acesso da plataforma removido. O número continua sendo seu e nada muda no seu WhatsApp." });
+  // Alias seguro para o botão antigo: jamais apaga credenciais históricas Meta.
+  const conn=await getConnection(P(c),cid(c));
+  if(!conn||conn.provider!=="evolution") return err(c,"Evolution API não conectada.",404);
+  const {evolutionProvider}=await import("../lib/messaging/evolution");
+  await evolutionProvider.disconnect({env:c.env,db:P(c),conn,demo:false});
+  await audit(P(c),c.get("user"),"whatsapp.evolution.disconnect","evolution_connection",cid(c),{}, {companyId:cid(c)});
+  return json(c,{ok:true,message:"Evolution desconectada."});
 });
 
 adminRouter.post("/whatsapp/templates/sync", async (c) => {
@@ -1042,7 +951,7 @@ adminRouter.post("/whatsapp/templates/sync", async (c) => {
     ).bind(id, t.code, t.language, (t.category || "UTILITY").toLowerCase(), t.status === "APPROVED" ? "approved" : t.status === "PENDING" ? "pending" : t.status === "REJECTED" ? "rejected" : "disabled", String(t.body_preview ?? "").slice(0, 900), nowIso())
   );
   if (stmts.length) await db.batch(stmts);
-  return json(c, { ok: true, synced: stmts.length, hint: conn.provider === "evolution" ? "Modelos locais da Evolution não precisam de aprovação Meta." : "Aprovação e edição de texto acontecem no painel da Meta (Business Manager)." });
+  return json(c, { ok: true, synced: stmts.length, hint: "Modelos de texto locais da Evolution API; não precisam de aprovação externa." });
 });
 
 const templateUpsertSchema = z.object({ code: z.string().min(2).max(60).regex(/^[a-z0-9_]+$/), language: z.string().default("pt_BR"), body_text: z.string().min(5).max(900), use_case: z.enum(["reminder", "confirmation", "generic"]).default("generic"), variables_n: z.number().int().min(0).max(10).default(0), active: z.boolean().default(true) });
@@ -1052,12 +961,12 @@ adminRouter.put("/whatsapp/templates", async (c) => {
   const d = parsed.data;
   const vars = (d.body_text.match(/\{\{\d+\}\}/g) ?? []).length;
   await P(c).prepare(
-    `INSERT INTO whatsapp_templates (company_id, code, language, body_text, variables_n, use_case, active, status, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,'unknown',?8)
+    `INSERT INTO whatsapp_templates (company_id, code, language, body_text, variables_n, use_case, active, status, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,'approved',?8)
      ON CONFLICT(company_id, code, language) DO UPDATE SET body_text=excluded.body_text, variables_n=excluded.variables_n, use_case=excluded.use_case, active=excluded.active, updated_at=?8`
   ).bind(cid(c), d.code, d.language, d.body_text, Math.max(vars, d.variables_n), d.use_case, d.active ? 1 : 0, nowIso()).run();
   await audit(P(c), c.get("user"), "whatsapp.template.upsert", "whatsapp_template", d.code, {}, { companyId: cid(c) });
   const conn = await getConnection(P(c),cid(c));
-  return json(c, { ok: true, message: conn?.provider === "evolution" ? "Texto salvo. A Evolution enviará este texto como mensagem simples." : "Espelho local salvo. Na Meta o texto enviado é o aprovado no Business Manager." });
+  return json(c,{ok:true,message:"Texto salvo. A Evolution enviará exatamente esta mensagem."});
 });
 
 adminRouter.post("/whatsapp/test", async (c) => {
@@ -1067,7 +976,7 @@ adminRouter.post("/whatsapp/test", async (c) => {
   const res = await sendImmediate(c.env, cid(c), { to: parsed.data.to.replace(/\D/g, ""), templateCode: tpl, kind: "test", test: true });
   if (!res.ok) return err(c, res.error ?? "Falha no envio de teste", 422);
   const conn = await getConnection(P(c),cid(c));
-  return json(c, { ok: true, jobId: res.jobId, message: conn?.provider === "evolution" ? "Teste processado sem cobrança de créditos TIGU." : "Teste enfileirado. O custo segue a tarifa vigente (aparece no extrato)." });
+  return json(c,{ok:true,jobId:res.jobId,message:"Teste processado pela Evolution, sem cobrança de créditos TIGU."});
 });
 
 adminRouter.post("/whatsapp/run-now", async (c) => {
