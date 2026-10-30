@@ -60,3 +60,5 @@ O painel autenticado **WhatsApp → Evolution API** agora recebe em `/admin/what
 Se os segredos estiverem listados, verificar se foram salvos e **implantados no Worker `tigu-staging` que responde por `agendamentos.crjornada.com`**; não recriar Worker nem banco. Se houver mudança de segredo, usar **Deploy** na Cloudflare e depois atualizar a página do proprietário. O TIGU nunca substitui a chave por texto enviado do frontend.
 
 Após `configured=true`, cada barbearia administra apenas a sua instância `tigu-company-<id>`. Quando desconectada, pode usar **Gerar / atualizar QR** para escanear novamente no WhatsApp, sem retornar à Cloudflare. O recurso não interfere nos pagamentos dos profissionais, bancos, reservas ou histórico de mensagens.
+
+Diagnóstico autenticado habilitado para a versão oficial: não modifica D1, R2, segredos nem permissões de conexão.
