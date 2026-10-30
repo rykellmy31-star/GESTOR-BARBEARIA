@@ -1,0 +1,45 @@
+name: TIGU - preflight do dominio oficial EXISTENTE
+
+on:
+  push:
+    branches:
+      - release/tigu-manual-oficial-20261029
+
+permissions:
+  contents: read
+
+jobs:
+  inspecionar:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/release/tigu-manual-oficial-20261029' && github.event.head_commit.message == 'TIGU_OFFICIAL_RELEASE_PREFLIGHT' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Guardas de producao local
+        run: node --test scripts/tigu-official-release-once.node.test.mjs
+      - name: Inventariar Worker que atende agendamentos.crjornada.com (nenhuma escrita)
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import {inspectRemote} from "./scripts/tigu-official-release-once.mjs";
+          try {
+            const result=await inspectRemote({
+              token:process.env.CLOUDFLARE_STAGING_TOKEN,
+              accountId:process.env.CLOUDFLARE_ACCOUNT_ID,
+            });
+            console.log("TIGU OFICIAL APTO: ",JSON.stringify({
+              ...result.summary,health:result.health,
+              bindingTypes:result.inventory.existingBindingTypes,
+              secretNames:result.inventory.existingSecretNames,
+              appliedMigrationCount:result.inventory.appliedMigrationCount,
+            },null,2));
+          }catch(e){
+            console.error("TIGU PRE-VERIFICACAO FALHOU: ",e.message);
+            process.exitCode=1;
+          }
+          NODE
