@@ -114,7 +114,7 @@ export function WhatsappBookingActionPage() {
         </Button>
       )}
       {details.can_reschedule && !reschedule && (
-        <Button variant="secondary" className="w-full justify-center"
+        <Button variant="dark" className="w-full justify-center"
           onClick={()=>{ setReschedule(true); setDate(day); setSuccess(""); }}>
           <RefreshCw size={16}/> Não dá, reagendar
         </Button>
@@ -128,7 +128,7 @@ export function WhatsappBookingActionPage() {
           <Input type="date" min={day} value={date} onChange={e=>setDate(e.target.value)} />
           {slotsLoading ? <Spinner label="Buscando horários livres…" /> : (
             <div className="grid grid-cols-3 gap-2">
-              {slots.map(slot=><Button key={slot.t} variant="secondary" disabled={saving}
+              {slots.map(slot=><Button key={slot.t} variant="dark" disabled={saving}
                 onClick={()=>void choose(slot.t)}>{slot.label}</Button>)}
             </div>
           )}
