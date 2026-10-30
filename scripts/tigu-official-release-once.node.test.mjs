@@ -6,7 +6,7 @@ import {TARGET,inspectOfficialInventory} from "./tigu-official-release-once.mjs"
 const UUID="78228a5b-4e4c-4710-b89c-664ef15f8da3";
 const expected=readdirSync(resolve(import.meta.dirname,"../migrations"))
   .filter(x=>/^\d+.*\.sql$/.test(x)).sort();
-const existing=expected.slice(0,-2);
+const existing=expected.slice(0,-1);
 const settings={bindings:[
   {type:"d1",name:"DB",id:UUID},
   {type:"r2_bucket",name:"MEDIA",bucket_name:TARGET.bucket},
