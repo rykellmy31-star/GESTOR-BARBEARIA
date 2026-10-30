@@ -4,8 +4,7 @@ import { ArrowLeft, Copy, Loader2, KeyRound } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Badge, Button, Field, Input, Select, Spinner, Modal, useToast } from "@/components/ui";
-import { money } from "@/lib/format";
-import { H, Kpi, Money, Table, Td, Tr } from "./shared";
+import { H, Kpi, Table, Td, Tr } from "./shared";
 import { buildOwnerAccessMessage, formatTrialEnd, type OwnerAccessDetails } from "@/lib/owner-welcome";
 import { ManualBillingPanel } from "./ManualBillingPanel";
 
@@ -16,7 +15,6 @@ export function SuperCompanyDetail() {
   const qc = useQueryClient();
   const toast = useToast();
   const q = useQuery({ queryKey: ["super-co", id], queryFn: () => api.get<any>(`/super/companies/${id}`) });
-  const [adj, setAdj] = useState({ delta: "", why: "" });
   const [susp, setSusp] = useState({ mode: "" as "" | "suspend", reason: "" });
   const [accessOpen,setAccessOpen]=useState(false);
   const [selectedOwnerId,setSelectedOwnerId]=useState<number | null>(null);
@@ -48,7 +46,7 @@ export function SuperCompanyDetail() {
       <button className="ml-2 underline" onClick={() => void q.refetch()}>Tentar novamente</button>
     </div>
   );
-  const { company: co, members, connection, wallet, jobs, settings, subscription } = q.data;
+  const { company: co, members, connection, jobs, settings, subscription } = q.data;
   const owners=(members as OwnerMember[]).filter(m=>m.role==="owner" && m.active===1);
   // Empresas com vários donos exigem escolha explícita (nunca presumir a conta).
   const owner=owners.find(m=>m.user_id===selectedOwnerId) ??
@@ -152,11 +150,9 @@ export function SuperCompanyDetail() {
           <Button type="button" variant="dark" className="w-full" onClick={closeAccess}>Fechar</Button>
         </div>
       </Modal>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Saldo" value={<Money cents={wallet?.balance_cents} />} sub={`reservado ${money(wallet?.reserved_cents ?? 0)}`} tone="gold" />
+      <div className="grid gap-3 sm:grid-cols-2">
         <Kpi label="Plano" value={co.plan_code} sub={`status: ${co.status}`} />
         <Kpi label="WhatsApp" value={connection?.status ?? "—"} sub={connection?.display_phone || "sem conexão"} tone={connection?.status === "connected" ? "green" : undefined} />
-        <Kpi label="Política carteira" value={wallet?.allow_negative ? "permite negativo" : "saldo ≥ 0"} sub={`alerta baixo: ${money(wallet?.low_balance_alert_cents ?? 0)}`} />
       </div>
 
       {q.data.billing_mode==="manual" && <ManualBillingPanel companyId={co.id} />}
@@ -175,17 +171,7 @@ export function SuperCompanyDetail() {
               </div>
             )}
             {co.suspend_reason && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">Suspensa: {co.suspend_reason}</p>}
-            <div className="border-t border-[#26262f] pt-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Ajuste manual de créditos (justificativa vai p/ auditoria)</p>
-              <div className="mt-2 flex gap-2">
-                <Input placeholder="ex.: 5000 ou -1250 (centavos)" value={adj.delta} onChange={(e) => setAdj({ ...adj, delta: e.target.value })} className="w-40" />
-                <Input placeholder="Justificativa (10+ chars)" value={adj.why} onChange={(e) => setAdj({ ...adj, why: e.target.value })} className="flex-1" />
-                <Button className="btn-gold px-4 py-2 text-sm" disabled={!/^-?\d{3,}$/.test(adj.delta.trim()) || adj.why.trim().length < 10 || mut.isPending} onClick={async () => { try { await mut.mutateAsync(() => api.post(`/super/wallets/${co.id}/adjust`, { delta_cents: Number(adj.delta), justification: adj.why.trim() })); setAdj({ delta: "", why: "" }); } catch { /* onError já exibe falha; manter dados para correção */ } }}>Aplicar</Button>
-              </div>
-              <button className="mt-2 text-[11px] text-zinc-500 hover:text-zinc-300" onClick={() => mut.mutate(() => api.put(`/super/wallets/${co.id}/policy`, { allow_negative: !wallet?.allow_negative }))}>
-                {wallet?.allow_negative ? "Reverter política: bloquear saldo negativo" : "Liberar saldo negativo para esta empresa (uso raro)"}
-              </button>
-            </div>
+
           </div>
         </div>
 
