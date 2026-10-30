@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   publicar-evolution:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/tigu-evolution-only-20261029' && github.event.head_commit.message == 'TIGU_OFFICIAL_EVOLUTION_ONLY_DEPLOY_ONCE' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/tigu-evolution-only-20261029' && github.event.head_commit.message == 'TIGU_OFFICIAL_EVOLUTION_QR_LIVE_ONCE' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -38,5 +38,5 @@ jobs:
         run: |
           echo '## TIGU: somente Evolution API' >> "$GITHUB_STEP_SUMMARY"
           echo 'Publicado no Worker existente do domínio https://agendamentos.crjornada.com' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Sem migrações, sem alteração de secrets, D1, R2 ou DNS.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Modo de homologação preservado: Evolution real depende do servidor externo.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Sem migrações, sem alteração de secrets, D1, R2 ou DNS; apenas cron Evolution isolado.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Proteções dos pagamentos preservadas; WhatsApp real habilita somente quando secrets Evolution estiverem configurados.' >> "$GITHUB_STEP_SUMMARY"
