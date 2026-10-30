@@ -948,7 +948,8 @@ adminRouter.get("/whatsapp", async (c) => {
     jobs: jobs.map((j) => ({ ...j, to_phone: maskPhoneLite(String(j.to_phone)) })),
     pricing,
     stats,
-    plan,
+    // Valor legado do D1 não é uma franquia vigente do Evolution.
+    plan: plan ? { ...plan, whatsapp_enabled: 1, max_messages_month: -1 } : null,
     settings: {
       whatsapp_reminders_enabled: ctxSettings(c).whatsapp_reminders_enabled,
       whatsapp_confirm_enabled: ctxSettings(c).whatsapp_confirm_enabled,
