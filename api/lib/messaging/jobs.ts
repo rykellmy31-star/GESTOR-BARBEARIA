@@ -450,9 +450,9 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
   // 5) provedor (FORA de qualquer batch — nada de fetch dentro de transação)
   const ctx: ProviderContext = { env: env as unknown as ProviderContext["env"], db, conn, demo: job.company_demo === 1 };
   const { provider, error } = await resolveProvider({ env: env as unknown as ProviderContext["env"], db, demo: job.company_demo === 1, conn });
-  const vars = await renderTemplateVars(db, job);
+  const vars = await renderTemplateVars(db, job, env.PUBLIC_URL);
   const result = provider
-    ? await provider.sendTemplate(ctx, { to: job.to_phone, templateCode: job.template_code, language: job.language, variables: vars, wabaBizMetadata: { job_id: String(job.id) } })
+    ? await provider.sendTemplate(ctx, { to: job.to_phone, templateCode: job.template_code, language: job.language, variables: vars, wabaBizMetadata: { job_id: String(job.id), kind: job.kind } })
     : { accepted: false, permanent: true, error: error || "provedor indisponível", providerMessageId: undefined as string | undefined };
 
   const at = nowIso();
@@ -510,15 +510,15 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
 }
 
 /** variáveis {{1..6}} renderizadas a partir do booking (snapshot vivo) */
-async function renderTemplateVars(db: D1Database, job: MessageJobRow): Promise<{ key: string; sample: string }[]> {
+async function renderTemplateVars(db: D1Database, job: MessageJobRow, publicUrl?: string): Promise<{ key: string; sample: string }[]> {
   const b = job.booking_id
     ? await db
-        .prepare(`SELECT b.code, b.customer_name, b.starts_at, s.name AS service_name, br.name AS barber_name, c.name AS company_name
+        .prepare(`SELECT b.code, b.cancel_token, b.customer_name, b.starts_at, s.name AS service_name, br.name AS barber_name, c.name AS company_name, c.slug AS company_slug
                   FROM bookings b JOIN companies c ON c.id = b.company_id
                   LEFT JOIN services s ON s.id = b.service_id LEFT JOIN barbers br ON br.id = b.barber_id
                   WHERE b.id = ?1 AND b.company_id = ?2`)
         .bind(job.booking_id, job.company_id)
-        .first<{ code: string; customer_name: string; starts_at: string; service_name: string; barber_name: string; company_name: string }>()
+        .first<{ code: string; cancel_token: string; customer_name: string; starts_at: string; service_name: string; barber_name: string; company_name: string; company_slug: string }>()
     : null;
   const p = JSON.parse(job.payload_json || "{}") as Record<string, string>;
   const tz = p.tz || "America/Bahia";
@@ -526,7 +526,15 @@ async function renderTemplateVars(db: D1Database, job: MessageJobRow): Promise<{
     ? new Date(b.starts_at).toLocaleDateString("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric" }) +
       " às " + new Date(b.starts_at).toLocaleTimeString("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false })
     : "";
+  let link = "";
+  if (b && publicUrl?.startsWith("https://") && b.cancel_token) {
+    const url = new URL("/c/" + encodeURIComponent(b.company_slug) + "/whatsapp-agendamento", publicUrl);
+    url.searchParams.set("codigo", b.code);
+    url.searchParams.set("token", b.cancel_token);
+    link = url.toString();
+  }
   return [
+    { key: "7", sample: link },
     { key: "1", sample: b?.customer_name ?? "" },
     { key: "2", sample: b?.service_name ?? "" },
     { key: "3", sample: b?.barber_name ?? "" },

@@ -153,7 +153,15 @@ export const evolutionProvider: Provider = {
       "SELECT body_text FROM whatsapp_templates WHERE company_id=?1 AND code=?2 AND language=?3 AND active=1"
     ).bind(ctx.conn.company_id,input.templateCode,input.language).first<{ body_text: string }>();
     if (!tpl?.body_text) return { accepted: false, permanent: true, error: "Modelo de mensagem não configurado." };
-    const text = renderEvolutionText(effectiveReminderText(input.templateCode, tpl.body_text), input.variables);
+    const baseText = renderEvolutionText(effectiveReminderText(input.templateCode, tpl.body_text), input.variables);
+    // Botões nativos não são entregues com confiabilidade pelo Baileys.
+    // Entrega dois links clicáveis; as ações reais exigem confirmação
+    // explícita na página segura, nunca um GET que modifique a agenda.
+    const actionLink = input.variables.find(v => v.key === "7")?.sample || "";
+    const text = input.wabaBizMetadata?.kind === "confirmation" && actionLink
+      ? baseText + "\n\n✅ Confirmar agendamento:\n" + actionLink +
+        "\n\n🔄 Não dá, reagendar:\n" + actionLink
+      : baseText;
     if (!text.trim()) return { accepted: false, permanent: true, error: "Modelo sem texto." };
     const response = await evolutionRequest(ctx.env, "POST", `/message/sendText/${ctx.conn.phone_number_id}`, { number: input.to, text });
     const key = response.data?.key?.id ?? response.data?.message?.key?.id;
