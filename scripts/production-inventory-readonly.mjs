@@ -31,11 +31,11 @@ export function productionTemplateIssues(c) {
   check(c.compatibility_date==="2025-01-01"&&
     JSON.stringify(c.compatibility_flags)==='["nodejs_compat"]',"Config de compatibilidade inesperada.");
   const v=c.vars;
-  const keys=["APP_ENV","TIGU_STAGING","GRAPH_API_VERSION","WHATSAPP_MOCK",
+  const keys=["APP_ENV","TIGU_STAGING","WHATSAPP_MOCK",
     "PAYMENTS_MOCK","MERCHANT_PIX_ENABLED"];
   check(record(v)&&Object.keys(v).length===keys.length&&
     keys.every(k=>Object.hasOwn(v,k))&&v.APP_ENV==="production"&&
-    v.TIGU_STAGING==="0"&&v.GRAPH_API_VERSION==="v23.0"&&
+    v.TIGU_STAGING==="0"&&
     v.WHATSAPP_MOCK==="0"&&v.PAYMENTS_MOCK==="0"&&
     v.MERCHANT_PIX_ENABLED==="0",
     "Flags de produção: sem mock, checkout de terceiros desligado e sem segredos.");
