@@ -28,3 +28,6 @@ Não precisa de n8n. A fila de mensagens já existente (confirmações e lembret
 - QR Code é temporário, pode expirar. A UI deve permitir gerar outro.
 - Respostas recebidas são registradas/avisadas, mas **não cancelam nem confirmam horários automaticamente** até existir fluxo explícito e seguro de intenção/consentimento.
 - **Não fazer merge/deploy** antes de testes em staging, verificação de permissões, migrações e homologação com número controlado.
+
+## Verificação de publicação oficial
+A implementação da Evolution API foi incorporada à branch de preparação do TIGU. Antes de qualquer publicação no domínio agendamentos.crjornada.com, o GitHub Actions precisa confirmar o vínculo com o Worker tigu-staging e os recursos D1/R2 já existentes, bem como a aplicação segura das migrações aditivas 0103 e 0104. O servidor Evolution API não foi instalado e o modo TIGU_STAGING=1 não permite conectar números reais.
