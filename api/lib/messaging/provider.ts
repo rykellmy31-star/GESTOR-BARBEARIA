@@ -1,176 +1,61 @@
-// ============================================================================
-// Camada de provedor de mensagens (WhatsApp). A aplicação chama SEMPRE esta
-// interface — nunca fetch() de Graph API espalhado pelo código. Isso permite:
-//   • meta_cloud → WhatsApp Business Platform (Cloud API) real por empresa
-//   • mock       → simulador local (demo/testes; NUNCA envia de verdade)
-// Operações: conectar, verificar status, enviar template, sincronizar
-// templates, receber webhook, desconectar, e "billing" (informativo).
-// ============================================================================
-import { decryptSecret, encryptSecret, sha256hex } from "../crypto";
+// TIGU — a Evolution API é o ÚNICO provedor externo WhatsApp.
+// O mock abaixo existe apenas para testes/demonstrações locais e nunca
+// acessa a rede. Integração Meta/Graph/Embedded Signup removida.
+// Tabelas legadas permanecem no D1 exclusivamente para auditoria histórica.
+import { sha256hex } from "../crypto";
 import { evolutionProvider } from "./evolution";
 
 export interface ProviderConnectionRow {
   id: number;
   company_id: number;
-  provider: "meta_cloud" | "mock" | "evolution";
-  waba_id: string;
-  phone_number_id: string;
+  provider: "evolution" | "mock";
+  waba_id: string; // campo legado da estrutura DB; nunca usado para envio
+  phone_number_id: string; // nome da instância Evolution, não ID da Meta
   display_phone: string;
   business_name: string;
   status: "disconnected" | "pending_setup" | "connected" | "error";
-  access_token_enc: string;
-  coexistence: "unknown" | "enabled" | "not_eligible";
+  access_token_enc: string; // campo legado, nunca usado para enviar
+  coexistence: "unknown" | "enabled" | "not_eligible"; // histórico legado
   last_error: string;
   last_check_at: string | null;
   connected_at: string | null;
   demo: number;
 }
-
 export interface ProviderContext {
-  env: { GRAPH_API_VERSION?: string; APP_ENV?: string; TIGU_STAGING?: string; SESSION_SECRET?: string; MSG_ENC_KEY?: string; WHATSAPP_MOCK?: string;
-         WHATSAPP_APP_ID?: string; WHATSAPP_APP_SECRET_FOR_OAUTH?: string; WHATSAPP_EMBEDDED_CONFIG_ID?: string;
-         EVOLUTION_API_URL?: string; EVOLUTION_API_KEY?: string; EVOLUTION_WEBHOOK_SECRET?: string; PUBLIC_URL?: string };
+  env: { APP_ENV?: string; TIGU_STAGING?: string; WHATSAPP_MOCK?: string;
+    EVOLUTION_API_URL?: string; EVOLUTION_API_KEY?: string;
+    EVOLUTION_WEBHOOK_SECRET?: string; PUBLIC_URL?: string };
   db: D1Database;
   conn: ProviderConnectionRow;
-  /** true em empresas demo — mock liberado, nenhuma chamada externa real */
   demo: boolean;
 }
-
-export interface TemplateVariable {
-  key: string; // ex.: {{1}}
-  sample: string;
-}
-
+export interface TemplateVariable { key: string; sample: string; }
 export interface SendTemplateInput {
-  to: string; // E.164 sem '+'
+  to: string;
   templateCode: string;
   language: string;
   variables: TemplateVariable[];
-  /** id do job (waba meta: usada como callback_id p/ correlação do webhook) */
-  wabaBizMetadata?: Record<string, string>;
+  wabaBizMetadata?: Record<string, string>; // chave interna compatível da fila
 }
-
 export interface SendTemplateResult {
-  /** aceito no provedor (≠ entregue!) */
   accepted: boolean;
   providerMessageId?: string;
-  /** retryable: erro transitório (rate limit, rede) → manter reserva e tentar de novo */
   permanent: boolean;
-  uncertain?: boolean; // sem confirmação de aceite ou rejeição pelo provedor
+  uncertain?: boolean;
   error?: string;
-  /** custo estimado da mensagem (informativo p/ margem; cobrança real é a regra da plataforma) */
   providerCostCents?: number;
 }
-
 export interface ProviderTemplateInfo {
-  code: string;
-  name: string;
-  language: string;
-  category: string;
-  status: string; // APPROVED | PENDING | REJECTED | ...
-  body_preview?: string;
+  code: string; name: string; language: string;
+  category: string; status: string; body_preview?: string;
 }
-
 export interface Provider {
-  kind: "meta_cloud" | "mock" | "evolution";
-  /** Testa credenciais e sincroniza dados básicos do número. */
+  kind: "evolution" | "mock";
   status(ctx: ProviderContext): Promise<{ ok: boolean; error?: string; display_phone?: string; quality_rating?: string; verified_name?: string }>;
   sendTemplate(ctx: ProviderContext, input: SendTemplateInput): Promise<SendTemplateResult>;
   listTemplates(ctx: ProviderContext): Promise<{ ok: boolean; error?: string; templates?: ProviderTemplateInfo[] }>;
-  /** Dados que o connect precisa persistir após OAuth do Embedded Signup. */
-  exchangeCode?(ctx: ProviderContext, code: string, configId: string): Promise<{ ok: boolean; error?: string; access_token?: string; waba_id?: string; phone_number_id?: string }>;
   disconnect(ctx: ProviderContext): Promise<void>;
 }
-
-export function graphBase(env: ProviderContext["env"]): string {
-  return `https://graph.facebook.com/${env.GRAPH_API_VERSION || "v23.0"}`;
-}
-
-// ── Meta Cloud API (real) ───────────────────────────────────────────────────
-export const metaProvider: Provider = {
-  kind: "meta_cloud",
-  async status(ctx) {
-    if (ctx.env.TIGU_STAGING === "1") return { ok: false, error: "Meta real bloqueada na homologação." };
-    const token = await decryptSecret(ctx.env, ctx.conn?.access_token_enc || "");
-    if (!ctx.conn?.phone_number_id || !token) return { ok: false, error: "Credenciais incompletas — reconecte o WhatsApp." };
-    try {
-      const res = await fetch(`${graphBase(ctx.env)}/${ctx.conn!.phone_number_id}?fields=verified_name,display_phone_number,quality_rating,platform_type`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: { message?: string }; display_phone_number?: string; verified_name?: string; quality_rating?: string };
-      if (!res.ok) return { ok: false, error: data?.error?.message || `HTTP ${res.status}` };
-      return { ok: true, display_phone: data.display_phone_number, verified_name: data.verified_name, quality_rating: data.quality_rating };
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
-  },
-  async sendTemplate(ctx, input) {
-    if (ctx.env.TIGU_STAGING === "1") return { accepted: false, permanent: true, error: "Meta real bloqueada na homologação." };
-    const token = await decryptSecret(ctx.env, ctx.conn.access_token_enc || "");
-    if (!ctx.conn.phone_number_id || !token) return { accepted: false, permanent: true, error: "Conexão WhatsApp sem credenciais" };
-    const body = {
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: input.to,
-      type: "template",
-      template: {
-        name: input.templateCode,
-        language: { code: input.language },
-        components: input.variables.length
-          ? [{ type: "body", parameters: input.variables.map((v) => ({ type: "text", text: v.sample })) }]
-          : undefined,
-      },
-    };
-    try {
-      const res = await fetch(`${graphBase(ctx.env)}/${ctx.conn.phone_number_id}/messages`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json().catch(() => ({}))) as { messages?: { id: string }[]; error?: { message?: string; code?: number; error_data?: { messaging_product_code?: string } } };
-      if (res.ok && data.messages?.[0]?.id) {
-        return { accepted: true, providerMessageId: data.messages[0].id, permanent: false, providerCostCents: undefined };
-      }
-      const msg = data?.error?.message || `HTTP ${res.status}`;
-      // códigos Meta típicos: 131047 (re-engagement), 131026 (não entregável), 100 (formato), 131010? etc.
-      const retryableCodes = new Set([131056, 131052, 133010, 4, 527]); // rate limit / serviço / auth transient
-      const uncertain = res.ok || res.status >= 500;
-      const retryable = res.status === 429 || (data?.error?.code != null && retryableCodes.has(data.error.code));
-      return { accepted: false, permanent: !uncertain && !retryable, uncertain, error: msg };
-    } catch (e) {
-      return { accepted: false, permanent: false, uncertain: true, error: String(e) }; // sem confirmação de aceite
-    }
-  },
-  async listTemplates(ctx) {
-    if (ctx.env.TIGU_STAGING === "1") return { ok: false, error: "Meta real bloqueada na homologação." };
-    if (!ctx.conn.waba_id) return { ok: false, error: "WABA não vinculada" };
-    const token = await decryptSecret(ctx.env, ctx.conn.access_token_enc || "");
-    if (!token) return { ok: false, error: "Sem token" };
-    try {
-      const res = await fetch(`${graphBase(ctx.env)}/${ctx.conn.waba_id}/message_templates?limit=100`, { headers: { Authorization: `Bearer ${token}` } });
-      const data = (await res.json().catch(() => ({}))) as { data?: { name: string; language: string; category: string; status: string; body?: string }[] };
-      if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-      return {
-        ok: true,
-        templates: (data.data ?? []).map((t) => ({
-          code: t.name,
-          name: t.name,
-          language: t.language,
-          category: t.category,
-          status: t.status,
-          body_preview: t.body,
-        })),
-      };
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
-  },
-  async disconnect(ctx) {
-    // NÃO apaga nada no Meta — a barbearia continua dona do número. A plataforma
-    // apenas invalida o próprio acesso: o token cifrado é destruído.
-    await ctx.db.prepare(`UPDATE whatsapp_connections SET access_token_enc = '', status = 'disconnected', last_error = 'desconectado pelo administrador', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?1`).bind(ctx.conn.id).run();
-  },
-};
 
 // ── Mock (demo/testes) — nunca toca a rede ─────────────────────────────────
 // Emula: aceite normal, falha permanente p/ número 5500000000000, falha
@@ -202,73 +87,24 @@ export const mockProvider: Provider = {
   },
 };
 
-// ── Embedded Signup (fluxo real de autorização Meta) ───────────────────────
-// O code curto que o SDK JS devolve é trocado por um token de SYSTEM USER
-// (permanente) via app-level. Sem app/secret configurados, a rota responde 501
-// com instruções — nada é fingido.
-export async function exchangeEmbeddedSignupCode(
-  env: { GRAPH_API_VERSION?: string; WHATSAPP_APP_ID?: string; WHATSAPP_APP_SECRET_FOR_OAUTH?: string },
-  code: string,
-  configId: string
-): Promise<{ ok: boolean; error?: string; access_token?: string; waba_id?: string; phone_number_id?: string }> {
-  if (!env.WHATSAPP_APP_ID || !env.WHATSAPP_APP_SECRET_FOR_OAUTH) {
-    return { ok: false, error: "Embedded Signup não configurado neste ambiente (WHATSAPP_APP_ID/APP_SECRET). Use a conexão manual informando os IDs + token, ou agende a configuração com o time Tigu." };
-  }
-  const base = `https://graph.facebook.com/${env.GRAPH_API_VERSION || "v23.0"}`;
-  const tokRes = await fetch(`${base}/oauth/access_token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ grant_type: "authorization_code", code, appsecret: env.WHATSAPP_APP_SECRET_FOR_OAUTH }),
-  });
-  const tok = (await tokRes.json().catch(() => ({}))) as { access_token?: string; error?: { message?: string } };
-  if (!tok.access_token) return { ok: false, error: tok.error?.message || `HTTP ${tokRes.status}` };
-  // longo (60d) → system user token permanente via /me/businesses? não: exchange oficial:
-  const longRes = await fetch(`${base}/oauth/access_token?grant_type=client_credentials&client_id=${env.WHATSAPP_APP_ID}&client_secret=${env.WHATSAPP_APP_SECRET_FOR_OAUTH}`);
-  const longJson = (await longRes.json().catch(() => ({}))) as { access_token?: string };
-  const systemToken = longJson.access_token ?? tok.access_token; // melhor esforço; documentado
-  const bmRes = await fetch(`${base}/me/accounts?fields=name,business_verification_overall_status,bm_id`, { headers: { Authorization: `Bearer ${systemToken}` } });
-  const bm = (await bmRes.json().catch(() => ({}))) as { data?: { id?: string }[] };
-  // descobre WABA + número do config (fluxo oficial usa /whatsapp_business_accounts no BM)
-  const wabaRes = await fetch(`${base}/${configId}/waba_business_accounts`, { headers: { Authorization: `Bearer ${systemToken}` } });
-  const wabaJson = (await wabaRes.json().catch(() => ({}))) as { data?: { id?: string }[] };
-  const wabaId = wabaJson.data?.[0]?.id ?? bm.data?.[0]?.id ?? "";
-  let phoneNumberId = "";
-  if (wabaId) {
-    const pnRes = await fetch(`${base}/${wabaId}/phone_numbers`, { headers: { Authorization: `Bearer ${systemToken}` } });
-    const pn = (await pnRes.json().catch(() => ({}))) as { data?: { id?: string }[] };
-    phoneNumberId = pn.data?.[0]?.id ?? "";
-  }
-  return { ok: Boolean(wabaId && phoneNumberId), error: wabaId && phoneNumberId ? undefined : "autorização obtida, mas WABA/número não localizados — complete manualmente", access_token: systemToken, waba_id: wabaId, phone_number_id: phoneNumberId };
-}
-
-/** Validação de assinatura de webhook Meta (x-hub-signature-256: sha256=HMAC(body, app_secret)). */
-export async function verifyWebhookSignature(appSecret: string, rawBody: string, header: string | null): Promise<boolean> {
-  if (!appSecret) return false; // sem segredo configurado: recusa (a rota trata dev com aviso)
-  if (!header?.startsWith("sha256=")) return false;
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(appSecret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
-  const hex = [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  const expected = header.slice(7);
-  if (hex.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < hex.length; i++) diff |= hex.charCodeAt(i) ^ expected.charCodeAt(i);
-  return diff === 0;
-}
 
 export function mockAllowed(ctx: { env: { WHATSAPP_MOCK?: string }; demo: boolean }): boolean {
   return ctx.env.WHATSAPP_MOCK === "1" || ctx.demo;
 }
 
-export async function resolveProvider(ctx: Omit<ProviderContext, "conn"> & { conn: ProviderConnectionRow | null }): Promise<{ provider: Provider | null; error?: string }> {
-  if (ctx.env.TIGU_STAGING === "1" && ctx.conn?.provider !== "mock")
-    return { provider: null, error: "Provedores reais desativados na homologação." };
-  if (!ctx.conn || ctx.conn.status === "disconnected") return { provider: null, error: "WhatsApp não conectado a esta barbearia." };
-  if (ctx.conn.provider === "evolution") return { provider: evolutionProvider };
+/** Nunca faz fallback para a Meta, mesmo quando existem credenciais antigas no banco. */
+export async function resolveProvider(ctx: Omit<ProviderContext, "conn"> & {
+  conn: ProviderConnectionRow | null
+}): Promise<{provider: Provider | null; error?: string}> {
+  if (!ctx.conn || ctx.conn.status === "disconnected")
+    return {provider:null,error:"Evolution API não conectada a esta barbearia."};
   if (ctx.conn.provider === "mock") {
-    if (!mockAllowed(ctx)) return { provider: null, error: "Provedor mock desabilitado neste ambiente." };
-    return { provider: mockProvider };
+    if (!mockAllowed(ctx)) return {provider:null,error:"Simulação desabilitada."};
+    return {provider:mockProvider};
   }
-  return { provider: metaProvider };
+  if (ctx.conn.provider !== "evolution")
+    return {provider:null,error:"Provedor WhatsApp antigo não suportado."};
+  if (ctx.env.TIGU_STAGING === "1")
+    return {provider:null,error:"Evolution real desativada enquanto o TIGU estiver em homologação."};
+  return {provider:evolutionProvider};
 }
-
-export { encryptSecret, decryptSecret };
