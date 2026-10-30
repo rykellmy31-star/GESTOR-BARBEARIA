@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   deploy-homolog-20261029:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/tigu-mensalidade-manual-preintegracao-20261028' && github.event.head_commit.message == 'TIGU_ISOLATED_HOMOLOGATION_DEPLOY_ONCE' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/tigu-mensalidade-manual-preintegracao-20261028' && github.event.head_commit.message == 'TIGU_ISOLATED_HOMOLOGATION_DEPLOY_RETRY_ONCE' }}
     runs-on: ubuntu-latest
     timeout-minutes: 22
     steps:
