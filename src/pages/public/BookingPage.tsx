@@ -394,6 +394,20 @@ function SuccessScreen({ done, settings, navigate }: any) {
           <span className="block">{day.toLocaleString("pt-BR", { timeZone: settings?.timezone, weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })}</span>
           <span className="block font-semibold text-[var(--c-gold)]">{money(b.price_cents)}</span>
         </p>
+        <div className="mt-4 rounded-xl border border-line bg-ink-soft p-3 text-left text-xs text-zinc-300">
+          <p className="font-semibold">Confirmação por WhatsApp</p>
+          <p className="mt-1">
+            {done.messaging?.confirmation?.status === "scheduled"
+              ? "Aviso programado. O WhatsApp deve receber a confirmação após o processamento da fila; o envio ainda não foi confirmado."
+              : done.messaging?.confirmation?.status === "no_connection"
+                ? "A reserva foi feita, mas o WhatsApp da barbearia está desconectado. O aviso não foi programado."
+                : done.messaging?.confirmation?.status === "skipped"
+                  ? b.whatsapp_optin !== 1
+                    ? "Você não ativou as mensagens pelo WhatsApp. Sua reserva está confirmada mesmo assim."
+                    : "Aviso não programado. A barbearia pode verificar a configuração das confirmações."
+                  : "Sua reserva foi registrada. A entrega de WhatsApp não foi confirmada."}
+          </p>
+        </div>
 
         {done.payment_choice==="pix" && (
           <div className="mt-5 rounded-xl border border-[var(--c-gold)]/40 bg-ink-soft p-4 text-left text-sm">
