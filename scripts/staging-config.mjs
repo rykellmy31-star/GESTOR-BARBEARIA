@@ -7,7 +7,7 @@ const permittedFields = new Set([
   "name", "main", "compatibility_date", "compatibility_flags", "vars",
   "observability", "assets", "d1_databases", "r2_buckets", "triggers",
 ]);
-const vars = new Set(["APP_ENV", "TIGU_STAGING", "GRAPH_API_VERSION", "WHATSAPP_MOCK", "PAYMENTS_MOCK"]);
+const vars = new Set(["APP_ENV", "TIGU_STAGING", "WHATSAPP_MOCK", "PAYMENTS_MOCK"]);
 const isRecord = (x) => Boolean(x && typeof x === "object" && !Array.isArray(x));
 
 export function stagingConfigIssues(config, original) {
