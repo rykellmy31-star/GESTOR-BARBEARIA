@@ -18,7 +18,7 @@ function post(body: unknown, env: Env = base, path = "/api/webhooks/mercadopago"
   }, env, ctx);
 }
 
-describe("Webhooks Pix e Meta: entradas externas e isolamento", () => {
+describe("Webhooks Pix e bloqueio da integração WhatsApp antiga", () => {
   it.each([null, 1, "texto", [], [1], true])("ignora JSON não-objeto sem erro interno: %j", async payload => {
     const response = await post(payload);
     expect(response.status).toBe(200);
@@ -39,21 +39,21 @@ describe("Webhooks Pix e Meta: entradas externas e isolamento", () => {
     expect(response.status).toBe(401);
   });
 
-  it("mantém webhook GET de verificação Meta desligado na homologação", async () => {
-    const e = { ...base, TIGU_STAGING: "1", WHATSAPP_WEBHOOK_VERIFY_TOKEN: "token-ficticio" } as Env;
+  it("remove definitivamente o webhook antigo de verificação da Meta", async () => {
+    const e = { ...base, TIGU_STAGING: "1" } as Env;
     const response = await app.request(
       "/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=token-ficticio&hub.challenge=abc123",
       {}, e, ctx,
     );
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     expect(await response.text()).not.toContain("abc123");
   });
 
   it("não permite webhooks POST no staging, inclusive com JSON inválido", async () => {
     const e = { ...base, TIGU_STAGING: "1" } as Env;
     const mp = await post(null, e);
-    const meta = await post(null, e, "/api/webhooks/whatsapp");
+    const legacy = await post(null, e, "/api/webhooks/whatsapp");
     expect(mp.status).toBe(403);
-    expect(meta.status).toBe(403);
+    expect(legacy.status).toBe(404);
   });
 });
