@@ -8,12 +8,11 @@ import { money } from "@/lib/format";
 type Code = "free" | "pro" | "scale";
 type Plan = { code: Code; name: string; price_cents_month: number; max_barbers: number;
   max_messages_month: number; whatsapp_enabled: number; store_enabled: number; };
-type PlanDraft = Omit<Plan, "code" | "whatsapp_enabled" | "store_enabled"> &
-  { whatsapp_enabled: boolean; store_enabled: boolean; };
+type PlanDraft = Pick<Plan, "name" | "price_cents_month" | "max_barbers"> &
+  { store_enabled: boolean; };
 const toDraft = (p: Plan): PlanDraft => ({
   name: p.name, price_cents_month: p.price_cents_month, max_barbers: p.max_barbers,
-  max_messages_month: p.max_messages_month,
-  whatsapp_enabled: p.whatsapp_enabled === 1, store_enabled: p.store_enabled === 1
+  store_enabled: p.store_enabled === 1
 });
 
 function EditablePlan({ plan, saved }: { plan: Plan; saved: () => void }) {
@@ -41,19 +40,14 @@ function EditablePlan({ plan, saved }: { plan: Plan; saved: () => void }) {
           <input className="input-dark mt-1.5 w-full" type="number" min={0} max={1000000} required
             value={draft.price_cents_month} onChange={e=>update("price_cents_month",Number(e.target.value))} />
         </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-xs text-zinc-300">Máx. profissionais
-            <input className="input-dark mt-1.5 w-full" type="number" min={-1} max={500} required
-              value={draft.max_barbers} onChange={e=>update("max_barbers",Number(e.target.value))} />
-          </label>
-          <label className="block text-xs text-zinc-300">Limite de mensagens/mês
-            <input className="input-dark mt-1.5 w-full" type="number" min={-1} max={1000000} required
-              value={draft.max_messages_month} onChange={e=>update("max_messages_month",Number(e.target.value))} />
-          </label>
-        </div>
-        <p className="text-[11px] text-zinc-500">Use -1 para ilimitado. Alterar limites pode afetar barbearias já nesse plano.</p>
-        <label className="flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={draft.whatsapp_enabled}
-          onChange={e=>update("whatsapp_enabled",e.target.checked)} className="accent-[#d4af37]" /> Habilitar WhatsApp</label>
+        <label className="block text-xs text-zinc-300">Máx. profissionais
+          <input className="input-dark mt-1.5 w-full" type="number" min={-1} max={500} required
+            value={draft.max_barbers} onChange={e=>update("max_barbers",Number(e.target.value))} />
+        </label>
+        <p className="rounded-lg border border-emerald-700/30 bg-emerald-900/10 p-3 text-xs text-emerald-200">
+          WhatsApp Evolution incluído em todos os planos, com mensagens ilimitadas.
+          Não existe limite mensal de envios para configurar.
+        </p>
         <label className="flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={draft.store_enabled}
           onChange={e=>update("store_enabled",e.target.checked)} className="accent-[#d4af37]" /> Habilitar loja</label>
       </div>
@@ -73,7 +67,7 @@ export function SalesPlansSettings() {
       <div className="mb-4">
         <h2 className="font-display text-xl text-zinc-100">Planos e valores da página de vendas</h2>
         <p className="mt-2 max-w-3xl text-xs leading-relaxed text-zinc-400">
-          Configure preços e limites dos planos. O site funcional lê os valores do banco D1.
+          Configure preços e quantidades de profissionais dos planos. WhatsApp Evolution com envios ilimitados está disponível em todos.
           O Start custa R$ 19,99/mês por padrão depois de um teste grátis de 15 dias. Você também pode editar sua mensalidade. O cliente pode escolher Start, Pro ou Scale e pagar uma mensalidade Pix pelo painel. <strong>Não há débito automático</strong>; a integração Mercado Pago precisa ser validada antes da produção.
         </p>
       </div>
