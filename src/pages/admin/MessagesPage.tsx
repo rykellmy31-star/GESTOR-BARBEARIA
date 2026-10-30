@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Badge, Button, Field, Input, Modal, Select, Spinner, useToast } from "@/components/ui";
 import { money } from "@/lib/format";
+import { EvolutionConnectionPanel } from "./EvolutionConnectionPanel";
 
 const STATUS_TONE: Record<string, "gold" | "green" | "red" | "gray" | "amber" | "blue"> = {
   connected: "green", pending_setup: "amber", error: "red", disconnected: "gray",
@@ -56,26 +57,28 @@ export function MessagesPage() {
     <div className="space-y-5">
       <div>
         <h1 className="font-display text-2xl text-zinc-50">WhatsApp & automações</h1>
-        <p className="mt-1 text-xs text-zinc-500">Lembretes e confirmações com cobrança justa: só mensagem aceita pelo provedor gera débito; falha definitiva é devolvida.</p>
+        <p className="mt-1 text-xs text-zinc-500">Envie confirmações e lembretes. A Evolution API não desconta créditos TIGU; a Meta mantém a tarifação atual.</p>
       </div>
 
-      {/* Conexão */}
+      <EvolutionConnectionPanel onChange={refresh} />
+
+      {/* Conexão antiga Meta Cloud API (mantida para compatibilidade) */}
       <div className="rounded-2xl border border-line bg-panel p-5">
         <div className="flex flex-wrap items-center gap-3">
           <Smartphone size={18} className="text-[var(--c-gold)]" />
           <h2 className="font-display text-lg text-zinc-100">Conexão</h2>
-          <Badge tone={STATUS_TONE[conn.status] ?? "gray"}>{conn.status === "connected" ? (conn.provider === "mock" ? "simulação ativa" : "conectado") : conn.status.replace(/_/g, " ")}</Badge>
+          <Badge tone={STATUS_TONE[conn.status] ?? "gray"}>{conn.status === "connected" ? (conn.provider === "mock" ? "simulação ativa" : conn.provider === "evolution" ? "Evolution conectada" : "Meta conectada") : conn.status.replace(/_/g, " ")}</Badge>
           {conn.demo === 1 && <span className="text-[10px] uppercase tracking-[0.25em] text-zinc-500">empresa demo</span>}
           <span className="ml-auto text-xs text-zinc-500">{conn.business_name || ""}{conn.display_phone ? ` · ${conn.display_phone}` : ""}</span>
         </div>
         {conn.last_error && <p className="mt-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{conn.last_error}</p>}
         <p className="mt-2 text-[11px] text-zinc-500">
           {conn.status === "connected"
-            ? <>Última verificação: {conn.last_check_at ? new Date(conn.last_check_at).toLocaleString("pt-BR") : "—"} · coexistência com o app Business: <b>{conn.coexistence === "enabled" ? "ativada" : conn.coexistence === "not_eligible" ? "não elegível (use número dedicado)" : "a confirmar"}</b></>
+            ? <>Última verificação: {conn.last_check_at ? new Date(conn.last_check_at).toLocaleString("pt-BR") : "—"}{conn.provider !== "evolution" ? <> · coexistência com o app Business: <b>{conn.coexistence === "enabled" ? "ativada" : conn.coexistence === "not_eligible" ? "não elegível (use número dedicado)" : "a confirmar"}</b></> : null}</>
             : "Sem conexão real ativa."}
         </p>
 
-        {conn.status === "disconnected" || conn.status === "error" ? (
+        {(conn.status === "disconnected" || conn.status === "error") && conn.provider !== "evolution" ? (
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <div className="rounded-xl border border-line p-4">
               <p className="text-sm font-semibold text-zinc-200">Modo simulação {d.mock_available ? "" : "(indisponível neste ambiente)"}</p>
@@ -104,7 +107,7 @@ export function MessagesPage() {
           </div>
         )}
 
-        {/* Embedded signup */}
+        {/* Embedded signup: exclusivo da Meta */}
         <div className="mt-4 rounded-xl border border-dashed border-line p-4">
           <div className="flex flex-wrap items-center gap-2">
             <p className="flex-1 text-sm text-zinc-300"><b>Onboarding guiado (Embedded Signup)</b> — conectar sem abrir o painel técnico da Meta.</p>
@@ -147,8 +150,8 @@ export function MessagesPage() {
       <div className="rounded-2xl border border-line bg-panel p-5">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="flex items-center gap-2 font-display text-lg text-zinc-100"><MessageSquare size={17} className="text-[var(--c-gold)]" /> Templates</h2>
-          <span className="text-[11px] text-zinc-500">espelho local — o texto que sai é o aprovado na Meta</span>
-          <Button className="ml-auto flex items-center gap-1.5 border border-line px-3 py-1.5 text-xs hover:border-[var(--c-gold)]" onClick={() => syncTpl.mutate()} disabled={syncTpl.isPending}>{syncTpl.isPending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} sincronizar da Meta</Button>
+          <span className="text-[11px] text-zinc-500">{conn.provider === "evolution" ? "textos editáveis enviados pela Evolution" : "espelho local — o texto que sai é o aprovado na Meta"}</span>
+          <Button className="ml-auto flex items-center gap-1.5 border border-line px-3 py-1.5 text-xs hover:border-[var(--c-gold)]" onClick={() => syncTpl.mutate()} disabled={syncTpl.isPending}>{syncTpl.isPending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} {conn.provider === "evolution" ? "atualizar modelos" : "sincronizar da Meta"}</Button>
         </div>
         <ul className="mt-3 grid gap-2 md:grid-cols-2">
           {(d.templates ?? []).map((t: any) => (
@@ -157,7 +160,7 @@ export function MessagesPage() {
                 <span className="font-mono text-xs text-zinc-200">{t.code}</span>
                 <Badge tone={STATUS_TONE[t.status] ?? "gray"}>{t.status}</Badge>
                 <span className="text-[10px] uppercase text-zinc-500">{t.use_case}</span>
-                <button className="ml-auto text-xs text-[var(--c-gold)] hover:underline" onClick={() => setEditing(t)}>editar espelho</button>
+                <button className="ml-auto text-xs text-[var(--c-gold)] hover:underline" onClick={() => setEditing(t)}>{conn.provider === "evolution" ? "editar mensagem" : "editar espelho"}</button>
               </div>
               <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-zinc-400">{t.body_text || "(texto ainda não sincronizado)"}</p>
             </li>
@@ -176,7 +179,7 @@ export function MessagesPage() {
               <Field label="Template (vazio = o de lembrete do tenant)"><Select value={test.template} onChange={(e) => setTest({ ...test, template: e.target.value })}><option value="">automático</option>{(d.templates ?? []).filter((t: any) => t.active === 1).map((t: any) => <option key={t.code} value={t.code}>{t.code}</option>)}</Select></Field>
               <Button className="btn-gold w-full justify-center py-2 text-sm" disabled={test.to.replace(/\D/g, "").length < 10 || sendTest.isPending} onClick={() => sendTest.mutate()}><Send size={14} /> {sendTest.isPending ? "enviando…" : "enviar teste"}</Button>
             </div>
-            <p className="mt-2 text-[11px] text-zinc-500">Tarifa atual: {money(d.pricing?.price_cents ?? 10)} por mensagem capturada{d.pricing?.source ? ` (fonte: ${d.pricing.source})` : ""}. Testes aparecem na fila com o mesmo custo.</p>
+            <p className="mt-2 text-[11px] text-zinc-500">{conn.provider === "evolution" ? "Evolution API: R$ 0,00 de créditos TIGU por mensagem. Infraestrutura e conexão WhatsApp são externas." : <>Tarifa atual: {money(d.pricing?.price_cents ?? 10)} por mensagem capturada{d.pricing?.source ? ` (fonte: ${d.pricing.source})` : ""}. Testes aparecem na fila com o mesmo custo.</>}</p>
           </div>
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-[11px] leading-relaxed text-amber-100/80">
             <p className="flex gap-1.5"><AlertTriangle size={13} className="mt-0.5 shrink-0" /> O selo azul e limites de envio por dia (100→∞ à medida que a qualidade sobe) são definidos pela Meta, não pela Tigu. Números recém-conectados começam na faixa de 250 conversas/dia em janela de serviço.</p>
@@ -207,7 +210,7 @@ export function MessagesPage() {
       <Modal open={!!editing} onClose={() => setEditing(null)} title={`Espelho local: ${editing?.code ?? ""}`}>
         {editing && (
           <div className="space-y-3">
-            <Field label="Texto (use {{1}} {{2}}… em ordem)" hint="Este espelho é só referência no painel; envie a MESMA redação na Meta para aprovação — o provedor sempre manda a versão aprovada.">
+            <Field label="Texto (use {{1}} {{2}}… em ordem)" hint={conn.provider === "evolution" ? "A Evolution enviará exatamente este texto, respeitando as variáveis." : "Este espelho é só referência no painel; envie a MESMA redação na Meta para aprovação."}>
               <textarea className="h-32 w-full rounded-xl border border-line bg-ink p-2.5 text-sm text-zinc-200" value={editing.body_text} onChange={(e) => setEditing({ ...editing, body_text: e.target.value })} />
             </Field>
             <div className="grid grid-cols-2 gap-2">

@@ -17,6 +17,7 @@ import { nowIso } from "../utils";
 import { loadPlatformSettings, type CompanySettings } from "../settings";
 import { ensureWallet, reserveForJob, captureJobCharge, releaseJobReservation, refundJobCharge } from "../wallet";
 import { resolveProvider, type ProviderContext, type ProviderConnectionRow } from "./provider";
+import { getEvolutionRow } from "./evolution";
 import type { BookingRow } from "./types";
 
 export type MessageKind = "reminder" | "confirmation" | "manual" | "test";
@@ -55,6 +56,15 @@ export async function resolvePricing(db: D1Database, companyId: number, category
 }
 
 export async function getConnection(db: D1Database, companyId: number): Promise<ProviderConnectionRow | null> {
+  const evolution = await getEvolutionRow(db, companyId);
+  if (evolution?.enabled === 1) return {
+    id: companyId, company_id: companyId, provider: "evolution",
+    phone_number_id: evolution.instance_name, waba_id: "", access_token_enc: "",
+    status: evolution.status as ProviderConnectionRow["status"],
+    display_phone: evolution.display_phone, business_name: "", coexistence: "unknown",
+    last_error: evolution.last_error, last_check_at: evolution.updated_at,
+    connected_at: evolution.connected_at, demo: 0,
+  };
   return db.prepare(`SELECT * FROM whatsapp_connections WHERE company_id = ?1`).bind(companyId).first<ProviderConnectionRow>();
 }
 
@@ -118,7 +128,7 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
     }
     const fireDeadlineMs = startMs + 15 * 60_000;
     const idem = currentIdempotencyKey;
-    const price = await resolvePricing(db, companyId, "utility");
+    const price = conn.provider === "evolution" ? { price_cents: 0, cost_cents: 0 } : await resolvePricing(db, companyId, "utility");
     const platform = await loadPlatformSettings(db);
     const company = await db.prepare(`SELECT demo FROM companies WHERE id = ?1`).bind(companyId).first<{ demo: number }>();
     const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -128,8 +138,8 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
         `INSERT OR IGNORE INTO message_jobs
           (company_id, kind, booking_id, to_phone, template_code, language, payload_json,
            status, scheduled_at, fire_deadline, price_cents, cost_cents, capture_on, max_attempts,
-           idempotency_key, demo, created_at, updated_at)
-         SELECT ?1,?2,?3,?4,?5,?6,?7,'scheduled',?8,?9,?10,?11,?12,?13,?14,?15,?16,?16
+           idempotency_key, demo, created_at, updated_at, provider)
+         SELECT ?1,?2,?3,?4,?5,?6,?7,'scheduled',?8,?9,?10,?11,?12,?13,?14,?15,?16,?16,?19
          FROM bookings b WHERE b.id=?3 AND b.company_id=?1 AND b.status IN('pendente','confirmado')
          AND b.schedule_version=?17 AND b.starts_at=?18`
       )
@@ -159,7 +169,7 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
         Number(platform.msg_max_attempts),
         idem,
         company?.demo ?? 0,
-        nowIso(),version,vRow.starts_at
+        nowIso(),version,vRow.starts_at,conn.provider
       )
       .run();
     if (!ins.meta?.changes) {
@@ -299,6 +309,7 @@ interface MessageJobRow {
   company_status: string;
   company_demo: number;
   idempotency_key:string;
+  provider: string;
 }
 
 async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: DispatchResult): Promise<void> {
@@ -350,7 +361,7 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
   if (!isManual && plan && plan.max_messages_month > 0) {
     const monthStart = `${now.toISOString().slice(0, 7)}-01T00:00:00Z`;
     const used = await db
-      .prepare(`SELECT COUNT(*) AS n FROM message_jobs WHERE company_id=?1 AND (captured_at>=?2 OR (status='sending' AND last_attempt_at>=?2))`)
+      .prepare(`SELECT COUNT(*) AS n FROM message_jobs WHERE company_id=?1 AND (captured_at>=?2 OR (status='sending' AND last_attempt_at>=?2) OR (price_cents=0 AND sent_at>=?2))`)
       .bind(job.company_id, monthStart)
       .first<{ n: number }>();
     if ((used?.n ?? 0) >= plan.max_messages_month) {
@@ -369,6 +380,17 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
       .bind(nowIso(), job.id)
       .run();
     out.blocked++;
+    return;
+  }
+
+  // Jobs nunca atravessam provedores no momento de envio: evita mensagens
+  // Evolution gratuitas disparadas pela Meta ou jobs Meta cobrados via Evolution.
+  // Linhas antigas sem snapshot foram persistidas com default meta_cloud.
+  if ((job.provider === "evolution" || conn.provider === "evolution") && job.provider !== conn.provider) {
+    const changed = await db.prepare("UPDATE message_jobs SET status='skipped',last_error='Provedor alterado: envio cancelado com segurança',updated_at=?1 WHERE id=?2 AND status IN ('scheduled','blocked_funds')")
+      .bind(nowIso(), job.id).run();
+    if (changed.meta.changes) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
+    out.skipped++;
     return;
   }
 
@@ -393,7 +415,7 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
         WHERE s.company_id=message_jobs.company_id AND s.status IN('trial','active') AND julianday(s.period_end)>julianday(?1)
         AND p.whatsapp_enabled=1 AND (p.max_messages_month<=0 OR (
           SELECT count(*) FROM message_jobs j WHERE j.company_id=message_jobs.company_id
-          AND (j.captured_at>=?4 OR (j.status='sending' AND j.last_attempt_at>=?4))
+          AND (j.captured_at>=?4 OR (j.status='sending' AND j.last_attempt_at>=?4) OR (j.price_cents=0 AND j.sent_at>=?4))
         )<p.max_messages_month)))`)
     .bind(isoZ(now),job.id,isManual?1:0,`${now.toISOString().slice(0,7)}-01T00:00:00Z`)
     .run();
@@ -419,7 +441,7 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
       db.prepare(`UPDATE message_jobs SET status='sent', provider_msg_id=?1, sent_at=?2, delivered_at=NULL, last_error='', updated_at=?2 WHERE id=?3 AND status='sending'`).bind(result.providerMessageId ?? "", at, job.id),
     ]);
     out.sent++;
-    if (job.capture_on === "sent") {
+    if (job.capture_on === "sent" && job.price_cents > 0) {
       await captureJobCharge(db, job.company_id, job.id, job.price_cents);
       await maybeLowBalanceAlert(db, job.company_id);
     }
@@ -641,13 +663,14 @@ export async function sendImmediate(
   if (!/^\d{10,15}$/.test(opts.to)) return { ok: false, error: "Número inválido (use DDI+DDD+numero, só dígitos)." };
   const now = new Date();
   const idem = `send-${opts.kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const price = await resolvePricing(db, companyId, opts.test ? "utility" : "utility");
+  const connection = await getConnection(db, companyId);
+  const price = connection?.provider === "evolution" ? { price_cents: 0, cost_cents: 0 } : await resolvePricing(db, companyId, "utility");
   const company = await db.prepare(`SELECT demo FROM companies WHERE id = ?1`).bind(companyId).first<{ demo: number }>();
   const ins = await db
     .prepare(
       `INSERT INTO message_jobs (company_id, kind, booking_id, to_phone, template_code, language, payload_json, status, scheduled_at, fire_deadline,
-        price_cents, cost_cents, capture_on, max_attempts, idempotency_key, demo, created_at, updated_at)
-       VALUES (?1,?2,?3,?4,?5,'pt_BR',?6,'scheduled',?7,?8,?9,?10,'sent',1,?11,?12,?13,?13)`
+        price_cents, cost_cents, capture_on, max_attempts, idempotency_key, demo, created_at, updated_at, provider)
+       VALUES (?1,?2,?3,?4,?5,'pt_BR',?6,'scheduled',?7,?8,?9,?10,'sent',1,?11,?12,?13,?13,?14)`
     )
     .bind(
       companyId,
@@ -662,7 +685,7 @@ export async function sendImmediate(
       price.cost_cents,
       idem,
       company?.demo ?? 0,
-      nowIso()
+      nowIso(),connection?.provider ?? "meta_cloud"
     )
     .run();
   const jobId = ins.meta.last_row_id as number;
