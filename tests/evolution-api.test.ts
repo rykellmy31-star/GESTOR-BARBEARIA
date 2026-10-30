@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { evolutionInstanceName, evolutionQR, evolutionReady, evolutionLiveAllowed, evolutionState, renderEvolutionText, evolutionRequest, evolutionProvider } from "../api/lib/messaging/evolution";
+import { evolutionConfigurationProblem, evolutionInstanceName, evolutionQR, evolutionReady, evolutionLiveAllowed, evolutionState, renderEvolutionText, evolutionRequest, evolutionProvider } from "../api/lib/messaging/evolution";
 import { evolutionWebhookRouter } from "../api/routes/evolution-webhook";
 
 const config = {
@@ -18,6 +18,19 @@ describe("Evolution API - preparação sem instalação", () => {
     expect(evolutionReady({...config, EVOLUTION_API_URL:"https://evolution.example.com/api"})).toBe(false);
     expect(evolutionReady({...config, PUBLIC_URL:"https://agendamentos.example.com/?token=x"})).toBe(false);
     expect(evolutionReady(config)).toBe(true);
+  });
+
+  it("informa a pendência de configuração sem mostrar URLs, chaves nem valores de segredos", () => {
+    expect(evolutionConfigurationProblem({...config, EVOLUTION_API_KEY: ""})).toContain("EVOLUTION_API_KEY");
+    expect(evolutionConfigurationProblem({...config, EVOLUTION_WEBHOOK_SECRET: ""})).toContain("EVOLUTION_WEBHOOK_SECRET");
+    expect(evolutionConfigurationProblem({...config, EVOLUTION_WEBHOOK_SECRET: "curto"})).toContain("32 caracteres");
+    expect(evolutionConfigurationProblem({...config, EVOLUTION_API_URL: ""})).toContain("EVOLUTION_API_URL");
+    expect(evolutionConfigurationProblem({...config, PUBLIC_URL: ""})).toContain("PUBLIC_URL");
+    expect(evolutionConfigurationProblem({...config, TIGU_STAGING: "1"})).toContain("TIGU_EVOLUTION_LIVE");
+    expect(evolutionConfigurationProblem({...config, TIGU_STAGING: "1", TIGU_EVOLUTION_LIVE: "1"})).toBeNull();
+    const reason = String(evolutionConfigurationProblem({...config, EVOLUTION_API_KEY: ""}));
+    expect(reason).not.toContain(config.EVOLUTION_API_URL);
+    expect(reason).not.toContain(config.EVOLUTION_WEBHOOK_SECRET);
   });
 
   it("separa habilitacao do WhatsApp real das protecoes de homologacao financeiras", () => {
