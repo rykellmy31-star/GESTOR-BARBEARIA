@@ -221,7 +221,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   try{
     if(process.argv.length!==2||process.env.GITHUB_ACTIONS!=="true"||
       process.env.GITHUB_REPOSITORY!=="rykellmy31-star/GESTOR-BARBEARIA"||
-      process.env.GITHUB_REF!=="refs/heads/feature/tigu-mensalidade-manual-preintegracao-20261028"||
+      process.env.GITHUB_REF!=="refs/heads/release/tigu-manual-oficial-20261029"||
       process.env.TIGU_OFFICIAL_DEPLOY_APPROVED!=="YES"||
       process.env.GITHUB_EVENT_NAME!=="push")
       throw Error("Publicação oficial exige gatilho GitHub Actions autorizado.");
