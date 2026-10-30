@@ -63,8 +63,8 @@ export function EvolutionConnectionPanel({ onChange }: { onChange: () => void })
       </p>
       {!status?.configured ? (
         <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-          A integração está preparada, mas o servidor Evolution API ainda será configurado.
-          O QR Code ficará disponível depois dessa etapa.
+          {status?.reason || "A configuração da Evolution API ainda não foi reconhecida pelo Worker oficial."}
+          {" "}A URL e os segredos são administrados pela CR Jornada na Cloudflare; o proprietário não precisa digitá-los.
         </p>
       ) : (
         <div className="mt-4 flex flex-wrap gap-2">
