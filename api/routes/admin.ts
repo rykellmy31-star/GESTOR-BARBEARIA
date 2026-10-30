@@ -239,7 +239,7 @@ adminRouter.post("/bookings", async (c) => {
     input
   );
   if (!res.ok) return err(c, res.message, res.status);
-  return json(c, { ok: true, id: res.bookingId, code: res.code, messaging: res.messaging }, 201);
+  return json(c, { ok: true, id: res.bookingId, code: res.code, messaging: { reminder: res.messaging, confirmation: res.confirmMessaging } }, 201);
 });
 
 const bookingIdParam = async (c: { req: { param: (k: string) => string | undefined } }) => parseInt(c.req.param("id") || "0", 10);
