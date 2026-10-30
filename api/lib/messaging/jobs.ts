@@ -245,6 +245,20 @@ export async function bumpBookingVersion(db: D1Database, bookingId: number): Pro
   await db.prepare(`UPDATE bookings SET schedule_version = schedule_version + 1, updated_at = ?2 WHERE id = ?1`).bind(bookingId, nowIso()).run();
 }
 
+/**
+ * Tigu Start anuncia até 100 mensagens/mês, mas o plano legado tinha
+ * whatsapp_enabled=0 quando usava somente Meta. No caminho Evolution gratuito
+ * (nunca no mock/Meta), aplicar a franquia de mensagens que o plano anuncia.
+ * Os demais planos continuam respeitando a flag de habilitação e as cotas.
+ */
+export function planAllowsAutomaticWhatsapp(
+  plan: { code: string; whatsapp_enabled: number; max_messages_month: number },
+  provider: string
+): boolean {
+  return plan.whatsapp_enabled === 1 ||
+    (provider === "evolution" && plan.code === "free" && plan.max_messages_month > 0);
+}
+
 // ── DISPATCH (cron a cada ~1 min; também chamado pelos testes) ──────────────
 export interface DispatchResult {
   processed: number;
@@ -358,9 +372,9 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
   }
   // 2) plano & conexão (re-validados no disparo)
   const plan = await db
-    .prepare(`SELECT p.whatsapp_enabled,p.max_messages_month,c.demo,c.status AS company_status,s.status AS subscription_status,s.period_end FROM plans p JOIN subscriptions s ON s.plan_code = p.code JOIN companies c ON c.id = s.company_id WHERE s.company_id = ?1`)
+    .prepare(`SELECT p.code,p.whatsapp_enabled,p.max_messages_month,c.demo,c.status AS company_status,s.status AS subscription_status,s.period_end FROM plans p JOIN subscriptions s ON s.plan_code = p.code JOIN companies c ON c.id = s.company_id WHERE s.company_id = ?1`)
     .bind(job.company_id)
-    .first<{whatsapp_enabled:number;max_messages_month:number;demo:number;company_status:string;subscription_status:string;period_end:string|null}>();
+    .first<{code:string;whatsapp_enabled:number;max_messages_month:number;demo:number;company_status:string;subscription_status:string;period_end:string|null}>();
   const payload = JSON.parse(job.payload_json || "{}") as { manual?: boolean };
   const isManual = Boolean(payload.manual);
   if(plan?.company_status!=="active" || (!isManual && (!plan || !["trial","active"].includes(plan.subscription_status) || !plan.period_end || Date.parse(plan.period_end)<=now.getTime()))) {
@@ -369,7 +383,7 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
     if(changed.meta.changes===1)await releaseJobReservation(db,job.company_id,job.id,job.reserved_cents);
     out.skipped++;return;
   }
-  if (!isManual && plan && plan.whatsapp_enabled !== 1) {
+  if (!isManual && plan && !planAllowsAutomaticWhatsapp(plan, job.provider)) {
     const changed=await db.prepare(`UPDATE message_jobs SET status='skipped',skip_reason='plano sem WhatsApp',updated_at=?1 WHERE id=?2 AND status IN('scheduled','blocked_funds')`).bind(nowIso(),job.id).run();
     if (changed.meta.changes===1) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
     out.skipped++;
@@ -439,7 +453,9 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
       AND EXISTS(SELECT 1 FROM companies c WHERE c.id=message_jobs.company_id AND c.status='active')
       AND (?3=1 OR EXISTS(SELECT 1 FROM subscriptions s JOIN plans p ON p.code=s.plan_code
         WHERE s.company_id=message_jobs.company_id AND s.status IN('trial','active') AND julianday(s.period_end)>julianday(?1)
-        AND p.whatsapp_enabled=1 AND (p.max_messages_month<=0 OR (
+        AND (p.whatsapp_enabled=1 OR (message_jobs.provider='evolution'
+          AND p.code='free' AND p.max_messages_month>0))
+        AND (p.max_messages_month<=0 OR (
           SELECT count(*) FROM message_jobs j WHERE j.company_id=message_jobs.company_id
           AND (j.captured_at>=?4 OR (j.status='sending' AND j.last_attempt_at>=?4) OR (j.price_cents=0 AND j.sent_at>=?4))
         )<p.max_messages_month)))`)
