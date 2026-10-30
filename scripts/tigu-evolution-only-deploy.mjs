@@ -89,7 +89,7 @@ export async function deployEvolutionOnly({token,accountId,fetcher=fetch,exec=ex
  ensure(Array.isArray(result)&&result[0]?.success===true&&Array.isArray(result[0].results),
   "D1 não retornou histórico válido.");
  const history=result[0].results.map(x=>x.name);
- const expected=readdirSync(join(root,"migrations")).filter(n=>/^\\d+.*\\.sql$/.test(n)).sort();
+ const expected=readdirSync(join(root,"migrations")).filter(n=>/^\d+.*\.sql$/.test(n)).sort();
  const inv=checkInventory({dbs,buckets,workers,domains,settings,migrations:history,expected});
  const before=await health(fetcher);
  ensure(before.mpMock===false&&before.waMock===true,"Ambiente divergente antes do deploy.");
