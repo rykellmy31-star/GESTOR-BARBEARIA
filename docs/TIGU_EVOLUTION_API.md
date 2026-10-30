@@ -1,9 +1,9 @@
 # TIGU — Evolution API v2 (conexão QR por barbearia)
 
 ## Escopo
-O TIGU mantém integralmente a integração Meta Cloud API, Mercado Pago de profissionais e as mensalidades manuais da plataforma. A Evolution é uma opção adicional: cada barbearia tem instância isolada `tigu-company-<company_id>` e conecta seu próprio WhatsApp via QR Code no painel **WhatsApp & automações**.
+O TIGU removeu a integração Meta Cloud API e preserva Mercado Pago dos profissionais e a cobrança manual das mensalidades. A Evolution é o único provedor real de WhatsApp: cada barbearia tem instância isolada `tigu-company-<company_id>` e conecta seu próprio WhatsApp via QR Code no painel **WhatsApp & automações**.
 
-Não precisa de n8n. A fila de mensagens já existente (confirmações e lembretes) continua agendando e enviando via Worker, respeitando opt-in, horário e plano. Para a Evolution, o preço por mensagem no TIGU é zero, sem reserva ou cobrança de créditos; mensagens antigas de outros provedores não devem ser reutilizadas na troca. A integração QR usa WhatsApp Web/Baileys **não oficial**: risco de desconexões/bloqueio do número e instabilidade dos formatos de mensagem. Nada é enviado sem conexão ativa.
+Não precisa de n8n. A fila de mensagens já existente (confirmações e lembretes) continua agendando e enviando via Worker, respeitando opt-in, horário e plano. Para a Evolution, o preço por mensagem no TIGU é zero, sem reserva ou cobrança de créditos; mensagens antigas do provedor descontinuado não são reutilizadas na troca e permanecem somente para auditoria. A integração QR usa WhatsApp Web/Baileys **não oficial**: risco de desconexões/bloqueio do número e instabilidade dos formatos de mensagem. Nada é enviado sem conexão ativa.
 
 ## Dependências futuras para ativar
 - Deploy isolado de Evolution API **v2**, com TLS e acesso de rede do Worker.
