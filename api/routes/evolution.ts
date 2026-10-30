@@ -5,7 +5,7 @@ import type { Env } from "../types";
 import { cid } from "../lib/tenant";
 import { err, json, nowIso } from "../lib/utils";
 import { audit } from "../lib/audit";
-import { evolutionConfigurationProblem, evolutionInstanceName, evolutionLiveAllowed, evolutionRequest, evolutionQR, evolutionState, getEvolutionRow } from "../lib/messaging/evolution";
+import { DEFAULT_TIGU_REMINDER, evolutionConfigurationProblem, evolutionInstanceName, evolutionLiveAllowed, evolutionRequest, evolutionQR, evolutionState, getEvolutionRow } from "../lib/messaging/evolution";
 
 export const evolutionRouter = new Hono<{ Bindings: Env }>();
 
@@ -38,13 +38,24 @@ evolutionRouter.post("/start", async (c) => {
   const charged = await db.prepare(`SELECT COUNT(*) n FROM message_jobs
     WHERE company_id=?1 AND status IN ('scheduled','blocked_funds') AND price_cents>0`).bind(companyId).first<{n:number}>();
   if (charged && charged.n>0) return err(c, "Há mensagens antigas com créditos na fila. Finalize ou cancele esses envios antes de trocar o provedor.", 409);
-  const instance = evolutionInstanceName(companyId);
   const saved = await getEvolutionRow(db, companyId);
-  if (saved && saved.instance_name !== instance) return err(c,"Instância da empresa inconsistente.",409);
-
-  // Instância idempotente: uma tentativa anterior pode ter criado a sessão antes do timeout.
-  const check = await evolutionRequest(c.env, "GET", `/instance/connectionState/${instance}`);
+  const company = await db.prepare("SELECT name FROM companies WHERE id=?1")
+    .bind(companyId).first<{name:string}>();
+  if (!company) return err(c, "Barbearia não encontrada.", 404);
+  // Nunca renomear uma instância existente: o telefone e o webhook permanecem
+  // vinculados à mesma sessão, mesmo que o proprietário altere a marca.
+  const legacyInstance = evolutionInstanceName(companyId);
+  const proposedInstance = saved?.instance_name || evolutionInstanceName(companyId, company.name);
+  let instance = proposedInstance;
+  // Instância idempotente: se houve falha entre criar no Evolution e salvar D1,
+  // reaproveita a instância antiga já existente sem desconectar o celular.
+  let check = await evolutionRequest(c.env, "GET", `/instance/connectionState/${instance}`);
   if (!check.ok && check.status !== 404) return err(c, "Não foi possível consultar a Evolution API.", 502);
+  if (!saved && check.status === 404 && proposedInstance !== legacyInstance) {
+    const legacy = await evolutionRequest(c.env, "GET", `/instance/connectionState/${legacyInstance}`);
+    if (legacy.ok) { instance = legacyInstance; check = legacy; }
+    else if (legacy.status !== 404) return err(c, "Não foi possível conferir a instância antiga.", 502);
+  }
   let firstQR: string | null = null;
   if (check.status === 404) {
     const created = await evolutionRequest(c.env, "POST", "/instance/create",
@@ -79,7 +90,7 @@ evolutionRouter.post("/start", async (c) => {
     db.prepare(`INSERT OR IGNORE INTO whatsapp_templates
       (company_id,code,language,category,status,body_text,use_case)
       VALUES (?1,'tigu_lembrete','pt_BR','utility','approved',
-      'Olá {{1}}! Passando para lembrar do seu horário na barbearia.','reminder')`).bind(companyId),
+      ?2,'reminder')`).bind(companyId,DEFAULT_TIGU_REMINDER),
   ]);
   await audit(db, c.get("user"), "whatsapp.evolution.start", "evolution_connection", companyId, {}, { companyId });
   return json(c, { ok: true, status: "pending_setup", qr: firstQR });
