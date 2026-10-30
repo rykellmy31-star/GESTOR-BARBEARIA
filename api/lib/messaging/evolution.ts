@@ -61,9 +61,15 @@ export function evolutionLiveAllowed(env: EvolutionEnv): boolean {
   return evolutionConfigurationProblem(env) === null;
 }
 
-export function evolutionInstanceName(companyId: number): string {
+export function evolutionInstanceName(companyId: number, companyName?: string): string {
   if (!Number.isSafeInteger(companyId) || companyId < 1) throw new Error("Empresa inválida");
-  return `tigu-company-${companyId}`;
+  // Para uma instalação existente, o identificador anterior permanece válido.
+  // Instâncias novas ficam legíveis no Evolution Manager e sempre incluem o ID
+  // para garantir unicidade, mesmo com duas barbearias de mesmo nome.
+  const slug = (companyName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 45)
+    .replace(/-+$/g, "");
+  return slug ? `tigu-${slug}-c${companyId}` : `tigu-company-${companyId}`;
 }
 
 export async function evolutionRequest(
@@ -105,6 +111,17 @@ export function evolutionQR(data: any): string | null {
   return null;
 }
 
+// A versão antiga continua em muitos cadastros. Atualizar apenas o texto
+// original de fábrica (nunca sobrescrever uma mensagem personalizada).
+export const LEGACY_TIGU_REMINDER = "Olá {{1}}! Passando para lembrar do seu horário na barbearia.";
+export const DEFAULT_TIGU_REMINDER =
+  "Olá {{1}}! 💈\n\nPassando para lembrar do seu horário na {{5}}, dia {{4}}.\nPedimos que chegue com 10 minutos de antecedência. Até breve!";
+
+export function effectiveReminderText(code: string, body: string): string {
+  return code === "tigu_lembrete" && body === LEGACY_TIGU_REMINDER
+    ? DEFAULT_TIGU_REMINDER : body;
+}
+
 export function renderEvolutionText(body: string, variables: { key: string; sample: string }[]): string {
   return body.replace(/\{\{(\d+)\}\}/g, (_match, index: string) => {
     const found = variables.find((v) => v.key === index || v.key === `{{${index}}}`);
@@ -136,7 +153,7 @@ export const evolutionProvider: Provider = {
       "SELECT body_text FROM whatsapp_templates WHERE company_id=?1 AND code=?2 AND language=?3 AND active=1"
     ).bind(ctx.conn.company_id,input.templateCode,input.language).first<{ body_text: string }>();
     if (!tpl?.body_text) return { accepted: false, permanent: true, error: "Modelo de mensagem não configurado." };
-    const text = renderEvolutionText(tpl.body_text, input.variables);
+    const text = renderEvolutionText(effectiveReminderText(input.templateCode, tpl.body_text), input.variables);
     if (!text.trim()) return { accepted: false, permanent: true, error: "Modelo sem texto." };
     const response = await evolutionRequest(ctx.env, "POST", `/message/sendText/${ctx.conn.phone_number_id}`, { number: input.to, text });
     const key = response.data?.key?.id ?? response.data?.message?.key?.id;

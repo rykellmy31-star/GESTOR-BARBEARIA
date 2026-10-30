@@ -17,7 +17,7 @@ evolutionWebhookRouter.post("/", async (c) => {
   if (!constantTime(c.req.header("x-tigu-webhook-token") || "", secret)) return c.json({error:"Não autorizado."},401);
   const body = await c.req.json().catch(()=>null) as any;
   const instance = typeof body?.instance === "string" ? body.instance : "";
-  if (!/^tigu-company-[1-9]\d*$/.test(instance)) return c.json({error:"Instância inválida."},400);
+  if (!/^tigu-(?:company-[1-9]\d*|[a-z0-9]+(?:-[a-z0-9]+)*-c[1-9]\d*)$/.test(instance)) return c.json({error:"Instância inválida."},400);
   const row = await c.env.DB.prepare("SELECT company_id FROM evolution_connections WHERE instance_name=?1 AND enabled=1")
     .bind(instance).first<{company_id:number}>();
   if (!row) return c.json({error:"Instância não cadastrada."},404);

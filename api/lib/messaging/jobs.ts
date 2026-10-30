@@ -14,7 +14,7 @@
 // ============================================================================
 import type { Env } from "../../types";
 import { nowIso } from "../utils";
-import { loadPlatformSettings, type CompanySettings } from "../settings";
+import { loadCompanySettings, loadPlatformSettings, type CompanySettings } from "../settings";
 import { ensureWallet, reserveForJob, captureJobCharge, releaseJobReservation } from "../wallet";
 import { resolveProvider, type ProviderContext, type ProviderConnectionRow } from "./provider";
 import { getEvolutionRow } from "./evolution";
@@ -343,6 +343,19 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
     return;
   }
 
+  // Mesmo para lembretes programados antes da alteração, a opção desligada
+  // da barbearia é respeitada no momento do disparo.
+  if (job.kind === "reminder") {
+    const latestSettings = await loadCompanySettings(db, job.company_id);
+    if (!latestSettings.whatsapp_reminders_enabled) {
+      const changed = await db.prepare(
+        "UPDATE message_jobs SET status='skipped', skip_reason='lembretes desativados pela barbearia', updated_at=?1 WHERE id=?2 AND status IN ('scheduled','blocked_funds')"
+      ).bind(nowIso(), job.id).run();
+      if (changed.meta.changes === 1) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
+      out.skipped++;
+      return;
+    }
+  }
   // 2) plano & conexão (re-validados no disparo)
   const plan = await db
     .prepare(`SELECT p.whatsapp_enabled,p.max_messages_month,c.demo,c.status AS company_status,s.status AS subscription_status,s.period_end FROM plans p JOIN subscriptions s ON s.plan_code = p.code JOIN companies c ON c.id = s.company_id WHERE s.company_id = ?1`)
@@ -510,7 +523,8 @@ async function renderTemplateVars(db: D1Database, job: MessageJobRow): Promise<{
   const p = JSON.parse(job.payload_json || "{}") as Record<string, string>;
   const tz = p.tz || "America/Bahia";
   const when = b?.starts_at
-    ? new Date(b.starts_at).toLocaleString("pt-BR", { timeZone: tz, weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    ? new Date(b.starts_at).toLocaleDateString("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric" }) +
+      " às " + new Date(b.starts_at).toLocaleTimeString("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false })
     : "";
   return [
     { key: "1", sample: b?.customer_name ?? "" },

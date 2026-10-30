@@ -1774,3 +1774,34 @@ describe("Mensalidades Pix visíveis somente no Superadmin", () => {
     expect((await api("/api/super/subscription-invoices?status=forged",{},cookie)).status).toBe(422);
   });
 });
+
+describe("WhatsApp: cada barbearia configura seu próprio tempo de lembrete", () => {
+  it("altera o lembrete da Alfa, preserva a Bravo e não mexe nas confirmações", async () => {
+    const a = await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{id:number}>();
+    const b = await db.prepare("SELECT id FROM companies WHERE slug='bravo'").first<{id:number}>();
+    expect(a?.id).toBeGreaterThan(0);
+    expect(b?.id).toBeGreaterThan(0);
+    const beforeA = await loadCompanySettings(db,a!.id);
+    const beforeB = await loadCompanySettings(db,b!.id);
+    const req = (lead:number,enabled=true)=>({
+      method:"PUT",
+      body: JSON.stringify({whatsapp_reminders_enabled:enabled,reminder_lead_min:lead})
+    });
+    try {
+      expect((await api("/api/c/alfa/admin/whatsapp/reminder-settings",req(0),cookieA)).status).toBe(422);
+      expect((await api("/api/c/alfa/admin/whatsapp/reminder-settings",req(1441),cookieA)).status).toBe(422);
+      const saved = await api("/api/c/alfa/admin/whatsapp/reminder-settings",req(300),cookieA);
+      expect(saved.status).toBe(200);
+      expect(saved.body.reminder_lead_min).toBe(300);
+      const afterA = await loadCompanySettings(db,a!.id);
+      const afterB = await loadCompanySettings(db,b!.id);
+      expect(afterA.reminder_lead_min).toBe(300);
+      expect(afterA.whatsapp_confirm_enabled).toBe(beforeA.whatsapp_confirm_enabled);
+      expect(afterB.reminder_lead_min).toBe(beforeB.reminder_lead_min);
+      expect(afterB.whatsapp_reminders_enabled).toBe(beforeB.whatsapp_reminders_enabled);
+    } finally {
+      await db.prepare("UPDATE company_settings SET data=?1 WHERE company_id=?2")
+        .bind(JSON.stringify(beforeA),a!.id).run();
+    }
+  });
+});
