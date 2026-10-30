@@ -70,7 +70,7 @@ export function inspectOfficialInventory(dbs,media,workers,domains,settings,hist
   const pending=expectedNames.filter(x=>!history.includes(x));
   const unknown=history.filter(x=>!expectedNames.includes(x));
   if(unknown.length||pending.length!==1||pending[0]!=="0103_manual_platform_subscriptions.sql"||history.length!==25)
-    throw Error("Migrações no banco existente divergentes; publicar somente após análise, sem importar SQL.");
+    throw Error("Histórico D1 diverge: "+JSON.stringify({applied_count:history.length,applied_names:history,pending_names:pending,unknown_names:unknown})+". Nenhuma migração executada.");
   return {dbId:db.uuid,existingVars:vars,existingSecretNames:secretNames,
     existingBindingTypes:raw.map(x=>x.type),pendingMigration:pending[0],
     appliedMigrationCount:history.length,
