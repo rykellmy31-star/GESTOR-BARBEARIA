@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { evolutionConfigurationProblem, evolutionInstanceName, evolutionQR, evolutionReady, evolutionLiveAllowed, evolutionState, renderEvolutionText, evolutionRequest, evolutionProvider } from "../api/lib/messaging/evolution";
+import { DEFAULT_TIGU_REMINDER, LEGACY_TIGU_REMINDER, effectiveReminderText, evolutionConfigurationProblem, evolutionInstanceName, evolutionQR, evolutionReady, evolutionLiveAllowed, evolutionState, renderEvolutionText, evolutionRequest, evolutionProvider } from "../api/lib/messaging/evolution";
 import { evolutionWebhookRouter } from "../api/routes/evolution-webhook";
 
 const config = {
@@ -46,6 +46,32 @@ describe("Evolution API - preparação sem instalação", () => {
     expect(evolutionInstanceName(13)).not.toBe(evolutionInstanceName(12));
     expect(() => evolutionInstanceName(0)).toThrow();
     expect(() => evolutionInstanceName(1.2)).toThrow();
+  });
+
+  it("usa nome legível na nova instância sem abrir mão do isolamento", () => {
+    expect(evolutionInstanceName(12, "Barbearia Oceano")).toBe("tigu-barbearia-oceano-c12");
+    expect(evolutionInstanceName(13, "Barbearia Oceano")).toBe("tigu-barbearia-oceano-c13");
+    expect(evolutionInstanceName(14, "Salão São José")).toBe("tigu-salao-sao-jose-c14");
+    // Instâncias já cadastradas continuam com seu identificador antigo.
+    expect(evolutionInstanceName(12)).toBe("tigu-company-12");
+  });
+
+  it("personaliza lembretes com nome, barbearia, data, horário e antecedência", () => {
+    const recommended = effectiveReminderText("tigu_lembrete", LEGACY_TIGU_REMINDER);
+    expect(recommended).toBe(DEFAULT_TIGU_REMINDER);
+    const txt = renderEvolutionText(recommended, [
+      {key:"1",sample:"João Silva"}, {key:"4",sample:"30/10/2026 às 14:00"},
+      {key:"5",sample:"Barbearia Oceano"}
+    ]);
+    expect(txt).toContain("Olá João Silva");
+    expect(txt).toContain("Barbearia Oceano");
+    expect(txt).toContain("30/10/2026 às 14:00");
+    expect(txt).toContain("10 minutos de antecedência");
+    expect(txt).not.toContain("{{");
+    // A confirmação e os textos personalizados não são alterados.
+    expect(effectiveReminderText("tigu_confirmacao",LEGACY_TIGU_REMINDER)).toBe(LEGACY_TIGU_REMINDER);
+    expect(effectiveReminderText("tigu_lembrete","Mensagem personalizada"))
+      .toBe("Mensagem personalizada");
   });
 
   it("não aceita imagens arbitrárias devolvidas pelo servidor", () => {
