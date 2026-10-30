@@ -11,7 +11,7 @@ function constantTime(a: string, b: string): boolean {
   return diff === 0;
 }
 evolutionWebhookRouter.post("/", async (c) => {
-  if (c.env.TIGU_STAGING === "1") return c.json({error:"Webhook real bloqueado na homologação."},403);
+  if (c.env.TIGU_STAGING === "1" && c.env.TIGU_EVOLUTION_LIVE !== "1") return c.json({error:"Webhook real bloqueado na homologação."},403);
   const secret = c.env.EVOLUTION_WEBHOOK_SECRET;
   if (!secret || secret.length<32) return c.json({error:"Webhook não configurado."},503);
   if (!constantTime(c.req.header("x-tigu-webhook-token") || "", secret)) return c.json({error:"Não autorizado."},401);
