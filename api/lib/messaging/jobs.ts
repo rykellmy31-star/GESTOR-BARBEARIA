@@ -127,7 +127,7 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
         else return { ok: true, status: "skipped", reason: `faltam menos de ${leadMin} min e a política da barbearia é não enviar` };
       }
     } else {
-      fireAtMs = now.getTime() + 20_000; // confirmação/teste: quase imediato
+      fireAtMs = now.getTime(); // confirmação: fila imediatamente elegível; cron continua como recuperação
     }
     const fireDeadlineMs = startMs + 15 * 60_000;
     const idem = currentIdempotencyKey;
