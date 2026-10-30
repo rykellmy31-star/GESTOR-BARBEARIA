@@ -163,6 +163,19 @@ try{
   await click("Entrar");
   await until("dashboard autenticado",'location.pathname.endsWith("/admin/dashboard")&&document.body.innerText.includes("Visão geral")');
   pass("autenticação e dashboard do dono");
+  // Regressão iPhone: o modal não pode ficar preso ao header com backdrop-blur.
+  // A área fixa deve cobrir o viewport, independente do cabeçalho sticky.
+  await cmd("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  const bellOpened=await js('(()=>{const bell=document.querySelector(\'header button[aria-label="Notificações"]\');if(!bell)return false;bell.click();return true})()');
+  assert.ok(bellOpened,"Sino de notificações disponível no painel mobile");
+  await until("modal de notificações",'document.querySelector(".modal-backdrop")!==null');
+  const modalInViewport=await js('(()=>{const el=document.querySelector(".modal-backdrop");const rect=el?.getBoundingClientRect();const sheet=el?.firstElementChild?.getBoundingClientRect();return Boolean(el?.parentElement===document.body&&rect&&sheet&&Math.abs(rect.width-innerWidth)<2&&Math.abs(rect.height-innerHeight)<2&&sheet.top>=-1&&sheet.bottom<=innerHeight+1)})()');
+  assert.ok(modalInViewport,"Modal de notificações deve cobrir a tela e mostrar seu conteúdo no iPhone");
+  await js('document.querySelector(".modal-backdrop button")?.click()');
+  await until("fechar notificações",'document.querySelector(".modal-backdrop")===null');
+  await cmd("Emulation.clearDeviceMetricsOverride");
+  pass("notificações abrem e fecham no viewport mobile, sem corte pelo cabeçalho");
+
   await go(base+"/c/"+slug+"/admin/pedidos");
   await until("pedido no painel",'document.body.innerText.includes("Cliente Navegador")');
   pass("venda aparece no painel administrativo");
