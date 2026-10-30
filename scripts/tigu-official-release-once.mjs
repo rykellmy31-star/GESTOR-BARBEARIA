@@ -69,10 +69,17 @@ export function inspectOfficialInventory(dbs,media,workers,domains,settings,hist
     throw Error("Histórico de migrações remoto ou arquivos de código inválidos.");
   const pending=expectedNames.filter(x=>!history.includes(x));
   const unknown=history.filter(x=>!expectedNames.includes(x));
-  if(unknown.length||pending.length!==1||pending[0]!=="0103_manual_platform_subscriptions.sql"||history.length!==25)
+  const expectedPending=[
+    "0021_seller_mercadopago_oauth.sql","0099_seller_mercadopago_oauth.sql",
+    "0100_seller_pix.sql","0101_barber_service_duration.sql",
+    "0102_booking_checkin_cancel_reason.sql","0103_manual_platform_subscriptions.sql",
+  ];
+  if(unknown.length || history.length!==20 ||
+    JSON.stringify(history)!==JSON.stringify(expectedNames.slice(0,20)) ||
+    JSON.stringify(pending)!==JSON.stringify(expectedPending))
     throw Error("Histórico D1 diverge: "+JSON.stringify({applied_count:history.length,applied_names:history,pending_names:pending,unknown_names:unknown})+". Nenhuma migração executada.");
   return {dbId:db.uuid,existingVars:vars,existingSecretNames:secretNames,
-    existingBindingTypes:raw.map(x=>x.type),pendingMigration:pending[0],
+    existingBindingTypes:raw.map(x=>x.type),pendingMigrations:pending,
     appliedMigrationCount:history.length,
     domainBound:true,officialWorker:TARGET.worker};
 }
@@ -114,7 +121,7 @@ export async function inspectRemote({token,accountId,fetcher=fetch,root=resolve(
     throw Error("Flags reais do Worker mudaram desde a auditoria; abortar.");
   return {inventory:inv,health,
     summary:{officialDomain:TARGET.hostname,worker:TARGET.worker,
-      database:TARGET.database,bucket:TARGET.bucket,pendingMigration:inv.pendingMigration,
+      database:TARGET.database,bucket:TARGET.bucket,pendingMigrations:inv.pendingMigrations,
       secretsPreserved:true,appliedMigrationCount:inv.appliedMigrationCount}};
 }
 
@@ -177,7 +184,7 @@ export async function releaseOfficial({token,accountId,root=resolve(import.meta.
     const postInv=await inspectOfficialBindingAfter({token,accountId,fetcher,
       initial:before.inventory});
     return {released:true,officialUrl:TARGET.url,worker:TARGET.worker,
-      backup_export_validated:true,d1_migration:"0103_manual_platform_subscriptions.sql",
+      backup_export_validated:true,d1_migrations:before.inventory.pendingMigrations,
       existing_users_and_subscriptions_preserved:true,
       vars_and_secrets_preserved:true,manual_billing:true,
       domain_route_preserved:postInv,health:now,
