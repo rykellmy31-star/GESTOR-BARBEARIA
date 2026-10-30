@@ -5,7 +5,7 @@ import type { Env } from "../types";
 import { cid } from "../lib/tenant";
 import { err, json, nowIso } from "../lib/utils";
 import { audit } from "../lib/audit";
-import { evolutionInstanceName, evolutionReady, evolutionLiveAllowed, evolutionRequest, evolutionQR, evolutionState, getEvolutionRow } from "../lib/messaging/evolution";
+import { evolutionInstanceName, evolutionLiveAllowed, evolutionRequest, evolutionQR, evolutionState, getEvolutionRow } from "../lib/messaging/evolution";
 
 export const evolutionRouter = new Hono<{ Bindings: Env }>();
 
