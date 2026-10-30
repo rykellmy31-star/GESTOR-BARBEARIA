@@ -24,7 +24,7 @@ export interface ProviderConnectionRow {
 export interface ProviderContext {
   env: { APP_ENV?: string; TIGU_STAGING?: string; WHATSAPP_MOCK?: string;
     EVOLUTION_API_URL?: string; EVOLUTION_API_KEY?: string;
-    EVOLUTION_WEBHOOK_SECRET?: string; PUBLIC_URL?: string };
+    EVOLUTION_WEBHOOK_SECRET?: string; PUBLIC_URL?: string; TIGU_EVOLUTION_LIVE?: string };
   db: D1Database;
   conn: ProviderConnectionRow;
   demo: boolean;
@@ -104,7 +104,7 @@ export async function resolveProvider(ctx: Omit<ProviderContext, "conn"> & {
   }
   if (ctx.conn.provider !== "evolution")
     return {provider:null,error:"Provedor WhatsApp antigo não suportado."};
-  if (ctx.env.TIGU_STAGING === "1")
+  if (ctx.env.TIGU_STAGING === "1" && ctx.env.TIGU_EVOLUTION_LIVE !== "1")
     return {provider:null,error:"Evolution real desativada enquanto o TIGU estiver em homologação."};
   return {provider:evolutionProvider};
 }
