@@ -13,11 +13,14 @@ evolutionRouter.get("/status", async (c) => {
   const db = c.env.DB;
   const companyId = cid(c);
   const row = await getEvolutionRow(db, companyId);
+  const company = await db.prepare("SELECT name FROM companies WHERE id=?1")
+    .bind(companyId).first<{name:string}>();
+  const companyName = company?.name || "Esta barbearia";
   const problem = evolutionConfigurationProblem(c.env);
   const configured = problem === null;
   if (!row || row.enabled !== 1 || !configured) return json(c, {
     configured, active: row?.enabled === 1, status: row?.status ?? "disconnected",
-    instance: row?.enabled ? row.instance_name : null,
+    instance: row?.enabled ? row.instance_name : null, companyName,
     reason: problem ? "Integração Evolution indisponível: " + problem + " Configure no Worker oficial e implante a alteração." : null,
   });
   // Consulta real: QR lido em outro dispositivo só é confirmado pela API, não pela interface.
@@ -26,7 +29,7 @@ evolutionRouter.get("/status", async (c) => {
   const error = remote.ok ? "" : "Evolution API indisponível ou sessão não encontrada.";
   // GET permanece realmente somente leitura (inclusive em modo suporte Super Admin).
   // O webhook autenticado atualiza o D1. A resposta mostra o estado remoto atual.
-  return json(c, { configured, active: true, status, instance: row.instance_name, error });
+  return json(c, { configured, active: true, status, instance: row.instance_name, companyName, error });
 });
 
 evolutionRouter.post("/start", async (c) => {
