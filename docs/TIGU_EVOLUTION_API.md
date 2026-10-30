@@ -78,3 +78,11 @@ Publicação oficial da personalização WhatsApp: opção de prazo por barbeari
 A conexão Evolution/Baileys não oferece entrega confiável de botões interativos nativos. Para não enviar mensagens invisíveis, a confirmação do TIGU inclui dois links clicáveis de acesso individual à reserva ("Confirmar agendamento" e "Não dá, reagendar"). A página /c/:slug/whatsapp-agendamento apresenta os botões reais.
 O link contém um token aleatório que já era emitido na criação da reserva. O GET da página não altera nada; uma chamada POST autenticada pelo token é necessária para confirmar, com deduplicação por agendamento e versão. A barbearia é avisada. O reagendamento usa a disponibilidade e as políticas já existentes. Não usa número de telefone isoladamente como autorização e nunca cruza barbearias.
 Não há migração D1. Os pagamentos, agendamentos antigos e números WhatsApp permanecem como estavam.
+
+## Correção: confirmação não enviada ao criar reserva — 30/10/2026
+
+Foi detectado que os formulários do site público e da agenda manual enviavam o aceite LGPD, mas não enviavam `whatsappOptin`. O servidor aplicava corretamente o padrão `false` e não criava job de confirmação, embora o agendamento estivesse salvo como confirmado.
+
+Agora ambos registram **permissão específica, opcional e separada para WhatsApp**, inicializada como desmarcada. Só após aceite a fila de confirmação e o lembrete podem ser programados. A tela de sucesso do cliente e o aviso da reserva manual mostram se o WhatsApp foi programado ou se a conexão impede o envio. A entrega real depende da conexão Evolution e do cron. Não marcar antigos clientes automaticamente; nenhuma mensagem retroativa automática.
+
+Validado na PR #7, 352 testes aprovados, preservando pagamentos, dados, instâncias e agendamentos existentes. Sem migrações D1.
