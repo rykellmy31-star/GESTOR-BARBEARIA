@@ -5,7 +5,7 @@ import type { Env } from "../types";
 import { cid } from "../lib/tenant";
 import { err, json, nowIso } from "../lib/utils";
 import { audit } from "../lib/audit";
-import { evolutionInstanceName, evolutionReady, evolutionRequest, evolutionQR, evolutionState, getEvolutionRow } from "../lib/messaging/evolution";
+import { evolutionInstanceName, evolutionReady, evolutionLiveAllowed, evolutionRequest, evolutionQR, evolutionState, getEvolutionRow } from "../lib/messaging/evolution";
 
 export const evolutionRouter = new Hono<{ Bindings: Env }>();
 
@@ -13,7 +13,7 @@ evolutionRouter.get("/status", async (c) => {
   const db = c.env.DB;
   const companyId = cid(c);
   const row = await getEvolutionRow(db, companyId);
-  const configured = evolutionReady(c.env) && c.env.TIGU_STAGING !== "1";
+  const configured = evolutionLiveAllowed(c.env);
   if (!row || row.enabled !== 1 || !configured) return json(c, {
     configured, active: row?.enabled === 1, status: row?.status ?? "disconnected",
     instance: row?.enabled ? row.instance_name : null, reason: configured ? null : "Servidor da Evolution API ainda não configurado.",
@@ -28,7 +28,7 @@ evolutionRouter.get("/status", async (c) => {
 });
 
 evolutionRouter.post("/start", async (c) => {
-  if (!evolutionReady(c.env) || c.env.TIGU_STAGING === "1")
+  if (!evolutionLiveAllowed(c.env))
     return err(c, "Evolution API ainda não instalada/configurada. A conexão real só será habilitada depois.", 503);
   const db = c.env.DB, companyId = cid(c);
   // Não reativamos nem reutilizamos credenciais da integração antiga.
@@ -84,7 +84,7 @@ evolutionRouter.post("/start", async (c) => {
 });
 
 evolutionRouter.post("/qr", async (c) => {
-  if (!evolutionReady(c.env) || c.env.TIGU_STAGING === "1") return err(c,"Evolution API indisponível.",503);
+  if (!evolutionLiveAllowed(c.env)) return err(c,"Evolution API indisponível.",503);
   const row = await getEvolutionRow(c.env.DB,cid(c));
   if (!row || row.enabled!==1) return err(c,"Inicie a integração primeiro.",404);
   const res = await evolutionRequest(c.env,"GET",`/instance/connect/${row.instance_name}`);
