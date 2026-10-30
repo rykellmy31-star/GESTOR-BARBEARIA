@@ -342,7 +342,14 @@ function ManualModal({ barbers, onClose, onDone, prefill }: any) {
         startsAt: localToUtcIso(tz, f.day, f.hhmm),
         ...(quick?{fitInDurationMin:quickMinutes}:{})
       });
-      toast.push("ok", `Reserva ${res.code} criada.`);
+      const confirmation = res.messaging?.confirmation;
+      const extra = confirmation?.status === "scheduled"
+        ? " Confirmação de WhatsApp programada."
+        : f.whatsappOptin
+          ? " WhatsApp não programado: " +
+            (confirmation?.status === "no_connection" ? "número da barbearia desconectado." : "consulte a aba WhatsApp.")
+          : " Sem envio de WhatsApp (cliente não autorizou).";
+      toast.push("ok", `Reserva ${res.code} criada.` + extra);
       onDone();
     } catch (e: any) { toast.push("err", e.message); }
   };
