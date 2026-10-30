@@ -1,0 +1,53 @@
+name: TIGU - publicar homologacao independente UMA VEZ
+
+# A criação é explicitamente limitada à branch da PR #2 e a uma mensagem de commit.
+# Preserva produção, tigu-staging, domínio e o trabalho da PR WhatsApp.
+on:
+  push:
+    branches:
+      - feature/tigu-mensalidade-manual-preintegracao-20261028
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tigu-one-off-isolated-homolog-20261029
+  cancel-in-progress: false
+
+jobs:
+  deploy-homolog-20261029:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/tigu-mensalidade-manual-preintegracao-20261028' && github.event.head_commit.message == 'TIGU_ISOLATED_HOMOLOGATION_DEPLOY_ONCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Instalar dependencias sem omitir auditoria
+        run: npm ci --no-audit --prefer-offline
+      - name: Validar guardas de recursos isolados
+        run: node --test scripts/tigu-isolated-deploy-once.node.test.mjs
+      - name: Validar seguranca, migrations, tipos, testes e compilacao
+        run: npm run validate
+      - name: Confirmar integridade HTTP local antes de deploy
+        run: node scripts/local-e2e.mjs
+      - name: Publicar apenas Worker, D1 e R2 NOVOS, sem dominio oficial
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_ISOLATED_DEPLOY_APPROVED: "YES"
+        run: node scripts/tigu-isolated-deploy-once.mjs
+      - name: Homologar online com duas barbearias ficticias (sem pagamentos reais)
+        env:
+          TIGU_ISOLATED_SMOKE_APPROVED: "YES"
+        run: node scripts/tigu-isolated-smoke.mjs
+      - name: Resumo final
+        run: |
+          echo '## TIGU Homologação independente' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Novo Worker: tigu-homolog-manual-20261029' >> "$GITHUB_STEP_SUMMARY"
+          echo 'D1 novo: tigu-homolog-manual-20261029-db' >> "$GITHUB_STEP_SUMMARY"
+          echo 'R2 novo: tigu-homolog-manual-20261029-media' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Domínio oficial e Worker tigu-staging: sem modificações.' >> "$GITHUB_STEP_SUMMARY"
