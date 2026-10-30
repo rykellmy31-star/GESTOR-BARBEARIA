@@ -430,7 +430,7 @@ try{
   pass("acesso individual do profissional após troca obrigatória");
   const selectedDay=await js('(()=>{const tabs=document.querySelector("main .overflow-x-auto");'+
     'const b=[...(tabs?.querySelectorAll("button")||[])].find(x=>'+
-    'x.querySelector("span.font-display")?.textContent.trim()==='+JSON.stringify(String(Number(bookingDay.slice(8))))+');'+
+    'x.querySelector("span.font-display")?.textContent.trim()==='+JSON.stringify(bookingDay.slice(8))+');'+
     'if(!b)return false;b.click();return true})()');
   assert.ok(selectedDay,"Dia da reserva não apareceu no calendário do profissional");
   await until("reserva exibida ao profissional",'document.body.innerText.includes("Cliente Reserva Chromium")');
