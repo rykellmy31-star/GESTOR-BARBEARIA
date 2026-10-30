@@ -100,12 +100,18 @@ export async function deployEvolutionOnly({token,accountId,fetcher=fetch,exec=ex
  console.log("Backup D1 restaurado e validado; dump descartado. SHA256: "+backup.sha256);
  const template=JSON.parse(readFileSync(join(root,"wrangler.staging.template.jsonc"),"utf8"));
  template.d1_databases[0].database_id=inv.dbId;
- template.vars={...template.vars,TIGU_PLATFORM_BILLING_MODE:"manual"};
+ template.vars={...template.vars,TIGU_PLATFORM_BILLING_MODE:"manual",
+    TIGU_EVOLUTION_LIVE:"1", EVOLUTION_API_URL:"https://evolution.crjornada.com",
+    PUBLIC_URL:"https://agendamentos.crjornada.com"};
+ template.triggers.crons=["* * * * *"];
  template.keep_vars=true;
  ensure(template.name===TARGET.worker&&template.d1_databases[0].database_name===TARGET.db&&
   template.r2_buckets[0].bucket_name===TARGET.r2&&template.vars.APP_ENV==="production"&&
   template.vars.TIGU_STAGING==="1"&&template.vars.WHATSAPP_MOCK==="1"&&
-  template.vars.PAYMENTS_MOCK==="0"&&template.triggers.crons.length===0&&
+  template.vars.PAYMENTS_MOCK==="0"&&template.vars.TIGU_EVOLUTION_LIVE==="1"&&
+  template.vars.EVOLUTION_API_URL==="https://evolution.crjornada.com"&&
+  template.vars.PUBLIC_URL==="https://agendamentos.crjornada.com"&&
+  template.triggers.crons.length===1&&template.triggers.crons[0]==="* * * * *"&&
   !template.routes&&!template.route,
   "Configuração Wrangler não corresponde ao Worker oficial.");
  for(const [name,value] of Object.entries(inv.vars))
@@ -142,6 +148,7 @@ export async function deployEvolutionOnly({token,accountId,fetcher=fetch,exec=ex
     redirect:"error",signal:AbortSignal.timeout(15000)});
   ensure(old.status===404,"Webhook legado Meta permanece acessível.");
   return {deployed:true,domain:TARGET.host,worker:TARGET.worker,
+  evolution_qr_code_published:true, evolution_enabled_when_credentials_are_set:true,
     backup_verified:true,migrations_applied:0,data_preserved:true,
     secrets_preserved:true,payments_preserved:true,provider:"evolution",
     meta_webhook_removed:true,staging_preserved:true};
