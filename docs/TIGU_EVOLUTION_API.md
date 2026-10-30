@@ -71,3 +71,5 @@ Diagnóstico autenticado habilitado para a versão oficial: não modifica D1, R2
 - **Confirmação anterior preservada.** Somente o lembrete original de fábrica é atualizado automaticamente no momento da leitura/envio, não modifica texto personalizado de outro proprietário.
 - Instâncias **novas** ganham identificador descritivo da barbearia, com ID único obrigatório (ex.: `tigu-barbearia-oceano-c7`). Se já havia instância `tigu-company-7`, mantém o mesmo nome e a conexão existente, sem renomear ou desconectar o WhatsApp. Os webhooks aceitam ambos formatos e conferem o vínculo no D1 por empresa.
 - O botão **Gerar / atualizar QR** permanece disponível para reconectar instâncias que perderam sessão. O servidor Evolution e os segredos continuam globais apenas na Cloudflare. Nenhuma migração, mudança em pagamentos ou criação de nova infraestrutura.
+
+Publicação oficial da personalização WhatsApp: opção de prazo por barbearia, lembrete com nome e data e instâncias legíveis por estabelecimento, mantendo sessão e nome antigos já conectados. CI aprovada (350 testes); sem migrações nem alterações nos pagamentos.
