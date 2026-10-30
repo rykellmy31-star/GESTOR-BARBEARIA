@@ -25,6 +25,7 @@ import { uploadsRouter } from "./routes/uploads";
 import { originGuard } from "./lib/auth";
 import { purgeRequestRateLimits } from "./lib/rate-limit";
 import { processDueJobs } from "./lib/messaging/jobs";
+import { evolutionLiveAllowed } from "./lib/messaging/evolution";
 import { expirePendingTopups, reconcilePendingTopups } from "./lib/topup";
 import { nowIso } from "./lib/utils";
 import { loadSalesContact, publicSalesContact } from "./lib/marketing";
@@ -65,7 +66,7 @@ app.get("/api/health", (c) =>
       session_secret_ready: Boolean(c.env.SESSION_SECRET && c.env.SESSION_SECRET.length >= 32),
       encryption_key_ready: Boolean(c.env.MSG_ENC_KEY && c.env.MSG_ENC_KEY.length >= 32),
     },
-    whatsapp: { provider:"evolution", configured:Boolean(c.env.EVOLUTION_API_URL && c.env.EVOLUTION_API_KEY && c.env.EVOLUTION_WEBHOOK_SECRET), mock: c.env.WHATSAPP_MOCK === "1" },
+    whatsapp: { provider:"evolution", configured: evolutionLiveAllowed(c.env), mock: c.env.WHATSAPP_MOCK === "1" },
     payments: { mercadopago: Boolean(c.env.MP_ACCESS_TOKEN), mock: c.env.PAYMENTS_MOCK === "1" },
   })
 );
@@ -127,7 +128,11 @@ export default {
 
   /** Cron (wrangler [triggers] crons): dispara lembretes/confirmações. */
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    if (env.TIGU_STAGING === "1") return; // Nenhum disparo agendado na homologação.
+    if (env.TIGU_STAGING === "1") {
+      // Domínio oficial: habilitar apenas fila Evolution, nunca rotinas de pagamentos do modo protegido.
+      if (evolutionLiveAllowed(env)) ctx.waitUntil(processDueJobs(env, {limit:40,provider:"evolution"}).catch(e=>console.error("[evolution-cron]",String(e).slice(0,160))));
+      return;
+    }
     ctx.waitUntil(
       (async () => {
         try {
