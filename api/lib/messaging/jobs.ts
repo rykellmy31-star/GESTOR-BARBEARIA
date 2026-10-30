@@ -15,7 +15,7 @@
 import type { Env } from "../../types";
 import { nowIso } from "../utils";
 import { loadPlatformSettings, type CompanySettings } from "../settings";
-import { ensureWallet, reserveForJob, captureJobCharge, releaseJobReservation, refundJobCharge } from "../wallet";
+import { ensureWallet, reserveForJob, captureJobCharge, releaseJobReservation } from "../wallet";
 import { resolveProvider, type ProviderContext, type ProviderConnectionRow } from "./provider";
 import { getEvolutionRow } from "./evolution";
 import type { BookingRow } from "./types";
@@ -65,7 +65,10 @@ export async function getConnection(db: D1Database, companyId: number): Promise<
     last_error: evolution.last_error, last_check_at: evolution.updated_at,
     connected_at: evolution.connected_at, demo: 0,
   };
-  return db.prepare(`SELECT * FROM whatsapp_connections WHERE company_id = ?1`).bind(companyId).first<ProviderConnectionRow>();
+  // Compatibilidade EXCLUSIVAMENTE com testes/demos locais que usam mock.
+  // Registros Meta Cloud antigos ficam intocados no D1, mas não são conexões utilizáveis.
+  return db.prepare(`SELECT * FROM whatsapp_connections WHERE company_id=?1 AND provider='mock'`)
+    .bind(companyId).first<ProviderConnectionRow>();
 }
 
 export interface ScheduleOutcome {
@@ -373,6 +376,15 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
       return;
     }
   }
+  // Jobs antigos com snapshot Meta NUNCA podem migrar para Evolution.
+  // Evita cobranças antigas, duplicidade de mensagens e retenção de reservas.
+  if (job.provider !== "evolution" && job.provider !== "mock") {
+    const changed=await db.prepare("UPDATE message_jobs SET status='skipped',last_error='Integração antiga descontinuada; envio bloqueado',updated_at=?1 WHERE id=?2 AND status IN('scheduled','blocked_funds')")
+      .bind(nowIso(),job.id).run();
+    if(changed.meta.changes) await releaseJobReservation(db,job.company_id,job.id,job.reserved_cents);
+    out.skipped++;
+    return;
+  }
   const conn = await getConnection(db, job.company_id);
   if (!conn || conn.status !== "connected") {
     await db
@@ -529,109 +541,10 @@ async function maybeLowBalanceAlert(db: D1Database, companyId: number): Promise<
     .prepare(
       `INSERT INTO notifications (company_id, audience, title, body, kind)
        SELECT ?1,'admin','Saldo baixo de créditos','Restam R$ ' || printf('%.2f', MAX(0,?2)/100.0) || ' livres para envio de WhatsApp. Faça uma recarga para não perder lembretes.','billing'
-       WHERE NOT EXISTS (SELECT 1 FROM notifications WHERE company_id=?1 AND kind='billing' AND created_at > strftime('%Y-%m-%dT%H:%M:%SZ','now','-12 hours'))`
-    )
-    .bind(companyId, w.balance_cents - w.reserved_cents)
-    .run();
-}
+       WHERE NOT EXISTS (SELECT 1 FROM notificati// A recepção externa é exclusivamente /api/webhooks/evolution/.
+// Histórico antigo de entrega permanece no D1, sem ingestão da Meta.
 
-// ── WEBHOOK (status de entrega + recebidos) ─────────────────────────────────
-export interface IngestResult {
-  events: number;
-  updated: number;
-}
-
-/**
- * Processa o payload do Meta. Idempotente por event_uid (UNIQUE): reentregas
- * do webhook não duplicam cobrança/estado. Retorno 200 rápido fica com a rota.
- */
-export async function ingestWhatsappWebhook(env: Env, body: unknown): Promise<IngestResult> {
-  const db = env.DB;
-  let events = 0;
-  let updated = 0;
-  interface WValue { metadata?: { phone_number_id?: string }; contacts?: { profile?: { name?: string } }[]; messages?: { from?: string; id?: string; type?: string; text?: { body?: string } }[]; statuses?: { id?: string; status?: string; timestamp?: string; errors?: { code?: number; title?: string }[] }[] }
-  const payload = body as { entry?: { changes?: { value?: WValue }[] }[] };
-  const now = nowIso();
-
-  for (const entry of payload.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      const v = change.value;
-      if (!v) continue;
-      const pnId = v.metadata?.phone_number_id ?? "";
-      const comp = pnId ? await db.prepare(`SELECT company_id FROM whatsapp_connections WHERE phone_number_id = ?1`).bind(pnId).first<{ company_id: number }>() : null;
-
-      for (const st of v.statuses ?? []) {
-        if (!st.id) continue;
-        events++;
-        const uid = `wa:status:${st.id}:${st.status}:${st.timestamp ?? ""}`;
-        // A metadata.phone_number_id é o número receptor do webhook da Meta.
-        // Nunca processe um status de outra barbearia, mesmo que seu message id exista.
-        if (!comp) continue;
-        const job = await db.prepare(
-          `SELECT id, company_id, status, price_cents, capture_on, captured_at FROM message_jobs
-           WHERE provider_msg_id = ?1 AND company_id = ?2`
-        ).bind(st.id, comp.company_id).first<{ id: number; company_id: number; status: string; price_cents: number; capture_on: string; captured_at: string | null }>();
-        if (!job) continue;
-        const ins = await db
-          .prepare(`INSERT OR IGNORE INTO message_webhook_events (company_id, job_id, event_uid, status, raw_json, processed, created_at) VALUES (?1,?2,?3,?4,?5,1,?6)`)
-          .bind(comp.company_id, job.id, uid, st.status ?? "unknown", JSON.stringify(st), now)
-          .run();
-        if (!ins.meta?.changes) continue; // reentrega do webhook (idempotência)
-        updated++;
-        const status = st.status ?? "";
-        if (status === "failed") {
-          // Uma entrega já confirmada não pode regredir por webhook fora de ordem.
-          if (job.status !== "sent") continue;
-          const transition = await db.prepare(
-            `UPDATE message_jobs SET status='failed', last_error=?1, updated_at=?2
-             WHERE id=?3 AND company_id=?4 AND status='sent'`
-          ).bind(st.errors?.[0]?.title || "falha reportada pelo WhatsApp", now, job.id, comp.company_id).run();
-          if (!transition.meta?.changes) continue;
-          if (job.captured_at) {
-            await refundJobCharge(db, job.company_id, job.id, job.price_cents, "Falha de entrega pós-cobrança reportada pelo WhatsApp (estorno automático)");
-          } else if (job.capture_on === "delivered") {
-            await releaseJobReservation(db, job.company_id, job.id, job.price_cents);
-          }
-        } else if (status === "delivered") {
-          const transition = await db.prepare(
-            `UPDATE message_jobs SET status='delivered', delivered_at=?1, updated_at=?1
-             WHERE id=?2 AND company_id=?3 AND status='sent'`
-          ).bind(now, job.id, comp.company_id).run();
-          if (transition.meta?.changes && job.capture_on === "delivered" && !job.captured_at) {
-            await captureJobCharge(db, job.company_id, job.id, job.price_cents);
-            await maybeLowBalanceAlert(db, job.company_id);
-          }
-        } else if (status === "read") {
-          const transition = await db.prepare(
-            `UPDATE message_jobs SET status='read', read_at=?1, updated_at=?1
-             WHERE id=?2 AND company_id=?3 AND status IN ('sent','delivered')`
-          ).bind(now, job.id, comp.company_id).run();
-          if (transition.meta?.changes && job.capture_on === "delivered") {
-            const j2 = await db.prepare(`SELECT captured_at, price_cents FROM message_jobs WHERE id=?1`).bind(job.id).first<{ captured_at: string | null; price_cents: number }>();
-            if (!j2?.captured_at) await captureJobCharge(db, job.company_id, job.id, j2?.price_cents ?? job.price_cents);
-          }
-        } else if (status === "sent") {
-          await db.prepare(`UPDATE message_jobs SET status='sent', sent_at=COALESCE(sent_at,?1), updated_at=?1 WHERE id=?2 AND status='sending'`).bind(now, job.id).run();
-        }
-      }
-
-      // recebidas do cliente → notifica o painel (trilha crua p/ auditoria)
-      for (const m of v.messages ?? []) {
-        if (!m.id || !comp) continue;
-        events++;
-        const uid = `wa:in:${m.id}`;
-        const ins = await db
-          .prepare(`INSERT OR IGNORE INTO message_webhook_events (company_id, event_uid, status, raw_json, processed, created_at) VALUES (?1,?2,'received',?3,1,?4)`)
-          .bind(comp.company_id, uid, JSON.stringify({ from: m.from, body: m.text?.body ?? `[${m.type}]`, at: now }), now)
-          .run();
-        if (ins.meta?.changes) {
-          updated++;
-          const fromDigits = (m.from || "").replace(/\D/g, "");
-          const name = v.contacts?.[0]?.profile?.name ?? "Cliente";
-          await db.batch([
-            // Mensagem recebida NÃO equivale a consentimento para lembretes futuros.
-            db.prepare(`INSERT INTO customers (company_id, name, phone, whatsapp_optin) VALUES (?1,?2,?3,0) ON CONFLICT(company_id, phone) DO UPDATE SET name = COALESCE(NULLIF(customers.name,''), excluded.name)`).bind(comp.company_id, name, fromDigits),
-            notifyIfNoRecent(db, comp.company_id, "message", "Nova mensagem recebida no WhatsApp da barbearia", `${name}: ${String(m.text?.body ?? "").slice(0, 140)}`),
+age", "Nova mensagem recebida no WhatsApp da barbearia", `${name}: ${String(m.text?.body ?? "").slice(0, 140)}`),
           ]);
         }
       }
@@ -653,7 +566,7 @@ function isoZ(d: Date): string {
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-/** Envio imediato de teste/manual — cobra a mesma tarifa vigente (idempotente). */
+/** Envio imediato de teste/manual: Evolution gratuita; simulação só no ambiente de testes. */
 export async function sendImmediate(
   env: Env,
   companyId: number,
@@ -664,6 +577,8 @@ export async function sendImmediate(
   const now = new Date();
   const idem = `send-${opts.kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const connection = await getConnection(db, companyId);
+  if (!connection || connection.status !== "connected")
+    return {ok:false,error:"Evolution API não conectada a esta barbearia."};
   const price = connection?.provider === "evolution" ? { price_cents: 0, cost_cents: 0 } : await resolvePricing(db, companyId, "utility");
   const company = await db.prepare(`SELECT demo FROM companies WHERE id = ?1`).bind(companyId).first<{ demo: number }>();
   const ins = await db
@@ -685,7 +600,7 @@ export async function sendImmediate(
       price.cost_cents,
       idem,
       company?.demo ?? 0,
-      nowIso(),connection?.provider ?? "meta_cloud"
+      nowIso(),connection?.provider ?? "evolution"
     )
     .run();
   const jobId = ins.meta.last_row_id as number;
