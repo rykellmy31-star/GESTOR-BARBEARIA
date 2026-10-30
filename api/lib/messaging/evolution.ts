@@ -19,6 +19,7 @@ export interface EvolutionEnv {
   EVOLUTION_WEBHOOK_SECRET?: string;
   PUBLIC_URL?: string;
   TIGU_STAGING?: string;
+  TIGU_EVOLUTION_LIVE?: string;
 }
 
 export function evolutionReady(env: EvolutionEnv): boolean {
@@ -34,6 +35,10 @@ export function evolutionReady(env: EvolutionEnv): boolean {
   } catch { return false; }
 }
 
+export function evolutionLiveAllowed(env: EvolutionEnv): boolean {
+  return evolutionReady(env) && (env.TIGU_STAGING !== "1" || env.TIGU_EVOLUTION_LIVE === "1");
+}
+
 export function evolutionInstanceName(companyId: number): string {
   if (!Number.isSafeInteger(companyId) || companyId < 1) throw new Error("Empresa inválida");
   return `tigu-company-${companyId}`;
@@ -45,7 +50,7 @@ export async function evolutionRequest(
   route: string,
   body?: unknown
 ): Promise<{ ok: boolean; status: number; data: any }> {
-  if (!evolutionReady(env) || env.TIGU_STAGING === "1") return { ok: false, status: 503, data: { error: "Evolution API não configurada ou indisponível neste ambiente." } };
+  if (!evolutionLiveAllowed(env)) return { ok: false, status: 503, data: { error: "Evolution API não configurada ou indisponível neste ambiente." } };
   if (!/^\/(?:instance|message|webhook)\/[a-zA-Z0-9/_-]+$/.test(route)) throw new Error("Rota Evolution inválida");
   const api = new URL(env.EVOLUTION_API_URL!);
   if (api.pathname !== "/" && api.pathname !== "") throw new Error("EVOLUTION_API_URL deve ser a origem HTTPS, sem caminho");
@@ -55,6 +60,7 @@ export async function evolutionRequest(
       headers: { apikey: env.EVOLUTION_API_KEY!, "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(12000),
+      redirect: "manual", // Nunca encaminhar a chave global em redirecionamentos.
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, status: response.status, data };
