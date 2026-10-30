@@ -1871,7 +1871,7 @@ describe("confirmação WhatsApp após reservar — autorização separada do LG
     const day = nextWorkday(12);
     const slots = (await api(`/api/c/alfa/availability?barberId=1&serviceId=1&day=${day}`))
       .body.slots.filter((s:any)=>s.available);
-    expect(slots.length).toBeGreaterThan(3);
+    expect(slots.length).toBeGreaterThan(7);
     const create = async (offset:number, optedIn:boolean, fromAdmin:boolean) => {
       const payload = {
         barberId:1, serviceId:1, startsAt:slots[offset].t,
@@ -1895,7 +1895,7 @@ describe("confirmação WhatsApp após reservar — autorização separada do LG
       .bind(noId).first<{n:number}>();
     expect(noJob?.n).toBe(0);
 
-    const publicYes=await create(1,true,false);
+    const publicYes=await create(3,true,false);
     expect(publicYes.status).toBe(201);
     expect(publicYes.body.booking.whatsapp_optin).toBe(1);
     expect(["scheduled","blocked_funds"]).toContain(publicYes.body.messaging.confirmation.status);
@@ -1903,7 +1903,7 @@ describe("confirmação WhatsApp após reservar — autorização separada do LG
       .bind(publicYes.body.booking.id).first<{n:number}>();
     expect(job?.n).toBe(1);
 
-    const ownerYes=await create(2,true,true);
+    const ownerYes=await create(6,true,true);
     expect(ownerYes.status).toBe(201);
     expect(ownerYes.body.messaging.confirmation).toBeDefined();
     expect(["scheduled","blocked_funds"]).toContain(ownerYes.body.messaging.confirmation.status);
