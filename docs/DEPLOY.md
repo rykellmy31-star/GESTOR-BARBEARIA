@@ -19,8 +19,8 @@ Tempo estimado: ~15 min. Custo inicial: plano **Workers Free** dá conta de uma 
   # TIGU_SUPER_PASSWORD=… node scripts/setup-demo.mjs  (aponta API_URL p/ produção se quiser)
   ```
 - `cron` (`*/1 * * * *`) roda a fila de mensagens de todas as empresas — sem ele, nada é enviado no horário.
-- Webhooks externos (obrigatórios p/ envio real e Pix): `/api/webhooks/whatsapp` e `/api/webhooks/mercadopago`.
-- Secrets: `wrangler secret put SESSION_SECRET|MSG_ENC_KEY|MERCADOPAGO_ACCESS_TOKEN|MERCADOPAGO_WEBHOOK_SECRET|WHATSAPP_WEBHOOK_VERIFY_TOKEN` (docs/WHATSAPP.md, docs/PAGAMENTOS.md).
+- Webhooks externos (obrigatórios p/ envio real e Pix): `/api/webhooks/evolution/` e `/api/webhooks/mercadopago`.
+- Secrets: `wrangler secret put SESSION_SECRET|MSG_ENC_KEY|MERCADOPAGO_ACCESS_TOKEN|MERCADOPAGO_WEBHOOK_SECRET|EVOLUTION_WEBHOOK_SECRET` (docs/WHATSAPP.md, docs/PAGAMENTOS.md).
 
 ## 1. Autenticação e criação dos recursos
 
@@ -50,8 +50,8 @@ Se não usar bucket com esse nome, ajuste o binding `MEDIA` no `wrangler.jsonc`.
 ```bash
 npx wrangler secret put SESSION_SECRET      # openssl rand -hex 32
 # Opcionais (links de WhatsApp já funcionam sem eles — servem para o envio ativo futuro):
-# npx wrangler secret put WHATSAPP_PHONE_NUMBER_ID
-# npx wrangler secret put WHATSAPP_TOKEN
+# npx wrangler secret put EVOLUTION_API_KEY
+# npx wrangler secret put EVOLUTION_WEBHOOK_SECRET
 ```
 
 Em dev local, use um arquivo **`.dev.vars`** no diretório raiz (já no `.gitignore`):
