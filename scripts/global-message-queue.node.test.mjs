@@ -91,6 +91,6 @@ test('API and Super Admin interface expose paginated filtered query',()=>{
   assert.match(route,/ORDER BY j\.id DESC LIMIT 101/);
   assert.match(route,/next_before_id:/);
   assert.match(panel,/useInfiniteQuery/);
-  assert.match(panel,/<option value="conflict">conflitos Meta<\/option>/);
+  assert.match(panel,/<option value="conflict">conflitos de envio<\/option>/);
   assert.match(panel,/Carregar mensagens anteriores/);
 });
