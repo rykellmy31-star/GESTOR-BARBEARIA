@@ -5,7 +5,7 @@ import type { Env } from "../types";
 import { cid } from "../lib/tenant";
 import { err, json, nowIso } from "../lib/utils";
 import { audit } from "../lib/audit";
-import { evolutionInstanceName, evolutionLiveAllowed, evolutionRequest, evolutionQR, evolutionState, getEvolutionRow } from "../lib/messaging/evolution";
+import { evolutionConfigurationProblem, evolutionInstanceName, evolutionLiveAllowed, evolutionRequest, evolutionQR, evolutionState, getEvolutionRow } from "../lib/messaging/evolution";
 
 export const evolutionRouter = new Hono<{ Bindings: Env }>();
 
@@ -13,10 +13,12 @@ evolutionRouter.get("/status", async (c) => {
   const db = c.env.DB;
   const companyId = cid(c);
   const row = await getEvolutionRow(db, companyId);
-  const configured = evolutionLiveAllowed(c.env);
+  const problem = evolutionConfigurationProblem(c.env);
+  const configured = problem === null;
   if (!row || row.enabled !== 1 || !configured) return json(c, {
     configured, active: row?.enabled === 1, status: row?.status ?? "disconnected",
-    instance: row?.enabled ? row.instance_name : null, reason: configured ? null : "Servidor da Evolution API ainda não configurado.",
+    instance: row?.enabled ? row.instance_name : null,
+    reason: problem ? "Integração Evolution indisponível: " + problem + " Configure no Worker oficial e implante a alteração." : null,
   });
   // Consulta real: QR lido em outro dispositivo só é confirmado pela API, não pela interface.
   const remote = await evolutionRequest(c.env, "GET", `/instance/connectionState/${row.instance_name}`);
