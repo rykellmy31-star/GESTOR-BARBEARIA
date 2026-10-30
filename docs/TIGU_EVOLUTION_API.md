@@ -50,3 +50,13 @@ O Worker **existente** `tigu-staging` responde pelo domínio oficial `https://ag
 O script de deploy mantém os segredos existentes e adiciona `EVOLUTION_API_URL=https://evolution.crjornada.com`, `PUBLIC_URL=https://agendamentos.crjornada.com`, `TIGU_EVOLUTION_LIVE=1`, além de um cron `* * * * *`. Não registra chaves no GitHub. Para ativar realmente o QR, o operador da plataforma precisa cadastrar **somente no Worker** dois segredos: `EVOLUTION_API_KEY` (chave global da instalação Evolution; nunca chave por instância) e `EVOLUTION_WEBHOOK_SECRET` (segredo aleatório exclusivo de ao menos 32 caracteres). Após salvar esses segredos, o painel de cada barbearia gera automaticamente sua instância e QR; o proprietário não precisa inserir URLs ou chaves.
 
 A ativação não é comprovada apenas pelo deploy: conferir `/api/health` (WhatsApp configured=true), realizar login do proprietário, criar instância e escanear QR com número controlado e enviar mensagem de teste antes do primeiro agendamento com cliente. Não reenvia automaticamente mensagens antigas.
+
+## Diagnóstico de QR bloqueado com segredos já cadastrados — 30/10/2026
+
+A indicação "servidor Evolution API ainda será configurado" é controlada por `evolutionLiveAllowed` no Worker. A presença do **nome** de um segredo no painel Cloudflare não confirma que ele está ativo no deploy ou que atende aos requisitos. `EVOLUTION_WEBHOOK_SECRET` precisa ter **pelo menos 32 caracteres**, não pode ser vazio, e `EVOLUTION_API_KEY` precisa ter valor não vazio. O Worker oficial deve conter `EVOLUTION_API_URL`, `PUBLIC_URL` (HTTPS, sem caminhos) e `TIGU_EVOLUTION_LIVE=1`.
+
+O painel autenticado **WhatsApp → Evolution API** agora recebe em `/admin/whatsapp/evolution/status` somente o **motivo seguro** do bloqueio: nome da variável faltante, webhook curto, URL inválida ou modo Evolution desabilitado. Nunca exibe valor de chave, token, URL ou senha. Os administradores das barbearias não podem editar os bindings da plataforma.
+
+Se os segredos estiverem listados, verificar se foram salvos e **implantados no Worker `tigu-staging` que responde por `agendamentos.crjornada.com`**; não recriar Worker nem banco. Se houver mudança de segredo, usar **Deploy** na Cloudflare e depois atualizar a página do proprietário. O TIGU nunca substitui a chave por texto enviado do frontend.
+
+Após `configured=true`, cada barbearia administra apenas a sua instância `tigu-company-<id>`. Quando desconectada, pode usar **Gerar / atualizar QR** para escanear novamente no WhatsApp, sem retornar à Cloudflare. O recurso não interfere nos pagamentos dos profissionais, bancos, reservas ou histórico de mensagens.
