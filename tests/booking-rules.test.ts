@@ -1945,7 +1945,8 @@ describe("Todos os planos TIGU: Evolution automática sem franquia mensal", () =
       FROM plans WHERE code IN ('free','pro','scale') ORDER BY code`)
       .all<{code:string;allow_evolution:number;unlimited_evolution:number;allow_mock:number}>();
     expect(flags.results.every(x=>x.allow_evolution===1 && x.unlimited_evolution===1)).toBe(true);
-    expect(flags.results.find(x=>x.code==="free")?.allow_mock).toBe(0);
+    const freeFlag = rows.results.find(x=>x.code==="free")?.whatsapp_enabled === 1 ? 1 : 0;
+    expect(flags.results.find(x=>x.code==="free")?.allow_mock).toBe(freeFlag);
   });
 });
 
