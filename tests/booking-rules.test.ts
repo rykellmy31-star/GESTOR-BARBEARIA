@@ -25,11 +25,10 @@ import schema0103 from "../migrations/0103_manual_platform_subscriptions.sql";
 import { hashPassword } from "../api/lib/crypto";
 import { localToUtc, utcToLocal, tzOffsetMinutes } from "../api/lib/time";
 import { slotKeysFor } from "../api/lib/availability";
-import { ingestWhatsappWebhook, scheduleBookingMessage, cancelPendingJobs, processDueJobs } from "../api/lib/messaging/jobs";
-import { metaProvider, resolveProvider } from "../api/lib/messaging/provider";
+import { planAllowsAutomaticWhatsapp, scheduleBookingMessage, cancelPendingJobs, processDueJobs } from "../api/lib/messaging/jobs";
+import { resolveProvider } from "../api/lib/messaging/provider";
 import { mpProvider, pickPaymentProvider } from "../api/lib/payments";
 import { app } from "../api/index";
-import { encryptSecret } from "../api/lib/crypto";
 import { loadCompanySettings } from "../api/lib/settings";
 import { resolveApiUrl } from "../api/lib/url";
 import { purgeExpiredSalesLeads, purgeOldSalesRateLimits, getSalesRetentionDays } from "../api/lib/sales-leads";
@@ -107,6 +106,11 @@ beforeAll(async () => {
   ]);
   const { results: links } = await db.prepare(`SELECT s.id sid, br.id bid, s.company_id cid FROM services s JOIN barbers br ON br.company_id=s.company_id ORDER BY s.id, br.id`).all<{ sid: number; bid: number; cid: number }>();
   for (const l of links) await db.prepare(`INSERT OR IGNORE INTO service_barbers (service_id,barber_id) VALUES (?1,?2)`).bind(l.sid, l.bid).run();
+  // Simulador exclusivamente nos testes. Conexão Meta antiga nunca é usada.
+  await db.batch([
+    db.prepare("INSERT OR IGNORE INTO whatsapp_connections (company_id,provider,status,phone_number_id) VALUES (?1,'mock','connected','mock-Alfa')").bind(a),
+    db.prepare("INSERT OR IGNORE INTO whatsapp_connections (company_id,provider,status,phone_number_id) VALUES (?1,'mock','connected','mock-Bravo')").bind(b),
+  ]);
   const la = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email: "dono@a.test", password: PW }) });
   const lb = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email: "dono@b.test", password: PW }) });
   cookieA = la.cookie ?? ""; cookieB = lb.cookie ?? "";
@@ -278,81 +282,7 @@ describe("carteira do Tigu: operações e cobrança sem duplicidade", () => {
   });
 });
 
-describe("webhooks Meta isolados por barbearia e opt-in explícito", () => {
-  it("não altera jobs de outro número; aceita entrega válida uma só vez e ignora evento atrasado", async () => {
-    const companyA = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{ id: number }>())!.id;
-    const companyB = (await db.prepare("SELECT id FROM companies WHERE slug='bravo'").first<{ id: number }>())!.id;
-    await db.batch([
-      db.prepare("INSERT OR REPLACE INTO whatsapp_connections (company_id,status,phone_number_id,display_phone) VALUES (?1,'connected','META-A-TESTE','5573999990010')").bind(companyA),
-      db.prepare("INSERT OR REPLACE INTO whatsapp_connections (company_id,status,phone_number_id,display_phone) VALUES (?1,'connected','META-B-TESTE','5573999990020')").bind(companyB),
-    ]);
-    const now = new Date().toISOString();
-    const msgId = "wamid.tigu-cross-tenant-01";
-    const ins = await db.prepare(
-      `INSERT INTO message_jobs (company_id,kind,to_phone,template_code,status,scheduled_at,
-        fire_deadline,price_cents,capture_on,idempotency_key,provider_msg_id)
-        VALUES (?1,'reminder','5573999990030','test_reminder','sent',?2,?2,0,'sent',?3,?4)`
-    ).bind(companyA, now, "job-tenant-webhook-01", msgId).run();
-    const jobId = ins.meta.last_row_id;
-
-    const event = (phone: string, status: string, timestamp: string) => ({
-      entry: [{ changes: [{ value: {
-        metadata: { phone_number_id: phone },
-        statuses: [{ id: msgId, status, timestamp }]
-      } }] }]
-    });
-
-    const foreign = await ingestWhatsappWebhook(env as Env, event("META-B-TESTE", "delivered", "100"));
-    expect(foreign.updated).toBe(0);
-    expect((await db.prepare("SELECT status FROM message_jobs WHERE id=?1").bind(jobId).first<{ status: string }>())!.status).toBe("sent");
-    expect((await db.prepare("SELECT COUNT(*) n FROM message_webhook_events WHERE event_uid='wa:status:wamid.tigu-cross-tenant-01:delivered:100'").first<{ n: number }>())!.n).toBe(0);
-
-    const valid = await ingestWhatsappWebhook(env as Env, event("META-A-TESTE", "delivered", "100"));
-    expect(valid.updated).toBe(1);
-    expect((await db.prepare("SELECT status FROM message_jobs WHERE id=?1").bind(jobId).first<{ status: string }>())!.status).toBe("delivered");
-
-    const duplicate = await ingestWhatsappWebhook(env as Env, event("META-A-TESTE", "delivered", "100"));
-    expect(duplicate.updated).toBe(0);
-    await ingestWhatsappWebhook(env as Env, event("META-A-TESTE", "read", "101"));
-    const late = await ingestWhatsappWebhook(env as Env, event("META-A-TESTE", "failed", "99"));
-    expect(late.updated).toBe(1); // evento auditado, porém sem regressão de estado
-    expect((await db.prepare("SELECT status FROM message_jobs WHERE id=?1").bind(jobId).first<{ status: string }>())!.status).toBe("read");
-  });
-
-  it("receber uma mensagem não cria autorização automática para notificações", async () => {
-    const companyA = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{ id: number }>())!.id;
-    const companyB = (await db.prepare("SELECT id FROM companies WHERE slug='bravo'").first<{ id: number }>())!.id;
-    const phone = "5573999997788";
-    const incoming = {
-      entry: [{ changes: [{ value: {
-        metadata: { phone_number_id: "META-B-TESTE" },
-        contacts: [{ profile: { name: "Cliente de teste" } }],
-        messages: [{ id: "wamid.tigu-incoming-optin-01", from: phone, type: "text", text: { body: "Olá" } }]
-      } }] }]
-    };
-    expect((await ingestWhatsappWebhook(env as Env, incoming)).updated).toBe(1);
-    const b = await db.prepare(
-      "SELECT whatsapp_optin,lgpd_consent_at FROM customers WHERE company_id=?1 AND phone=?2"
-    ).bind(companyB, phone).first<{ whatsapp_optin: number; lgpd_consent_at: string | null }>();
-    expect(b?.whatsapp_optin).toBe(0);
-    expect(b?.lgpd_consent_at).toBeNull();
-    const a = await db.prepare("SELECT id FROM customers WHERE company_id=?1 AND phone=?2").bind(companyA, phone).first();
-    expect(a).toBeNull();
-    expect((await ingestWhatsappWebhook(env as Env, incoming)).updated).toBe(0);
-  });
-});
-
-describe("lembrete de 1 hora, remarcação e proteção da identidade Meta", () => {
-  it("rejeita o mesmo phone_number_id em duas barbearias", async () => {
-    const companyB = (await db.prepare("SELECT id FROM companies WHERE slug='bravo'").first<{ id: number }>())!.id;
-    await expect(
-      db.prepare("UPDATE whatsapp_connections SET phone_number_id='META-A-TESTE' WHERE company_id=?1")
-        .bind(companyB).run()
-    ).rejects.toThrow();
-    expect((await db.prepare("SELECT phone_number_id FROM whatsapp_connections WHERE company_id=?1")
-      .bind(companyB).first<{ phone_number_id: string }>())!.phone_number_id).toBe("META-B-TESTE");
-  });
-
+describe("lembrete de 1 hora e remarcação com isolamento da barbearia", () => {
   it("agenda exatamente 60 minutos antes, não duplica, e remarca liberando créditos", async () => {
     const companyId = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{ id: number }>())!.id;
     const barberId = (await db.prepare("SELECT id FROM barbers WHERE company_id=?1 LIMIT 1")
@@ -535,46 +465,7 @@ describe("Pix de recarga: cancelamento seguro e conciliação legada",()=>{
   });
 });
 
-describe("Webhook Meta: falha de processamento sem perda silenciosa", () => {
-  it("responde erro temporário quando não consegue processar o evento recebido", async () => {
-    const res = await api("/api/webhooks/whatsapp", {
-      method: "POST",
-      body: JSON.stringify({ entry: {} })
-    });
-    expect(res.status).toBe(503);
-  });
-});
-
 describe("WhatsApp: incerteza de envio nunca autoriza duplicidade", () => {
-  it("classifica timeout, resposta 5xx e HTTP 2xx sem ID como resultados incertos", async () => {
-    const credentials = { APP_ENV: "development" };
-    const token = await encryptSecret(credentials, "token-para-teste");
-    const context = {
-      env: credentials,
-      db,
-      demo: false,
-      conn: { access_token_enc: token, phone_number_id: "META-A-TESTE" }
-    } as Parameters<typeof metaProvider.sendTemplate>[0];
-    const input = { to: "5573999990030", templateCode: "tigu_lembrete", language: "pt_BR", variables: [] };
-    const network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network timeout"));
-    try {
-      const timeout = await metaProvider.sendTemplate(context, input);
-      expect(timeout).toMatchObject({ accepted: false, uncertain: true, permanent: false });
-      network.mockResolvedValue(new Response(JSON.stringify({ error: { code: 131056, message: "server unavailable" } }), { status: 503 }));
-      const serverError = await metaProvider.sendTemplate(context, input);
-      expect(serverError).toMatchObject({ accepted: false, uncertain: true, permanent: false });
-      network.mockResolvedValue(new Response(JSON.stringify({ messages: [] }), { status: 200 }));
-      const missingId = await metaProvider.sendTemplate(context, input);
-      expect(missingId).toMatchObject({ accepted: false, uncertain: true, permanent: false });
-      network.mockResolvedValue(new Response(JSON.stringify({ error: { message: "too many requests" } }), { status: 429 }));
-      const rateLimited = await metaProvider.sendTemplate(context, input);
-      expect(rateLimited).toMatchObject({ accepted: false, permanent: false });
-      expect(rateLimited.uncertain).toBeFalsy();
-    } finally {
-      network.mockRestore();
-    }
-  });
-
   it("não volta à fila depois que um Worker expirou em estado de envio indeterminado", async () => {
     const companyId = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
       .first<{ id: number }>())!.id;
@@ -798,40 +689,25 @@ describe("Tigu homologação: isolamento contra integrações reais", () => {
     }
   });
 
-  it("bloqueia Meta real e aceita apenas provedor mock", async () => {
-    const st = stagingEnv();
-    const metaConn = {
-      id: 2, company_id: 1, provider: "meta_cloud" as const, status: "connected" as const,
-      phone_number_id: "123456", access_token_enc: "token-invalido"
-    };
-    const calls = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Meta não deve ser chamada"));
+  it("recusa qualquer conexão Meta legada sem chamar a rede", async () => {
+    const st=stagingEnv();
+    const legacy={id:2,company_id:1,provider:"meta_cloud",status:"connected",phone_number_id:"123456"};
+    const calls=vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("Não usar Graph API"));
     try {
-      const provider = await resolveProvider({ env: st, db, conn: metaConn as any, demo: false });
-      expect(provider.provider).toBeNull();
-      const result = await metaProvider.sendTemplate(
-        { env: st, db, conn: metaConn as any, demo: false },
-        { to: "5573999990030", templateCode: "tigu_lembrete", language: "pt_BR", variables: [] }
-      );
-      expect(result).toMatchObject({ accepted: false, permanent: true });
-      const mock = await resolveProvider({
-        env: st, db, demo: false,
-        conn: { ...metaConn, provider: "mock" } as any
-      });
-      expect(mock.provider?.kind).toBe("mock");
+      const res=await resolveProvider({env:st,db,conn:legacy as any,demo:false});
+      expect(res.provider).toBeNull();
       expect(calls).not.toHaveBeenCalled();
-    } finally {
-      calls.mockRestore();
-    }
+    } finally {calls.mockRestore();}
   });
 
   it("rejeita webhooks públicos de terceiros sem afetar D1", async () => {
     const st = stagingEnv();
-    for (const path of ["/api/webhooks/whatsapp", "/api/webhooks/mercadopago"]) {
+    for (const [path,expected] of [["/api/webhooks/whatsapp",404],["/api/webhooks/mercadopago",403]] as const) {
       const res = await app.request(path,
         { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: { id: "123" } }) },
         st
       );
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(expected);
     }
   });
 });
@@ -1031,6 +907,8 @@ describe("Planos comerciais com preço dinâmico e permissão de Superadmin", ()
     expect(publicResult.status).toBe(200);
     expect(publicResult.body.automatic_billing).toBe(false);
     expect(publicResult.body.plans.map((p: any) => p.code)).toEqual(["free","pro","scale"]);
+    expect(publicResult.body.plans.every((p:any)=>
+      p.max_messages_month === -1 && p.whatsapp_enabled === 1)).toBe(true);
     const pro = publicResult.body.plans.find((p: any) => p.code === "pro");
     expect(pro.price_cents_month).toBeGreaterThan(0);
     const changed = {
@@ -1063,6 +941,12 @@ describe("Planos comerciais com preço dinâmico e permissão de Superadmin", ()
       name:free.name,price_cents_month:1999,max_barbers:free.max_barbers,
       max_messages_month:free.max_messages_month,whatsapp_enabled:false,store_enabled:true
     })},cookie)).status).toBe(200);
+    // Mesmo que uma tela antiga envie valores de cota ou desative o WhatsApp,
+    // o cadastro do plano e o contrato efetivo permanecem ilimitados.
+    const freeAfter = (await api("/api/super/plans",{},cookie)).body.plans
+      .find((p:any)=>p.code==="free");
+    expect(freeAfter.max_messages_month).toBe(-1);
+    expect(freeAfter.whatsapp_enabled).toBe(1);
     expect((await api("/api/super/plans/pro",{method:"PUT",body:JSON.stringify({...changed,max_barbers:0})},cookie)).status).toBe(422);
     try {
       const saved = await api("/api/super/plans/pro",{method:"PUT",body:JSON.stringify(changed)},cookie);
@@ -1898,3 +1782,171 @@ describe("Mensalidades Pix visíveis somente no Superadmin", () => {
     expect((await api("/api/super/subscription-invoices?status=forged",{},cookie)).status).toBe(422);
   });
 });
+
+describe("WhatsApp: cada barbearia configura seu próprio tempo de lembrete", () => {
+  it("altera o lembrete da Alfa, preserva a Bravo e não mexe nas confirmações", async () => {
+    const a = await db.prepare("SELECT id FROM companies WHERE slug='alfa'").first<{id:number}>();
+    const b = await db.prepare("SELECT id FROM companies WHERE slug='bravo'").first<{id:number}>();
+    expect(a?.id).toBeGreaterThan(0);
+    expect(b?.id).toBeGreaterThan(0);
+    const beforeA = await loadCompanySettings(db,a!.id);
+    const beforeB = await loadCompanySettings(db,b!.id);
+    const req = (lead:number,enabled=true)=>({
+      method:"PUT",
+      body: JSON.stringify({whatsapp_reminders_enabled:enabled,reminder_lead_min:lead})
+    });
+    try {
+      expect((await api("/api/c/alfa/admin/whatsapp/reminder-settings",req(0),cookieA)).status).toBe(422);
+      expect((await api("/api/c/alfa/admin/whatsapp/reminder-settings",req(1441),cookieA)).status).toBe(422);
+      const saved = await api("/api/c/alfa/admin/whatsapp/reminder-settings",req(300),cookieA);
+      expect(saved.status).toBe(200);
+      expect(saved.body.reminder_lead_min).toBe(300);
+      const afterA = await loadCompanySettings(db,a!.id);
+      const afterB = await loadCompanySettings(db,b!.id);
+      expect(afterA.reminder_lead_min).toBe(300);
+      expect(afterA.whatsapp_confirm_enabled).toBe(beforeA.whatsapp_confirm_enabled);
+      expect(afterB.reminder_lead_min).toBe(beforeB.reminder_lead_min);
+      expect(afterB.whatsapp_reminders_enabled).toBe(beforeB.whatsapp_reminders_enabled);
+    } finally {
+      await db.prepare("UPDATE company_settings SET data=?1 WHERE company_id=?2")
+        .bind(JSON.stringify(beforeA),a!.id).run();
+    }
+  });
+});
+
+describe("WhatsApp: confirmação presencial por link individual", () => {
+  it("exige token da reserva, confirma uma só vez e não cruza barbearias", async () => {
+    const company = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
+      .first<{id:number}>())!;
+    const barber = (await db.prepare("SELECT id FROM barbers WHERE company_id=?1 LIMIT 1")
+      .bind(company.id).first<{id:number}>())!;
+    const service = (await db.prepare("SELECT id FROM services WHERE company_id=?1 LIMIT 1")
+      .bind(company.id).first<{id:number}>())!;
+    const key = crypto.randomUUID();
+    const code = "WALI" + Date.now().toString(36).slice(-7).toUpperCase();
+    const start = new Date(Date.now() + 4*86400000).toISOString().replace(/\.\d{3}Z$/,"Z");
+    const booked = await db.prepare(`
+      INSERT INTO bookings
+      (company_id,code,barber_id,service_id,starts_at,ends_at,price_cents,
+       status,origin,customer_name,customer_phone,whatsapp_optin,cancel_token)
+      VALUES (?1,?2,?3,?4,?5,?6,4500,'confirmado','cliente','Cliente com QR',
+              '5573999991234',1,?7)
+    `).bind(company.id,code,barber.id,service.id,start,
+      new Date(Date.parse(start)+30*60000).toISOString().replace(/\.\d{3}Z$/,"Z"),key).run();
+    const bookingId = booked.meta.last_row_id;
+    const req = (url:string,token:string) => api("/api/c/alfa"+url,{
+      method:"POST",body:JSON.stringify({code,token})
+    });
+    expect((await req("/bookings/action/lookup",crypto.randomUUID())).status).toBe(404);
+    expect((await req("/bookings/action/confirm",crypto.randomUUID())).status).toBe(404);
+    expect((await api("/api/c/bravo/bookings/action/confirm",{
+      method:"POST",body:JSON.stringify({code,token:key})
+    })).status).toBe(404);
+    const before = await req("/bookings/action/lookup",key);
+    expect(before.status).toBe(200);
+    expect(before.body.confirmed_by_customer).toBe(false);
+    expect((await req("/bookings/action/confirm",key)).status).toBe(200);
+    const repeat = await req("/bookings/action/confirm",key);
+    expect(repeat.status).toBe(200);
+    expect(repeat.body.already_confirmed).toBe(true);
+    const confirmed = await req("/bookings/action/lookup",key);
+    expect(confirmed.body.confirmed_by_customer).toBe(true);
+    const row = await db.prepare(
+      "SELECT COUNT(*) AS n FROM message_webhook_events WHERE event_uid=?1"
+    ).bind("tigu:rsvp:"+bookingId+":v1").first<{n:number}>();
+    expect(row!.n).toBe(1);
+    // Testa a passagem do agendamento para outra versão após remarcar.
+    await db.prepare("UPDATE bookings SET schedule_version=schedule_version+1 WHERE id=?1")
+      .bind(bookingId).run();
+    const after = await req("/bookings/action/lookup",key);
+    expect(after.status).toBe(200);
+    expect(after.body.confirmed_by_customer).toBe(false);
+  });
+});
+
+// Regressão: a interface pública e a reserva manual devem repassar o opt-in.
+// Antes, ambas omitiam whatsappOptin, e nenhum job de confirmação era criado.
+describe("confirmação WhatsApp após reservar — autorização separada do LGPD", () => {
+  it("não cria mensagem sem aceite; com aceite cria job para site e painel", async () => {
+    const tenant = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
+      .first<{id:number}>())!;
+    await db.prepare("UPDATE whatsapp_connections SET status='connected' WHERE company_id=?1 AND provider='mock'")
+      .bind(tenant.id).run();
+    await db.prepare(`INSERT OR IGNORE INTO whatsapp_templates
+      (company_id,code,language,category,status,body_text,active)
+      VALUES (?1,'tigu_confirmacao','pt_BR','utility','approved','Olá {{1}}! Seu horário foi registrado.',1)`)
+      .bind(tenant.id).run();
+    const day = nextWorkday(12);
+    const slots = (await api(`/api/c/alfa/availability?barberId=1&serviceId=1&day=${day}`))
+      .body.slots.filter((s:any)=>s.available);
+    expect(slots.length).toBeGreaterThan(7);
+    const create = async (offset:number, optedIn:boolean, fromAdmin:boolean) => {
+      const payload = {
+        barberId:1, serviceId:1, startsAt:slots[offset].t,
+        name:"Teste Confirmação " + offset, phone:"557599999" + String(1200+offset),
+        whatsappOptin:optedIn, consent:true,
+        idempotencyKey:crypto.randomUUID()
+      };
+      const endpoint=fromAdmin ? "/api/c/alfa/admin/bookings" : "/api/c/alfa/bookings";
+      return api(endpoint,{method:"POST",body:JSON.stringify(payload)},fromAdmin?cookieA:undefined);
+    };
+
+    const without=await create(0,false,false);
+    expect(without.status).toBe(201);
+    expect(without.body.messaging.confirmation.status).toBe("skipped");
+    expect(without.body.messaging.confirmation.reason).toContain("opt-in");
+    const noId=without.body.booking.id;
+    const noRow=await db.prepare("SELECT whatsapp_optin FROM bookings WHERE id=?1")
+      .bind(noId).first<{whatsapp_optin:number}>();
+    expect(noRow?.whatsapp_optin).toBe(0);
+    const noJob=await db.prepare("SELECT COUNT(*) n FROM message_jobs WHERE booking_id=?1 AND kind='confirmation'")
+      .bind(noId).first<{n:number}>();
+    expect(noJob?.n).toBe(0);
+
+    const publicYes=await create(3,true,false);
+    expect(publicYes.status).toBe(201);
+    expect(publicYes.body.booking.whatsapp_optin).toBe(1);
+    expect(["scheduled","blocked_funds"]).toContain(publicYes.body.messaging.confirmation.status);
+    const job=await db.prepare("SELECT COUNT(*) n FROM message_jobs WHERE booking_id=?1 AND kind='confirmation'")
+      .bind(publicYes.body.booking.id).first<{n:number}>();
+    expect(job?.n).toBe(1);
+
+    const ownerYes=await create(6,true,true);
+    expect(ownerYes.status).toBe(201);
+    expect(ownerYes.body.messaging.confirmation).toBeDefined();
+    expect(["scheduled","blocked_funds"]).toContain(ownerYes.body.messaging.confirmation.status);
+    const ownerRow=await db.prepare("SELECT whatsapp_optin FROM bookings WHERE id=?1")
+      .bind(ownerYes.body.id).first<{whatsapp_optin:number}>();
+    expect(ownerRow?.whatsapp_optin).toBe(1);
+    const ownerJob=await db.prepare("SELECT COUNT(*) n FROM message_jobs WHERE booking_id=?1 AND kind='confirmation'")
+      .bind(ownerYes.body.id).first<{n:number}>();
+    expect(ownerJob?.n).toBe(1);
+  });
+});
+
+describe("Todos os planos TIGU: Evolution automática sem franquia mensal", () => {
+  it("ignora cotas históricas de Start, Pro e Scale sem liberar mock ou Meta", async () => {
+    const rows = await db.prepare(
+      "SELECT code,whatsapp_enabled,max_messages_month FROM plans WHERE code IN ('free','pro','scale') ORDER BY code"
+    ).all<{code:string;whatsapp_enabled:number;max_messages_month:number}>();
+    expect(rows.results.length).toBe(3);
+    for (const plan of rows.results) {
+      // O limite numérico legado do D1 não deve impedir o envio Evolution.
+      expect(planAllowsAutomaticWhatsapp(plan,"evolution")).toBe(true);
+      expect(planAllowsAutomaticWhatsapp({...plan,max_messages_month:0},"evolution")).toBe(true);
+      expect(planAllowsAutomaticWhatsapp({...plan,max_messages_month:1,whatsapp_enabled:0},"evolution")).toBe(true);
+      expect(planAllowsAutomaticWhatsapp({...plan,whatsapp_enabled:0},"mock")).toBe(false);
+      expect(planAllowsAutomaticWhatsapp({...plan,whatsapp_enabled:0},"meta_cloud")).toBe(false);
+    }
+    const flags=await db.prepare(`SELECT code,
+      ('evolution'='evolution' OR whatsapp_enabled=1) AS allow_evolution,
+      ('evolution'='evolution' OR max_messages_month<=0 OR 1000000<max_messages_month) AS unlimited_evolution,
+      ('mock'='evolution' OR whatsapp_enabled=1) AS allow_mock
+      FROM plans WHERE code IN ('free','pro','scale') ORDER BY code`)
+      .all<{code:string;allow_evolution:number;unlimited_evolution:number;allow_mock:number}>();
+    expect(flags.results.every(x=>x.allow_evolution===1 && x.unlimited_evolution===1)).toBe(true);
+    const freeFlag = rows.results.find(x=>x.code==="free")?.whatsapp_enabled === 1 ? 1 : 0;
+    expect(flags.results.find(x=>x.code==="free")?.allow_mock).toBe(freeFlag);
+  });
+});
+

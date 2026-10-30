@@ -276,25 +276,26 @@ test("Bloqueios e Superadmin são exercitados no Chromium com proteção de envi
 });
 
 
-test("Visão geral Superadmin usa texto monetário e evita [object Object]",()=>{
+test("Visão geral Superadmin não expõe carteira e mantém indicadores operacionais",()=>{
   const overview=readFileSync(new URL("../src/pages/super/OverviewPage.tsx",import.meta.url),"utf8");
   const smoke=readFileSync(new URL("../scripts/browser-smoke.mjs",import.meta.url),"utf8");
-  assert.match(overview,/money0\(d\.topups\.cents\)/);
-  assert.doesNotMatch(overview,/\$\{<Money cents=\{d\.topups\.cents\}/);
+  assert.match(overview,/Mensagens registradas/);
+  assert.doesNotMatch(overview,/(Saldo carteira|Receita de mensagens|Recargas pagas)/);
   assert.match(smoke,/BARBEARIAS ATIVAS/);
 });
 
 
-test("Superadmin abre detalhe correto, ajusta créditos no D1 e não exibe regras desativadas",()=>{
+test("Superadmin abre detalhe correto sem carteira de créditos e mantém auditoria histórica",()=>{
   const detail=readFileSync(new URL("../src/pages/super/CompanyDetailPage.tsx",import.meta.url),"utf8");
   const pricing=readFileSync(new URL("../src/pages/super/PricingPage.tsx",import.meta.url),"utf8");
   const route=readFileSync(new URL("../api/routes/super.ts",import.meta.url),"utf8");
   const browser=readFileSync(new URL("../scripts/browser-smoke.mjs",import.meta.url),"utf8");
   assert.match(detail,/to="\/superadmin\/companies"/);
   assert.match(detail,/q\.isError \|\| !q\.data/);
+  assert.doesNotMatch(detail,/(Ajuste manual de créditos|Política carteira)/);
   assert.match(pricing,/q\.isError \|\| !q\.data/);
   assert.match(route,/FROM pricing_rules pr LEFT JOIN companies c ON c.id=pr.company_id WHERE pr.active=1/);
-  assert.match(browser,/Superadmin faz ajuste financeiro auditável apenas na carteira local/);
+  assert.match(browser,/Superadmin consulta barbearia sem saldos nem ajuste de créditos na interface/);
   assert.match(browser,/Superadmin consulta mensalidades sem ativação ou cobrança/);
 });
 
@@ -323,12 +324,14 @@ test("API TIGU: credenciais presentes no staging não habilitam Pix nem mensagen
  const pay=readFileSync(new URL("../api/lib/payments.ts",import.meta.url),"utf8");
  const whatsapp=readFileSync(new URL("../api/lib/messaging/provider.ts",import.meta.url),"utf8");
  const webhooks=readFileSync(new URL("../api/routes/webhooks.ts",import.meta.url),"utf8");
+ const evoWebhooks=readFileSync(new URL("../api/routes/evolution-webhook.ts",import.meta.url),"utf8");
  const smoke=readFileSync(new URL("./staging-smoke.mjs",import.meta.url),"utf8");
  assert.match(pay,/if \(env\.TIGU_STAGING === "1"\) return \{ provider: null/);
  assert.match(pay,/if \(env\.TIGU_STAGING === "1"\) return \{ ok: false/);
- assert.match(whatsapp,/if \(ctx\.env\.TIGU_STAGING === "1"\) return \{ accepted: false/);
+ assert.match(whatsapp,/if \(ctx\.env\.TIGU_STAGING === "1" && ctx\.env\.TIGU_EVOLUTION_LIVE !== "1"\)[\s\S]*?provider:null/);
  assert.match(webhooks,/webhooksRouter\.post\("\/mercadopago",[\s\S]*?TIGU_STAGING === "1"/);
- assert.match(webhooks,/webhooksRouter\.post\("\/whatsapp",[\s\S]*?TIGU_STAGING === "1"/);
+ assert.doesNotMatch(webhooks,/webhooksRouter\.(get|post)\("\/whatsapp"/);
+ assert.match(evoWebhooks,/evolutionWebhookRouter\.post\("\/",[\s\S]*?TIGU_STAGING === "1"/);
  assert.match(smoke,/typeof health\.body\?\.payments\?\.mercadopago === "boolean"/);
  assert.match(smoke,/health\.body\?\.payments\?\.mock === false/);
  assert.match(smoke,/health\.body\?\.whatsapp\?\.mock === true/);

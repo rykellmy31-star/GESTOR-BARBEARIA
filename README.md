@@ -73,23 +73,18 @@ Execute `npm run validate` localmente antes de enviar código à branch de desen
 | `npm run smoke` | verificação FUM-DE-01 ponta a ponta (exige ambiente rodando) |
 | `npm run deploy` | `tsc -b && vite build && wrangler deploy` (docs/DEPLOY.md) |
 
-## WhatsApp & Pix — o estado honesto
+## WhatsApp & Pix
 
-- O **envio real** usa a **API oficial do WhatsApp Business (Cloud API)** por empresa (Phone Number ID +
-  token de System User criptografado no D1). Sem credenciais, tudo roda em **simulação/mirror** e o link
-  `wa.me` segue disponível para confirmação manual — nada é mostrado como “enviado de verdade” se não foi.
-- **Embedded Signup** (conectar sem abrir painel da Meta) está implementado de ponta a ponta no backend e
-  no painel, e só aparece quando `WHATSAPP_APP_ID/APP_SECRET/CONFIG_ID` existem — exige **partner config**
-  aprovado na Meta (uma etapa de negócio, não de código). Ver `docs/WHATSAPP.md` (inclui a conversa sobre
-  **coexistência** com o app Business e a janela de 24h).
-- **Pix** via **Mercado Pago** (create payment + webhook com `x-signature` + re-consulta como fonte da
-  verdade). Em produção, o gateway **precisa** de um HTTPS público alcançável e do access token de produção. Ver `docs/PAGAMENTOS.md`.
+- **Evolution API v2** é o único provedor real de WhatsApp. Cada barbearia conecta sua instância via QR Code. O envio de notificações depende da instalação de um servidor Evolution HTTPS, da configuração de segredos no Worker e de `TIGU_STAGING=0`.
+- A integração antiga da Meta foi retirada do código: sem Graph API, Embedded Signup ou webhook Meta. Registros históricos continuam no D1 para auditoria; novos envios usam Evolution.
+- O simulador permanece apenas para testes locais. Evolution/Baileys é não oficial e pode sofrer restrições ou desconexões.
+- Pagamentos e Pix de profissionais usam Mercado Pago de forma independente, preservados.
 
 ## Documentação
 
 - `docs/API.md` — referência da API (tenant + super + auth)
 - `docs/DEPLOY.md` — produção na Cloudflare (recursos, secrets, cron, checklist)
-- `docs/WHATSAPP.md` — provedor Meta: conexão, webhook, templates, cobrança, embedded signup, limites
+- `docs/WHATSAPP.md` — integração exclusiva Evolution, QR Code, webhook e configurações de segurança
 - `docs/PAGAMENTOS.md` — Pix (Mercado Pago): recargas, webhooks, idempotência, estornos, segurança
 - `docs/PRODUCAO.md` — rotina operacional do dia a dia
 

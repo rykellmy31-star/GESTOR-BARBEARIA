@@ -1,0 +1,42 @@
+name: "TIGU - remover Meta e publicar somente Evolution no dominio oficial"
+on:
+  push:
+    branches: [feature/tigu-evolution-only-20261029]
+permissions:
+  contents: read
+concurrency:
+  group: tigu-official-evolution-only-20261029
+  cancel-in-progress: false
+jobs:
+  publicar-evolution:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/tigu-evolution-only-20261029' && github.event.head_commit.message == 'TIGU_OFFICIAL_EVOLUTION_QR_LIVE_ONCE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Instalar dependencias com versoes travadas
+        run: npm ci --no-audit --prefer-offline
+      - name: Testar que o deploy nao altera banco nem recursos
+        run: node --test scripts/tigu-evolution-only-deploy.node.test.mjs
+      - name: Validar auditoria, tipagem, testes, frontend e backend
+        run: npm run validate
+      - name: Homologar API, D1 e R2 locais
+        run: node scripts/local-e2e.mjs
+      - name: Testar operacao no navegador Chromium
+        run: node scripts/browser-smoke.mjs
+      - name: Publicar somente Evolution no Worker oficial existente
+        env:
+          CLOUDFLARE_STAGING_TOKEN: ${{ secrets.CLOUDFLARE_STAGING_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIGU_EVOLUTION_ONLY_DEPLOY_APPROVED: "YES"
+        run: node scripts/tigu-evolution-only-deploy.mjs
+      - name: Resumo
+        run: |
+          echo '## TIGU: somente Evolution API' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Publicado no Worker existente do domínio https://agendamentos.crjornada.com' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Sem migrações, sem alteração de secrets, D1, R2 ou DNS; apenas cron Evolution isolado.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Proteções dos pagamentos preservadas; WhatsApp real habilita somente quando secrets Evolution estiverem configurados.' >> "$GITHUB_STEP_SUMMARY"

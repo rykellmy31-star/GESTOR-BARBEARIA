@@ -5,7 +5,7 @@ import type { Env } from "../types";
 import { cid } from "../lib/tenant";
 import { err, json, nowIso } from "../lib/utils";
 import { audit } from "../lib/audit";
-import { evolutionInstanceName, evolutionReady, evolutionRequest, evolutionQR, evolutionState, getEvolutionRow } from "../lib/messaging/evolution";
+import { DEFAULT_TIGU_REMINDER, evolutionConfigurationProblem, evolutionInstanceName, evolutionLiveAllowed, evolutionRequest, evolutionQR, evolutionState, getEvolutionRow } from "../lib/messaging/evolution";
 
 export const evolutionRouter = new Hono<{ Bindings: Env }>();
 
@@ -13,10 +13,15 @@ evolutionRouter.get("/status", async (c) => {
   const db = c.env.DB;
   const companyId = cid(c);
   const row = await getEvolutionRow(db, companyId);
-  const configured = evolutionReady(c.env) && c.env.TIGU_STAGING !== "1";
+  const company = await db.prepare("SELECT name FROM companies WHERE id=?1")
+    .bind(companyId).first<{name:string}>();
+  const companyName = company?.name || "Esta barbearia";
+  const problem = evolutionConfigurationProblem(c.env);
+  const configured = problem === null;
   if (!row || row.enabled !== 1 || !configured) return json(c, {
     configured, active: row?.enabled === 1, status: row?.status ?? "disconnected",
-    instance: row?.enabled ? row.instance_name : null, reason: configured ? null : "Servidor da Evolution API ainda não configurado.",
+    instance: row?.enabled ? row.instance_name : null, companyName,
+    reason: problem ? "Integração Evolution indisponível: " + problem + " Configure no Worker oficial e implante a alteração." : null,
   });
   // Consulta real: QR lido em outro dispositivo só é confirmado pela API, não pela interface.
   const remote = await evolutionRequest(c.env, "GET", `/instance/connectionState/${row.instance_name}`);
@@ -24,27 +29,36 @@ evolutionRouter.get("/status", async (c) => {
   const error = remote.ok ? "" : "Evolution API indisponível ou sessão não encontrada.";
   // GET permanece realmente somente leitura (inclusive em modo suporte Super Admin).
   // O webhook autenticado atualiza o D1. A resposta mostra o estado remoto atual.
-  return json(c, { configured, active: true, status, instance: row.instance_name, error });
+  return json(c, { configured, active: true, status, instance: row.instance_name, companyName, error });
 });
 
 evolutionRouter.post("/start", async (c) => {
-  if (!evolutionReady(c.env) || c.env.TIGU_STAGING === "1")
+  if (!evolutionLiveAllowed(c.env))
     return err(c, "Evolution API ainda não instalada/configurada. A conexão real só será habilitada depois.", 503);
   const db = c.env.DB, companyId = cid(c);
-  const old = await db.prepare("SELECT status,provider FROM whatsapp_connections WHERE company_id=?1")
-    .bind(companyId).first<{status:string;provider:string}>();
-  if (old?.status === "connected") return err(c, "Desconecte primeiro a integração WhatsApp existente para evitar conflitos.", 409);
+  // Não reativamos nem reutilizamos credenciais da integração antiga.
   // Não converter silenciosamente jobs cobrados pela integração anterior.
   const charged = await db.prepare(`SELECT COUNT(*) n FROM message_jobs
     WHERE company_id=?1 AND status IN ('scheduled','blocked_funds') AND price_cents>0`).bind(companyId).first<{n:number}>();
   if (charged && charged.n>0) return err(c, "Há mensagens antigas com créditos na fila. Finalize ou cancele esses envios antes de trocar o provedor.", 409);
-  const instance = evolutionInstanceName(companyId);
   const saved = await getEvolutionRow(db, companyId);
-  if (saved && saved.instance_name !== instance) return err(c,"Instância da empresa inconsistente.",409);
-
-  // Instância idempotente: uma tentativa anterior pode ter criado a sessão antes do timeout.
-  const check = await evolutionRequest(c.env, "GET", `/instance/connectionState/${instance}`);
+  const company = await db.prepare("SELECT name FROM companies WHERE id=?1")
+    .bind(companyId).first<{name:string}>();
+  if (!company) return err(c, "Barbearia não encontrada.", 404);
+  // Nunca renomear uma instância existente: o telefone e o webhook permanecem
+  // vinculados à mesma sessão, mesmo que o proprietário altere a marca.
+  const legacyInstance = evolutionInstanceName(companyId);
+  const proposedInstance = saved?.instance_name || evolutionInstanceName(companyId, company.name);
+  let instance = proposedInstance;
+  // Instância idempotente: se houve falha entre criar no Evolution e salvar D1,
+  // reaproveita a instância antiga já existente sem desconectar o celular.
+  let check = await evolutionRequest(c.env, "GET", `/instance/connectionState/${instance}`);
   if (!check.ok && check.status !== 404) return err(c, "Não foi possível consultar a Evolution API.", 502);
+  if (!saved && check.status === 404 && proposedInstance !== legacyInstance) {
+    const legacy = await evolutionRequest(c.env, "GET", `/instance/connectionState/${legacyInstance}`);
+    if (legacy.ok) { instance = legacyInstance; check = legacy; }
+    else if (legacy.status !== 404) return err(c, "Não foi possível conferir a instância antiga.", 502);
+  }
   let firstQR: string | null = null;
   if (check.status === 404) {
     const created = await evolutionRequest(c.env, "POST", "/instance/create",
@@ -70,7 +84,7 @@ evolutionRouter.post("/start", async (c) => {
       ON CONFLICT(company_id) DO UPDATE SET enabled=1,status='pending_setup',last_error='',updated_at=?3`)
     .bind(companyId,instance,nowIso()).run();
 
-  // Modelos locais para mensagens livres no canal Evolution; não dependem de aprovação Meta.
+  // Modelos locais para mensagens livres no canal Evolution.
   await db.batch([
     db.prepare(`INSERT OR IGNORE INTO whatsapp_templates
       (company_id,code,language,category,status,body_text,use_case)
@@ -79,14 +93,14 @@ evolutionRouter.post("/start", async (c) => {
     db.prepare(`INSERT OR IGNORE INTO whatsapp_templates
       (company_id,code,language,category,status,body_text,use_case)
       VALUES (?1,'tigu_lembrete','pt_BR','utility','approved',
-      'Olá {{1}}! Passando para lembrar do seu horário na barbearia.','reminder')`).bind(companyId),
+      ?2,'reminder')`).bind(companyId,DEFAULT_TIGU_REMINDER),
   ]);
   await audit(db, c.get("user"), "whatsapp.evolution.start", "evolution_connection", companyId, {}, { companyId });
   return json(c, { ok: true, status: "pending_setup", qr: firstQR });
 });
 
 evolutionRouter.post("/qr", async (c) => {
-  if (!evolutionReady(c.env) || c.env.TIGU_STAGING === "1") return err(c,"Evolution API indisponível.",503);
+  if (!evolutionLiveAllowed(c.env)) return err(c,"Evolution API indisponível.",503);
   const row = await getEvolutionRow(c.env.DB,cid(c));
   if (!row || row.enabled!==1) return err(c,"Inicie a integração primeiro.",404);
   const res = await evolutionRequest(c.env,"GET",`/instance/connect/${row.instance_name}`);

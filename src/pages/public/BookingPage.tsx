@@ -23,7 +23,7 @@ export function BookingPage() {
   const [barberId, setBarberId] = useState<number | null>(params.get("barbeiro") ? Number(params.get("barbeiro")) : null);
   const [date, setDate] = useState<string | null>(null);
   const [slot, setSlot] = useState<{ t: string; label: string } | null>(null);
-  const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "", consent: false });
+  const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "", consent: false, whatsappOptin: false });
   const [confirming, setConfirming] = useState(false);
   const [paymentChoice,setPaymentChoice]=useState<"after_service"|"pix">("after_service");
   const [done, setDone] = useState<any | null>(null);
@@ -65,7 +65,7 @@ export function BookingPage() {
       const res = await api.post("/bookings", {
         serviceId, barberId, startsAt: slot!.t,
         name: form.name.trim(), phone: form.phone.replace(/\D/g, ""), email: form.email.trim() || "",
-        notes: form.notes.trim(), consent: true, idempotencyKey: idk, paymentChoice,
+        notes: form.notes.trim(), consent: true, whatsappOptin: form.whatsappOptin, idempotencyKey: idk, paymentChoice,
       });
       setDone(res);
       localStorage.setItem(`tigu_token_${res.booking.code}`, String(res.cancel_token));
@@ -208,6 +208,18 @@ export function BookingPage() {
             <label className="flex items-start gap-2.5 rounded-xl border border-line bg-ink-soft p-3.5 text-[12.5px] leading-relaxed text-zinc-400">
               <input type="checkbox" checked={form.consent} onChange={(e) => setForm({ ...form, consent: e.target.checked })} className="mt-0.5 h-4 w-4 accent-[var(--c-gold)]" />
               <span><ShieldCheck size={13} className="mr-1 inline text-[var(--c-gold)]" /> Autorizo o uso dos meus dados para gestão do agendamento, conforme a <b className="text-zinc-300">LGPD</b>. Você pode solicitar a exclusão a qualquer momento pela barbearia.</span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-[var(--c-gold)]/30 bg-gold-soft p-3.5 text-[12.5px] leading-relaxed text-zinc-200">
+              <input type="checkbox" checked={form.whatsappOptin}
+                onChange={(e) => setForm({ ...form, whatsappOptin: e.target.checked })}
+                className="mt-0.5 h-4 w-4 accent-[var(--c-gold)]" />
+              <span>
+                <MessageCircle size={14} className="mr-1 inline text-[var(--c-gold)]" />
+                <strong>Quero receber a confirmação e os lembretes deste agendamento pelo WhatsApp.</strong>
+                <span className="mt-1 block text-xs text-zinc-400">
+                  Avisos de horário, confirmação e link para reagendar. Opcional; seu agendamento funciona mesmo sem marcar.
+                </span>
+              </span>
             </label>
             <div className="flex justify-between pt-1">
               <BackBtn onClick={() => setStep(3)} />
@@ -382,6 +394,20 @@ function SuccessScreen({ done, settings, navigate }: any) {
           <span className="block">{day.toLocaleString("pt-BR", { timeZone: settings?.timezone, weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })}</span>
           <span className="block font-semibold text-[var(--c-gold)]">{money(b.price_cents)}</span>
         </p>
+        <div className="mt-4 rounded-xl border border-line bg-ink-soft p-3 text-left text-xs text-zinc-300">
+          <p className="font-semibold">Confirmação por WhatsApp</p>
+          <p className="mt-1">
+            {done.messaging?.confirmation?.status === "scheduled"
+              ? "Aviso programado. O WhatsApp deve receber a confirmação após o processamento da fila; o envio ainda não foi confirmado."
+              : done.messaging?.confirmation?.status === "no_connection"
+                ? "A reserva foi feita, mas o WhatsApp da barbearia está desconectado. O aviso não foi programado."
+                : done.messaging?.confirmation?.status === "skipped"
+                  ? b.whatsapp_optin !== 1
+                    ? "Você não ativou as mensagens pelo WhatsApp. Sua reserva está confirmada mesmo assim."
+                    : "Aviso não programado. A barbearia pode verificar a configuração das confirmações."
+                  : "Sua reserva foi registrada. A entrega de WhatsApp não foi confirmada."}
+          </p>
+        </div>
 
         {done.payment_choice==="pix" && (
           <div className="mt-5 rounded-xl border border-[var(--c-gold)]/40 bg-ink-soft p-4 text-left text-sm">

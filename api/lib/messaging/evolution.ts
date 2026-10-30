@@ -19,24 +19,57 @@ export interface EvolutionEnv {
   EVOLUTION_WEBHOOK_SECRET?: string;
   PUBLIC_URL?: string;
   TIGU_STAGING?: string;
+  TIGU_EVOLUTION_LIVE?: string;
 }
 
-export function evolutionReady(env: EvolutionEnv): boolean {
-  if (!env.EVOLUTION_API_URL || !env.EVOLUTION_API_KEY || !env.EVOLUTION_WEBHOOK_SECRET || env.EVOLUTION_WEBHOOK_SECRET.length < 32 || !env.PUBLIC_URL) return false;
+/**
+ * Diagnóstico sem valores, destinado somente ao painel autenticado do proprietário.
+ * Nunca devolve URLs ou chaves ao navegador. Centraliza os mesmos requisitos de
+ * segurança usados pelo Worker para autorizar criar instâncias e gerar QR.
+ */
+export function evolutionConfigurationProblem(env: EvolutionEnv): string | null {
+  if (!env.EVOLUTION_API_URL?.trim()) return "Falta EVOLUTION_API_URL (variável do Worker).";
+  if (!env.EVOLUTION_API_KEY?.trim()) return "Falta EVOLUTION_API_KEY (segredo do Worker).";
+  if (!env.EVOLUTION_WEBHOOK_SECRET?.trim()) return "Falta EVOLUTION_WEBHOOK_SECRET (segredo do Worker).";
+  if (env.EVOLUTION_WEBHOOK_SECRET.length < 32)
+    return "EVOLUTION_WEBHOOK_SECRET está com menos de 32 caracteres; substitua por um segredo mais longo.";
+  if (!env.PUBLIC_URL?.trim()) return "Falta PUBLIC_URL (variável do Worker).";
   try {
     const api = new URL(env.EVOLUTION_API_URL);
     const publicUrl = new URL(env.PUBLIC_URL);
-    return api.protocol === "https:" && publicUrl.protocol === "https:"
-      && !!api.hostname && !!publicUrl.hostname
-      && api.pathname === "/" && publicUrl.pathname === "/"
-      && !api.username && !api.password && !api.search && !api.hash
-      && !publicUrl.username && !publicUrl.password && !publicUrl.search && !publicUrl.hash;
-  } catch { return false; }
+    if (api.protocol !== "https:" || publicUrl.protocol !== "https:" ||
+        !api.hostname || !publicUrl.hostname ||
+        api.pathname !== "/" || publicUrl.pathname !== "/" ||
+        api.username || api.password || api.search || api.hash ||
+        publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash ||
+        api.port || publicUrl.port) {
+      return "EVOLUTION_API_URL ou PUBLIC_URL inválida: informe apenas a origem HTTPS.";
+    }
+  } catch {
+    return "EVOLUTION_API_URL ou PUBLIC_URL inválida: informe apenas a origem HTTPS.";
+  }
+  if (env.TIGU_STAGING === "1" && env.TIGU_EVOLUTION_LIVE !== "1")
+    return "TIGU_EVOLUTION_LIVE não está habilitada no Worker que atende o domínio oficial.";
+  return null;
 }
 
-export function evolutionInstanceName(companyId: number): string {
+export function evolutionReady(env: EvolutionEnv): boolean {
+  return evolutionConfigurationProblem({ ...env, TIGU_STAGING: "0" }) === null;
+}
+
+export function evolutionLiveAllowed(env: EvolutionEnv): boolean {
+  return evolutionConfigurationProblem(env) === null;
+}
+
+export function evolutionInstanceName(companyId: number, companyName?: string): string {
   if (!Number.isSafeInteger(companyId) || companyId < 1) throw new Error("Empresa inválida");
-  return `tigu-company-${companyId}`;
+  // Para uma instalação existente, o identificador anterior permanece válido.
+  // Instâncias novas ficam legíveis no Evolution Manager e sempre incluem o ID
+  // para garantir unicidade, mesmo com duas barbearias de mesmo nome.
+  const slug = (companyName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 45)
+    .replace(/-+$/g, "");
+  return slug ? `tigu-${slug}-c${companyId}` : `tigu-company-${companyId}`;
 }
 
 export async function evolutionRequest(
@@ -45,7 +78,7 @@ export async function evolutionRequest(
   route: string,
   body?: unknown
 ): Promise<{ ok: boolean; status: number; data: any }> {
-  if (!evolutionReady(env) || env.TIGU_STAGING === "1") return { ok: false, status: 503, data: { error: "Evolution API não configurada ou indisponível neste ambiente." } };
+  if (!evolutionLiveAllowed(env)) return { ok: false, status: 503, data: { error: "Evolution API não configurada ou indisponível neste ambiente." } };
   if (!/^\/(?:instance|message|webhook)\/[a-zA-Z0-9/_-]+$/.test(route)) throw new Error("Rota Evolution inválida");
   const api = new URL(env.EVOLUTION_API_URL!);
   if (api.pathname !== "/" && api.pathname !== "") throw new Error("EVOLUTION_API_URL deve ser a origem HTTPS, sem caminho");
@@ -55,6 +88,7 @@ export async function evolutionRequest(
       headers: { apikey: env.EVOLUTION_API_KEY!, "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(12000),
+      redirect: "manual", // Nunca encaminhar a chave global em redirecionamentos.
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, status: response.status, data };
@@ -75,6 +109,17 @@ export function evolutionQR(data: any): string | null {
   // Aceitar apenas PNG real, não SVG/HTML controlado remotamente.
   if (/^iVBORw0KGgo[a-z0-9+/=\s]*$/i.test(raw) && raw.length < 200000) return `data:image/png;base64,${raw}`;
   return null;
+}
+
+// A versão antiga continua em muitos cadastros. Atualizar apenas o texto
+// original de fábrica (nunca sobrescrever uma mensagem personalizada).
+export const LEGACY_TIGU_REMINDER = "Olá {{1}}! Passando para lembrar do seu horário na barbearia.";
+export const DEFAULT_TIGU_REMINDER =
+  "Olá {{1}}! 💈\n\nPassando para lembrar do seu horário na {{5}}, dia {{4}}.\nPedimos que chegue com 10 minutos de antecedência. Até breve!";
+
+export function effectiveReminderText(code: string, body: string): string {
+  return code === "tigu_lembrete" && body === LEGACY_TIGU_REMINDER
+    ? DEFAULT_TIGU_REMINDER : body;
 }
 
 export function renderEvolutionText(body: string, variables: { key: string; sample: string }[]): string {
@@ -108,7 +153,15 @@ export const evolutionProvider: Provider = {
       "SELECT body_text FROM whatsapp_templates WHERE company_id=?1 AND code=?2 AND language=?3 AND active=1"
     ).bind(ctx.conn.company_id,input.templateCode,input.language).first<{ body_text: string }>();
     if (!tpl?.body_text) return { accepted: false, permanent: true, error: "Modelo de mensagem não configurado." };
-    const text = renderEvolutionText(tpl.body_text, input.variables);
+    const baseText = renderEvolutionText(effectiveReminderText(input.templateCode, tpl.body_text), input.variables);
+    // Botões nativos não são entregues com confiabilidade pelo Baileys.
+    // Entrega dois links clicáveis; as ações reais exigem confirmação
+    // explícita na página segura, nunca um GET que modifique a agenda.
+    const actionLink = input.variables.find(v => v.key === "7")?.sample || "";
+    const text = input.wabaBizMetadata?.kind === "confirmation" && actionLink
+      ? baseText + "\n\n✅ Confirmar agendamento:\n" + actionLink +
+        "\n\n🔄 Não dá, reagendar:\n" + actionLink
+      : baseText;
     if (!text.trim()) return { accepted: false, permanent: true, error: "Modelo sem texto." };
     const response = await evolutionRequest(ctx.env, "POST", `/message/sendText/${ctx.conn.phone_number_id}`, { number: input.to, text });
     const key = response.data?.key?.id ?? response.data?.message?.key?.id;

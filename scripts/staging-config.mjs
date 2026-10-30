@@ -7,7 +7,7 @@ const permittedFields = new Set([
   "name", "main", "compatibility_date", "compatibility_flags", "vars",
   "observability", "assets", "d1_databases", "r2_buckets", "triggers",
 ]);
-const vars = new Set(["APP_ENV", "TIGU_STAGING", "GRAPH_API_VERSION", "WHATSAPP_MOCK", "PAYMENTS_MOCK"]);
+const vars = new Set(["APP_ENV", "TIGU_STAGING", "WHATSAPP_MOCK", "PAYMENTS_MOCK"]);
 const isRecord = (x) => Boolean(x && typeof x === "object" && !Array.isArray(x));
 
 export function stagingConfigIssues(config, original) {
@@ -25,8 +25,7 @@ export function stagingConfigIssues(config, original) {
   fail(isRecord(config.vars) && Object.keys(config.vars).length === vars.size &&
     Object.keys(config.vars).every(k => vars.has(k)), "variáveis não permitidas ou ausentes");
   fail(config.vars?.APP_ENV === "production" && config.vars?.TIGU_STAGING === "1" &&
-    config.vars?.WHATSAPP_MOCK === "1" && config.vars?.PAYMENTS_MOCK === "0" &&
-    config.vars?.GRAPH_API_VERSION === "v23.0", "flags de isolamento da homologação inválidas");
+    config.vars?.WHATSAPP_MOCK === "1" && config.vars?.PAYMENTS_MOCK === "0", "flags de isolamento da homologação inválidas");
   fail(isRecord(config.observability) && Object.keys(config.observability).length === 1 &&
     config.observability.enabled === true, "observabilidade deve estar ligada sem opções adicionais");
 

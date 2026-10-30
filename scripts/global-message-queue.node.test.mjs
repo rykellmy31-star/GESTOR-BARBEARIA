@@ -32,7 +32,7 @@ test('no invalid company id may fallback to global dispatch',()=>{
   assert.match(route,/parseOptionalMessageCompanyId\(c\.req\.query\("companyId"\)\)/);
   assert.match(route,/if \(companyId === null\) return err/);
   assert.match(jobs,/Number\.isSafeInteger\(opts\.companyId\)/);
-  assert.match(jobs,/sweepStuckJobs\(db, opts\.companyId\)/);
+  assert.match(jobs,/sweepStuckJobs\(db, opts\.companyId, opts\.provider\)/);
 });
 
 test('stale webhook cleanup for one barber shop does not mutate another',async()=>{
@@ -91,6 +91,6 @@ test('API and Super Admin interface expose paginated filtered query',()=>{
   assert.match(route,/ORDER BY j\.id DESC LIMIT 101/);
   assert.match(route,/next_before_id:/);
   assert.match(panel,/useInfiniteQuery/);
-  assert.match(panel,/<option value="conflict">conflitos Meta<\/option>/);
+  assert.match(panel,/<option value="conflict">conflitos de envio<\/option>/);
   assert.match(panel,/Carregar mensagens anteriores/);
 });

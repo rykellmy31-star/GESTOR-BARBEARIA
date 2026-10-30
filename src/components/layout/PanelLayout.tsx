@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Bell, Calendar, ChevronRight, LayoutDashboard, LogOut, Menu, MessageSquare, Scissors, Settings as SettingsIcon, ShieldCheck, Sparkles, Store, Tag, Users, X, ClipboardList, Wallet, UsersRound, CreditCard } from "lucide-react";
+import { Bell, Calendar, ChevronRight, LayoutDashboard, LogOut, Menu, MessageSquare, Scissors, Settings as SettingsIcon, ShieldCheck, Sparkles, Store, Tag, Users, X, ClipboardList, UsersRound, CreditCard } from "lucide-react";
 import { clsx } from "clsx";
 import { useAuth, useConfig, useNotifications } from "@/lib/hooks";
 import { siteBase } from "@/lib/api";
@@ -18,7 +18,7 @@ export function NotificationsBell({ panel }: { panel: "admin" | "barber" }) {
   const [open, setOpen] = useState(false);
   const unread = n?.unread ?? 0;
   const list = n?.notifications ?? [];
-  const markLabel = (t: string) => (t === "booking" ? "Novo" : t === "cancel" ? "Cancelamento" : t === "block_request" ? "Bloqueio" : t === "order" ? "Pedido" : t === "billing" ? "Créditos" : t === "message" ? "WhatsApp" : t === "connection" ? "Conexão" : "Sistema");
+  const markLabel = (t: string) => (t === "booking" ? "Novo" : t === "cancel" ? "Cancelamento" : t === "block_request" ? "Bloqueio" : t === "order" ? "Pedido" : t === "billing" ? "Financeiro" : t === "message" ? "WhatsApp" : t === "connection" ? "Conexão" : "Sistema");
   return (
     <>
       <button onClick={() => setOpen(true)} className="relative rounded-xl border border-line p-2 text-zinc-300 transition-colors hover:border-[var(--c-gold)] hover:text-[var(--c-gold)]" aria-label="Notificações">
@@ -32,7 +32,7 @@ export function NotificationsBell({ panel }: { panel: "admin" | "barber" }) {
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title="Notificações">
         {list.length === 0 ? (
-          <EmptyState icon={<Bell size={28} />} title="Nenhuma notificação por aqui" text="Novos agendamentos, cancelamentos, pedidos e alertas de créditos aparecem automaticamente aqui." />
+          <EmptyState icon={<Bell size={28} />} title="Nenhuma notificação por aqui" text="Novos agendamentos, cancelamentos, pedidos e notificações importantes aparecem aqui." />
         ) : (
           <ul className="space-y-2.5">
             {list.slice(0, 25).map((x: any) => (
@@ -69,7 +69,6 @@ const adminNav = [
   { to: "pedidos", label: "Pedidos", icon: ClipboardList },
   { to: "clientes", label: "Clientes", icon: Users },
   { to: "mensagens", label: "WhatsApp", icon: MessageSquare },
-  { to: "carteira", label: "Carteira de créditos", icon: Wallet },
   { to: "assinatura", label: "Assinatura", icon: CreditCard },
   { to: "configuracoes", label: "Configurações", icon: SettingsIcon },
   { to: "demonstracao", label: "Demonstração", icon: Sparkles },

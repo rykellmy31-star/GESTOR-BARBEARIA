@@ -50,7 +50,7 @@ export function SuperMessages() {
     <div>
       <H title="Fila global de mensagens" sub="Visão de operação: jobs de todas as barbearias. O cron roda sozinho — aqui você força um lote em incidentes." action={
         <div className="flex items-center gap-2">
-          <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-36"><option value="">todos</option><option value="conflict">conflitos Meta</option><option value="scheduled">scheduled</option><option value="failed">failed</option><option value="sending">sending</option><option value="sent">sent</option></Select>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-36"><option value="">todos</option><option value="conflict">conflitos de envio</option><option value="scheduled">scheduled</option><option value="failed">failed</option><option value="sending">sending</option><option value="sent">sent</option></Select>
           <Button className="btn-gold py-2 text-sm" onClick={() => run.mutate()} disabled={run.isPending}><PlayCircle size={14} /> {run.isPending ? "rodando…" : "rodar agora"}</Button>
         </div>} />
       {q.isLoading ? <Spinner /> : q.isError && !q.data ? (
@@ -85,14 +85,14 @@ export function SuperMessages() {
           <Field label="Resultado verificado">
             <Select value={decision} onChange={(e) => setDecision(e.target.value as "not_sent" | "confirmed_sent")}>
               <option value="not_sent">Confirmei que NÃO foi enviada — liberar reserva</option>
-              <option value="confirmed_sent">Confirmei envio na Meta — registrar ID e aplicar política de cobrança</option>
+              <option value="confirmed_sent">Confirmei envio no provedor — registrar ID</option>
             </Select>
           </Field>
-          {decision === "confirmed_sent" && <Field label="ID oficial da mensagem (wamid...)"><Input value={providerId} onChange={(e) => setProviderId(e.target.value)} placeholder="wamid.HBg..." /></Field>}
+          {decision === "confirmed_sent" && <Field label="ID da mensagem Evolution"><Input value={providerId} onChange={(e) => setProviderId(e.target.value)} placeholder="ID da mensagem Evolution" /></Field>}
           <Field label="Justificativa e evidência (mín. 20 caracteres)">
             <textarea className="w-full rounded-xl border border-line bg-ink p-3 text-sm text-zinc-100" rows={4} value={justification} onChange={(e) => setJustification(e.target.value)} placeholder="Onde e como o resultado foi conferido?" />
           </Field>
-          <Button className="btn-gold w-full justify-center py-2" disabled={resolve.isPending || justification.trim().length < 20 || (decision === "confirmed_sent" && !/^wamid[.][A-Za-z0-9._:-]{6,}$/.test(providerId.trim()))} onClick={() => resolve.mutate()}>
+          <Button className="btn-gold w-full justify-center py-2" disabled={resolve.isPending || justification.trim().length < 20 || (decision === "confirmed_sent" && !/^[A-Za-z0-9._:-]{12,160}$/.test(providerId.trim()))} onClick={() => resolve.mutate()}>
             {resolve.isPending ? "Registrando..." : "Registrar conciliação"}
           </Button>
         </div>

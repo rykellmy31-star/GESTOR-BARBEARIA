@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { evolutionInstanceName, evolutionQR, evolutionReady, evolutionState, renderEvolutionText, evolutionRequest, evolutionProvider } from "../api/lib/messaging/evolution";
+import { DEFAULT_TIGU_REMINDER, LEGACY_TIGU_REMINDER, effectiveReminderText, evolutionConfigurationProblem, evolutionInstanceName, evolutionQR, evolutionReady, evolutionLiveAllowed, evolutionState, renderEvolutionText, evolutionRequest, evolutionProvider } from "../api/lib/messaging/evolution";
 import { evolutionWebhookRouter } from "../api/routes/evolution-webhook";
 
 const config = {
@@ -20,11 +20,58 @@ describe("Evolution API - preparação sem instalação", () => {
     expect(evolutionReady(config)).toBe(true);
   });
 
+  it("informa a pendência de configuração sem mostrar URLs, chaves nem valores de segredos", () => {
+    expect(evolutionConfigurationProblem({...config, EVOLUTION_API_KEY: ""})).toContain("EVOLUTION_API_KEY");
+    expect(evolutionConfigurationProblem({...config, EVOLUTION_WEBHOOK_SECRET: ""})).toContain("EVOLUTION_WEBHOOK_SECRET");
+    expect(evolutionConfigurationProblem({...config, EVOLUTION_WEBHOOK_SECRET: "curto"})).toContain("32 caracteres");
+    expect(evolutionConfigurationProblem({...config, EVOLUTION_API_URL: ""})).toContain("EVOLUTION_API_URL");
+    expect(evolutionConfigurationProblem({...config, PUBLIC_URL: ""})).toContain("PUBLIC_URL");
+    expect(evolutionConfigurationProblem({...config, TIGU_STAGING: "1"})).toContain("TIGU_EVOLUTION_LIVE");
+    expect(evolutionConfigurationProblem({...config, TIGU_STAGING: "1", TIGU_EVOLUTION_LIVE: "1"})).toBeNull();
+    const reason = String(evolutionConfigurationProblem({...config, EVOLUTION_API_KEY: ""}));
+    expect(reason).not.toContain(config.EVOLUTION_API_URL);
+    expect(reason).not.toContain(config.EVOLUTION_WEBHOOK_SECRET);
+  });
+
+  it("separa habilitacao do WhatsApp real das protecoes de homologacao financeiras", () => {
+    expect(evolutionLiveAllowed({...config,TIGU_STAGING:"1"})).toBe(false);
+    expect(evolutionLiveAllowed({...config,TIGU_STAGING:"1",TIGU_EVOLUTION_LIVE:"1"})).toBe(true);
+    expect(evolutionLiveAllowed({...config,TIGU_STAGING:"1",TIGU_EVOLUTION_LIVE:"0"})).toBe(false);
+    expect(evolutionLiveAllowed({...config,TIGU_STAGING:"1",TIGU_EVOLUTION_LIVE:"1",EVOLUTION_API_KEY:""})).toBe(false);
+    expect(evolutionLiveAllowed({...config,TIGU_STAGING:"0"})).toBe(true);
+  });
+
   it("usa um identificador estável por empresa e recusa identificador inválido", () => {
     expect(evolutionInstanceName(12)).toBe("tigu-company-12");
     expect(evolutionInstanceName(13)).not.toBe(evolutionInstanceName(12));
     expect(() => evolutionInstanceName(0)).toThrow();
     expect(() => evolutionInstanceName(1.2)).toThrow();
+  });
+
+  it("usa nome legível na nova instância sem abrir mão do isolamento", () => {
+    expect(evolutionInstanceName(12, "Barbearia Oceano")).toBe("tigu-barbearia-oceano-c12");
+    expect(evolutionInstanceName(13, "Barbearia Oceano")).toBe("tigu-barbearia-oceano-c13");
+    expect(evolutionInstanceName(14, "Salão São José")).toBe("tigu-salao-sao-jose-c14");
+    // Instâncias já cadastradas continuam com seu identificador antigo.
+    expect(evolutionInstanceName(12)).toBe("tigu-company-12");
+  });
+
+  it("personaliza lembretes com nome, barbearia, data, horário e antecedência", () => {
+    const recommended = effectiveReminderText("tigu_lembrete", LEGACY_TIGU_REMINDER);
+    expect(recommended).toBe(DEFAULT_TIGU_REMINDER);
+    const txt = renderEvolutionText(recommended, [
+      {key:"1",sample:"João Silva"}, {key:"4",sample:"30/10/2026 às 14:00"},
+      {key:"5",sample:"Barbearia Oceano"}
+    ]);
+    expect(txt).toContain("Olá João Silva");
+    expect(txt).toContain("Barbearia Oceano");
+    expect(txt).toContain("30/10/2026 às 14:00");
+    expect(txt).toContain("10 minutos de antecedência");
+    expect(txt).not.toContain("{{");
+    // A confirmação e os textos personalizados não são alterados.
+    expect(effectiveReminderText("tigu_confirmacao",LEGACY_TIGU_REMINDER)).toBe(LEGACY_TIGU_REMINDER);
+    expect(effectiveReminderText("tigu_lembrete","Mensagem personalizada"))
+      .toBe("Mensagem personalizada");
   });
 
   it("não aceita imagens arbitrárias devolvidas pelo servidor", () => {
@@ -74,7 +121,16 @@ describe("Evolution API - comunicação segura com provedor v2", () => {
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe("https://evolution.example.com/message/sendText/tigu-company-77");
     expect((init as RequestInit).headers).toMatchObject({apikey:config.EVOLUTION_API_KEY});
+    expect((init as RequestInit).redirect).toBe("manual");
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({number:"5575999990000",text:"Olá Cliente! Seu horário: 14:00"});
+  });
+
+  it("bloqueia rede no domínio oficial se ainda faltar segredo", async () => {
+    const spy = vi.spyOn(globalThis,"fetch");
+    const r = await evolutionRequest({...config,TIGU_STAGING:"1",TIGU_EVOLUTION_LIVE:"1",EVOLUTION_WEBHOOK_SECRET:""},
+      "GET","/instance/connectionState/tigu-company-1");
+    expect(r.status).toBe(503);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("não afirma envio sem ID de mensagem retornado pela Evolution", async () => {

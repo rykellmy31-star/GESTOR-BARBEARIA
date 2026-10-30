@@ -19,6 +19,7 @@ import { loadSalesContact, saveSalesContact, salesContactSchema } from "../lib/m
 import { changePlan, listPublicPlans, planCodeSchema, planEditSchema } from "../lib/plans";
 import { leadUpdateSchema, listSalesLeads, updateSalesLead, salesRetentionSchema, getSalesRetentionDays, setSalesRetentionDays, deleteSalesLead, purgeExpiredSalesLeads, purgeOldSalesRateLimits } from "../lib/sales-leads";
 import { processDueJobs } from "../lib/messaging/jobs";
+import { getEvolutionRow } from "../lib/messaging/evolution";
 import { globalMessageListFilter, parseGlobalMessageCursor, parseOptionalMessageCompanyId } from "../lib/messaging/super-message-filter";
 import { randomHex } from "../lib/utils";
 import { platformBillingMode } from "../lib/platform-billing-mode";
@@ -107,13 +108,13 @@ superRouter.get("/companies/:id", async (c) => {
   const [settings, members, conn, wallet, jobs, subscription] = await Promise.all([
     db.prepare(`SELECT data FROM company_settings WHERE company_id=?1`).bind(id).first<{ data: string }>(),
     db.prepare(`SELECT m.id, m.role, m.active, u.id AS user_id, u.name, u.email, u.last_login_at FROM company_memberships m JOIN users u ON u.id=m.user_id WHERE m.company_id=?1`).bind(id).all(),
-    db.prepare(`SELECT provider, status, display_phone, business_name, waba_id, phone_number_id, coexistence, last_error, last_check_at FROM whatsapp_connections WHERE company_id=?1`).bind(id).first(),
+    getEvolutionRow(db,id),
     getWallet(db, id),
     db.prepare(`SELECT id, kind, status, price_cents, cost_cents, captured_at, refunded_at, created_at FROM message_jobs WHERE company_id=?1 ORDER BY id DESC LIMIT 25`).bind(id).all(),
     db.prepare("SELECT plan_code,status,started_at,period_end FROM subscriptions WHERE company_id=?1").bind(id).first(),
   ]);
   c.header("Cache-Control", "no-store");
-  return json(c, { company: co, billing_mode: platformBillingMode(c.env), subscription, settings: safeParse(settings?.data), members: members.results, connection: conn ?? null, wallet, jobs: jobs.results });
+  return json(c, { company: co, billing_mode: platformBillingMode(c.env), subscription, settings: safeParse(settings?.data), members: members.results, connection: conn?.enabled===1 ? {provider:"evolution",status:conn.status,display_phone:conn.display_phone,instance_name:conn.instance_name,last_error:conn.last_error,last_check_at:conn.updated_at} : null, wallet, jobs: jobs.results });
 });
 /** O Super Admin pode emitir uma nova senha de acesso do proprietário.
  * Nunca recupera hashes, nem altera contas vinculadas a múltiplas empresas
@@ -654,7 +655,7 @@ superRouter.get("/messages", async (c) => {
   return json(c, { jobs: visible, next_before_id: results.length > 100 ? visible[visible.length - 1].id : null });
 });
 
-/** Somente superadmin, com verificação humana de NÃO envio na Meta. */
+/** Somente superadmin, com verificação humana de NÃO envio no provedor ativo. */
 superRouter.post("/messages/:id/resolve-not-sent", async (c) => {
   const parsed = z.object({
     confirmed_not_sent: z.literal(true),
@@ -686,7 +687,7 @@ superRouter.post("/messages/run-cron", async (c) => {
 
 /**
  * Conciliação OPERACIONAL de envio incerto. Exclusivo do superadmin.
- * Confirmar aceite exige ID verificável da Meta; nunca reenviar automaticamente.
+ * Confirmar aceite exige ID verificável da Evolution; jamais reenviar automaticamente.
  */
 superRouter.post("/messages/:id/resolve", async (c) => {
   const parsed = z.discriminatedUnion("decision", [
@@ -696,11 +697,11 @@ superRouter.post("/messages/:id/resolve", async (c) => {
     }),
     z.object({
       decision: z.literal("confirmed_sent"),
-      provider_message_id: z.string().trim().min(12).max(500).regex(/^wamid[.][A-Za-z0-9._:-]+$/),
+      provider_message_id: z.string().trim().min(12).max(160).regex(/^[A-Za-z0-9._:-]+$/),
       justification: z.string().trim().min(20).max(500),
     }),
   ]).safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return err(c, "Informe uma decisão válida, justificativa detalhada e, se confirmado, o ID real da mensagem Meta.", 422);
+  if (!parsed.success) return err(c, "Informe uma decisão válida, justificativa detalhada e, se confirmado, o ID real de mensagem fornecido pela Evolution.", 422);
 
   const db = c.env.DB;
   const id = idParam(c);
@@ -827,11 +828,11 @@ superRouter.get("/integrations/status", async (c) => {
       purposes: ["recargas", "assinaturas"],
     },
     whatsapp: {
-      app_id_set: Boolean(e.WHATSAPP_APP_ID),
-      app_secret_set: Boolean(e.WHATSAPP_APP_SECRET),
-      webhook_verify_token_set: Boolean(e.WHATSAPP_WEBHOOK_VERIFY_TOKEN),
-      encryption_key_set: Boolean(e.MSG_ENC_KEY),
-      embedded_signup_set: Boolean(e.WHATSAPP_EMBEDDED_CONFIG_ID),
+      provider: "evolution",
+      url_set: Boolean(e.EVOLUTION_API_URL),
+      api_key_set: Boolean(e.EVOLUTION_API_KEY),
+      webhook_secret_set: Boolean(e.EVOLUTION_WEBHOOK_SECRET && e.EVOLUTION_WEBHOOK_SECRET.length>=32),
+      callback_public_url_set: Boolean(e.PUBLIC_URL),
       provider_disabled_in_staging: e.TIGU_STAGING === "1",
     },
   });

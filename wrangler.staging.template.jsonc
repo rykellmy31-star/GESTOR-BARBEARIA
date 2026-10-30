@@ -6,7 +6,6 @@
   "vars": {
     "APP_ENV": "production",
     "TIGU_STAGING": "1",
-    "GRAPH_API_VERSION": "v23.0",
     "WHATSAPP_MOCK": "1",
     "PAYMENTS_MOCK": "0"
   },

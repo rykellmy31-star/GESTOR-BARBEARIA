@@ -14,8 +14,8 @@
 // ============================================================================
 import type { Env } from "../../types";
 import { nowIso } from "../utils";
-import { loadPlatformSettings, type CompanySettings } from "../settings";
-import { ensureWallet, reserveForJob, captureJobCharge, releaseJobReservation, refundJobCharge } from "../wallet";
+import { loadCompanySettings, loadPlatformSettings, type CompanySettings } from "../settings";
+import { ensureWallet, reserveForJob, captureJobCharge, releaseJobReservation } from "../wallet";
 import { resolveProvider, type ProviderContext, type ProviderConnectionRow } from "./provider";
 import { getEvolutionRow } from "./evolution";
 import type { BookingRow } from "./types";
@@ -65,7 +65,10 @@ export async function getConnection(db: D1Database, companyId: number): Promise<
     last_error: evolution.last_error, last_check_at: evolution.updated_at,
     connected_at: evolution.connected_at, demo: 0,
   };
-  return db.prepare(`SELECT * FROM whatsapp_connections WHERE company_id = ?1`).bind(companyId).first<ProviderConnectionRow>();
+  // Compatibilidade EXCLUSIVAMENTE com testes/demos locais que usam mock.
+  // Registros Meta Cloud antigos ficam intocados no D1, mas não são conexões utilizáveis.
+  return db.prepare(`SELECT * FROM whatsapp_connections WHERE company_id=?1 AND provider='mock'`)
+    .bind(companyId).first<ProviderConnectionRow>();
 }
 
 export interface ScheduleOutcome {
@@ -124,7 +127,7 @@ export async function scheduleBookingMessage(inp: SchedulingInput): Promise<Sche
         else return { ok: true, status: "skipped", reason: `faltam menos de ${leadMin} min e a política da barbearia é não enviar` };
       }
     } else {
-      fireAtMs = now.getTime() + 20_000; // confirmação/teste: quase imediato
+      fireAtMs = now.getTime(); // confirmação: fila imediatamente elegível; cron continua como recuperação
     }
     const fireDeadlineMs = startMs + 15 * 60_000;
     const idem = currentIdempotencyKey;
@@ -242,6 +245,19 @@ export async function bumpBookingVersion(db: D1Database, bookingId: number): Pro
   await db.prepare(`UPDATE bookings SET schedule_version = schedule_version + 1, updated_at = ?2 WHERE id = ?1`).bind(bookingId, nowIso()).run();
 }
 
+/**
+ * Evolution é a integração oficial em todos os planos TIGU e não possui
+ * limite de mensagens imposto pelo SaaS. Não estender esse acesso ao
+ * mock/Meta: os provedores antigos continuam isolados e protegidos.
+ * Assinatura válida, autorização, conexão, idempotência e anti-spam permanecem.
+ */
+export function planAllowsAutomaticWhatsapp(
+  plan: { code: string; whatsapp_enabled: number; max_messages_month: number },
+  provider: string
+): boolean {
+  return provider === "evolution" || plan.whatsapp_enabled === 1;
+}
+
 // ── DISPATCH (cron a cada ~1 min; também chamado pelos testes) ──────────────
 export interface DispatchResult {
   processed: number;
@@ -252,7 +268,7 @@ export interface DispatchResult {
   retried: number;
 }
 
-export async function processDueJobs(env: Env, opts: { now?: Date; limit?: number; companyId?: number } = {}): Promise<DispatchResult> {
+export async function processDueJobs(env: Env, opts: { now?: Date; limit?: number; companyId?: number; provider?: "evolution" } = {}): Promise<DispatchResult> {
   // Fail closed: invalid manual scope must never become a global sweep.
   if (opts.companyId !== undefined && (!Number.isSafeInteger(opts.companyId) || opts.companyId <= 0)) {
     throw new RangeError("Identificador de barbearia inválido para despacho");
@@ -261,14 +277,15 @@ export async function processDueJobs(env: Env, opts: { now?: Date; limit?: numbe
   const now = opts.now ?? new Date();
   const limit = Math.min(100, Math.max(1, opts.limit ?? 40));
   const out: DispatchResult = { processed: 0, sent: 0, failed: 0, blocked: 0, skipped: 0, retried: 0 };
-  await sweepStuckJobs(db, opts.companyId);
+  await sweepStuckJobs(db, opts.companyId, opts.provider);
 
   const companyFilter = opts.companyId === undefined ? "" : " AND j.company_id = ?2";
+  const providerFilter = opts.provider === "evolution" ? " AND j.provider = 'evolution'" : "";
   const { results } = await db
     .prepare(
       `SELECT j.*, c.status AS company_status, c.demo AS company_demo
        FROM message_jobs j JOIN companies c ON c.id = j.company_id
-       WHERE j.status IN ('scheduled','blocked_funds') AND j.scheduled_at <= ?1${companyFilter}
+       WHERE j.status IN ('scheduled','blocked_funds') AND j.scheduled_at <= ?1${companyFilter}${providerFilter}
          AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= ?1)
        ORDER BY j.scheduled_at ASC LIMIT ${limit}`
     )
@@ -339,11 +356,24 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
     return;
   }
 
+  // Mesmo para lembretes programados antes da alteração, a opção desligada
+  // da barbearia é respeitada no momento do disparo.
+  if (job.kind === "reminder") {
+    const latestSettings = await loadCompanySettings(db, job.company_id);
+    if (!latestSettings.whatsapp_reminders_enabled) {
+      const changed = await db.prepare(
+        "UPDATE message_jobs SET status='skipped', skip_reason='lembretes desativados pela barbearia', updated_at=?1 WHERE id=?2 AND status IN ('scheduled','blocked_funds')"
+      ).bind(nowIso(), job.id).run();
+      if (changed.meta.changes === 1) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
+      out.skipped++;
+      return;
+    }
+  }
   // 2) plano & conexão (re-validados no disparo)
   const plan = await db
-    .prepare(`SELECT p.whatsapp_enabled,p.max_messages_month,c.demo,c.status AS company_status,s.status AS subscription_status,s.period_end FROM plans p JOIN subscriptions s ON s.plan_code = p.code JOIN companies c ON c.id = s.company_id WHERE s.company_id = ?1`)
+    .prepare(`SELECT p.code,p.whatsapp_enabled,p.max_messages_month,c.demo,c.status AS company_status,s.status AS subscription_status,s.period_end FROM plans p JOIN subscriptions s ON s.plan_code = p.code JOIN companies c ON c.id = s.company_id WHERE s.company_id = ?1`)
     .bind(job.company_id)
-    .first<{whatsapp_enabled:number;max_messages_month:number;demo:number;company_status:string;subscription_status:string;period_end:string|null}>();
+    .first<{code:string;whatsapp_enabled:number;max_messages_month:number;demo:number;company_status:string;subscription_status:string;period_end:string|null}>();
   const payload = JSON.parse(job.payload_json || "{}") as { manual?: boolean };
   const isManual = Boolean(payload.manual);
   if(plan?.company_status!=="active" || (!isManual && (!plan || !["trial","active"].includes(plan.subscription_status) || !plan.period_end || Date.parse(plan.period_end)<=now.getTime()))) {
@@ -352,13 +382,15 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
     if(changed.meta.changes===1)await releaseJobReservation(db,job.company_id,job.id,job.reserved_cents);
     out.skipped++;return;
   }
-  if (!isManual && plan && plan.whatsapp_enabled !== 1) {
+  if (!isManual && plan && !planAllowsAutomaticWhatsapp(plan, job.provider)) {
     const changed=await db.prepare(`UPDATE message_jobs SET status='skipped',skip_reason='plano sem WhatsApp',updated_at=?1 WHERE id=?2 AND status IN('scheduled','blocked_funds')`).bind(nowIso(),job.id).run();
     if (changed.meta.changes===1) await releaseJobReservation(db, job.company_id, job.id, job.reserved_cents);
     out.skipped++;
     return;
   }
-  if (!isManual && plan && plan.max_messages_month > 0) {
+  // O limite legado existe no D1 para compatibilidade histórica, mas NÃO
+  // limita o WhatsApp Evolution em nenhum plano. Nunca bloquear a fila real.
+  if (!isManual && job.provider !== "evolution" && plan && plan.max_messages_month > 0) {
     const monthStart = `${now.toISOString().slice(0, 7)}-01T00:00:00Z`;
     const used = await db
       .prepare(`SELECT COUNT(*) AS n FROM message_jobs WHERE company_id=?1 AND (captured_at>=?2 OR (status='sending' AND last_attempt_at>=?2) OR (price_cents=0 AND sent_at>=?2))`)
@@ -372,6 +404,15 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
       out.blocked++;
       return;
     }
+  }
+  // Jobs antigos com snapshot Meta NUNCA podem migrar para Evolution.
+  // Evita cobranças antigas, duplicidade de mensagens e retenção de reservas.
+  if (job.provider !== "evolution" && job.provider !== "mock") {
+    const changed=await db.prepare("UPDATE message_jobs SET status='skipped',last_error='Integração antiga descontinuada; envio bloqueado',updated_at=?1 WHERE id=?2 AND status IN('scheduled','blocked_funds')")
+      .bind(nowIso(),job.id).run();
+    if(changed.meta.changes) await releaseJobReservation(db,job.company_id,job.id,job.reserved_cents);
+    out.skipped++;
+    return;
   }
   const conn = await getConnection(db, job.company_id);
   if (!conn || conn.status !== "connected") {
@@ -413,7 +454,8 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
       AND EXISTS(SELECT 1 FROM companies c WHERE c.id=message_jobs.company_id AND c.status='active')
       AND (?3=1 OR EXISTS(SELECT 1 FROM subscriptions s JOIN plans p ON p.code=s.plan_code
         WHERE s.company_id=message_jobs.company_id AND s.status IN('trial','active') AND julianday(s.period_end)>julianday(?1)
-        AND p.whatsapp_enabled=1 AND (p.max_messages_month<=0 OR (
+        AND (message_jobs.provider='evolution' OR p.whatsapp_enabled=1)
+        AND (message_jobs.provider='evolution' OR p.max_messages_month<=0 OR (
           SELECT count(*) FROM message_jobs j WHERE j.company_id=message_jobs.company_id
           AND (j.captured_at>=?4 OR (j.status='sending' AND j.last_attempt_at>=?4) OR (j.price_cents=0 AND j.sent_at>=?4))
         )<p.max_messages_month)))`)
@@ -424,9 +466,9 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
   // 5) provedor (FORA de qualquer batch — nada de fetch dentro de transação)
   const ctx: ProviderContext = { env: env as unknown as ProviderContext["env"], db, conn, demo: job.company_demo === 1 };
   const { provider, error } = await resolveProvider({ env: env as unknown as ProviderContext["env"], db, demo: job.company_demo === 1, conn });
-  const vars = await renderTemplateVars(db, job);
+  const vars = await renderTemplateVars(db, job, env.PUBLIC_URL);
   const result = provider
-    ? await provider.sendTemplate(ctx, { to: job.to_phone, templateCode: job.template_code, language: job.language, variables: vars, wabaBizMetadata: { job_id: String(job.id) } })
+    ? await provider.sendTemplate(ctx, { to: job.to_phone, templateCode: job.template_code, language: job.language, variables: vars, wabaBizMetadata: { job_id: String(job.id), kind: job.kind } })
     : { accepted: false, permanent: true, error: error || "provedor indisponível", providerMessageId: undefined as string | undefined };
 
   const at = nowIso();
@@ -484,22 +526,31 @@ async function dispatchOne(env: Env, job: MessageJobRow, now: Date, out: Dispatc
 }
 
 /** variáveis {{1..6}} renderizadas a partir do booking (snapshot vivo) */
-async function renderTemplateVars(db: D1Database, job: MessageJobRow): Promise<{ key: string; sample: string }[]> {
+async function renderTemplateVars(db: D1Database, job: MessageJobRow, publicUrl?: string): Promise<{ key: string; sample: string }[]> {
   const b = job.booking_id
     ? await db
-        .prepare(`SELECT b.code, b.customer_name, b.starts_at, s.name AS service_name, br.name AS barber_name, c.name AS company_name
+        .prepare(`SELECT b.code, b.cancel_token, b.customer_name, b.starts_at, s.name AS service_name, br.name AS barber_name, c.name AS company_name, c.slug AS company_slug
                   FROM bookings b JOIN companies c ON c.id = b.company_id
                   LEFT JOIN services s ON s.id = b.service_id LEFT JOIN barbers br ON br.id = b.barber_id
                   WHERE b.id = ?1 AND b.company_id = ?2`)
         .bind(job.booking_id, job.company_id)
-        .first<{ code: string; customer_name: string; starts_at: string; service_name: string; barber_name: string; company_name: string }>()
+        .first<{ code: string; cancel_token: string; customer_name: string; starts_at: string; service_name: string; barber_name: string; company_name: string; company_slug: string }>()
     : null;
   const p = JSON.parse(job.payload_json || "{}") as Record<string, string>;
   const tz = p.tz || "America/Bahia";
   const when = b?.starts_at
-    ? new Date(b.starts_at).toLocaleString("pt-BR", { timeZone: tz, weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    ? new Date(b.starts_at).toLocaleDateString("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric" }) +
+      " às " + new Date(b.starts_at).toLocaleTimeString("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false })
     : "";
+  let link = "";
+  if (b && publicUrl?.startsWith("https://") && b.cancel_token) {
+    const url = new URL("/c/" + encodeURIComponent(b.company_slug) + "/whatsapp-agendamento", publicUrl);
+    url.searchParams.set("codigo", b.code);
+    url.searchParams.set("token", b.cancel_token);
+    link = url.toString();
+  }
   return [
+    { key: "7", sample: link },
     { key: "1", sample: b?.customer_name ?? "" },
     { key: "2", sample: b?.service_name ?? "" },
     { key: "3", sample: b?.barber_name ?? "" },
@@ -510,14 +561,15 @@ async function renderTemplateVars(db: D1Database, job: MessageJobRow): Promise<{
 }
 
 /** reconcilia jobs 'sending' que órfão por crash/timeout do Worker */
-async function sweepStuckJobs(db: D1Database, companyId?: number): Promise<void> {
+async function sweepStuckJobs(db: D1Database, companyId?: number, provider?: "evolution"): Promise<void> {
+  const providerFilter = provider === "evolution" ? " AND provider='evolution'" : "";
   const companyFilter = companyId === undefined ? "" : " AND company_id=?2";
   await db
-    .prepare(`UPDATE message_jobs SET status='sent', last_error='reconciliado: aceito no provedor antes do timeout', sent_at=COALESCE(sent_at, ?1), updated_at=?1 WHERE status='sending' AND provider_msg_id <> '' AND last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes')${companyFilter}`)
+    .prepare(`UPDATE message_jobs SET status='sent', last_error='reconciliado: aceito no provedor antes do timeout', sent_at=COALESCE(sent_at, ?1), updated_at=?1 WHERE status='sending' AND provider_msg_id <> '' AND last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes')${companyFilter}${providerFilter}`)
     .bind(nowIso(), ...(companyId === undefined ? [] : [companyId]))
     .run();
   await db
-    .prepare(`UPDATE message_jobs SET status='sending', last_error='Pendente de conferência: resposta desconhecida do provedor', updated_at=?1, next_attempt_at=NULL WHERE status='sending' AND provider_msg_id = '' AND last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes') AND last_error NOT LIKE 'Pendente de conferência:%' AND last_error NOT LIKE 'Envio sem confirmação%'${companyFilter}`)
+    .prepare(`UPDATE message_jobs SET status='sending', last_error='Pendente de conferência: resposta desconhecida do provedor', updated_at=?1, next_attempt_at=NULL WHERE status='sending' AND provider_msg_id = '' AND last_attempt_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-10 minutes') AND last_error NOT LIKE 'Pendente de conferência:%' AND last_error NOT LIKE 'Envio sem confirmação%'${companyFilter}${providerFilter}`)
     .bind(nowIso(), ...(companyId === undefined ? [] : [companyId]))
     .run();
 }
@@ -535,110 +587,7 @@ async function maybeLowBalanceAlert(db: D1Database, companyId: number): Promise<
     .run();
 }
 
-// ── WEBHOOK (status de entrega + recebidos) ─────────────────────────────────
-export interface IngestResult {
-  events: number;
-  updated: number;
-}
-
-/**
- * Processa o payload do Meta. Idempotente por event_uid (UNIQUE): reentregas
- * do webhook não duplicam cobrança/estado. Retorno 200 rápido fica com a rota.
- */
-export async function ingestWhatsappWebhook(env: Env, body: unknown): Promise<IngestResult> {
-  const db = env.DB;
-  let events = 0;
-  let updated = 0;
-  interface WValue { metadata?: { phone_number_id?: string }; contacts?: { profile?: { name?: string } }[]; messages?: { from?: string; id?: string; type?: string; text?: { body?: string } }[]; statuses?: { id?: string; status?: string; timestamp?: string; errors?: { code?: number; title?: string }[] }[] }
-  const payload = body as { entry?: { changes?: { value?: WValue }[] }[] };
-  const now = nowIso();
-
-  for (const entry of payload.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      const v = change.value;
-      if (!v) continue;
-      const pnId = v.metadata?.phone_number_id ?? "";
-      const comp = pnId ? await db.prepare(`SELECT company_id FROM whatsapp_connections WHERE phone_number_id = ?1`).bind(pnId).first<{ company_id: number }>() : null;
-
-      for (const st of v.statuses ?? []) {
-        if (!st.id) continue;
-        events++;
-        const uid = `wa:status:${st.id}:${st.status}:${st.timestamp ?? ""}`;
-        // A metadata.phone_number_id é o número receptor do webhook da Meta.
-        // Nunca processe um status de outra barbearia, mesmo que seu message id exista.
-        if (!comp) continue;
-        const job = await db.prepare(
-          `SELECT id, company_id, status, price_cents, capture_on, captured_at FROM message_jobs
-           WHERE provider_msg_id = ?1 AND company_id = ?2`
-        ).bind(st.id, comp.company_id).first<{ id: number; company_id: number; status: string; price_cents: number; capture_on: string; captured_at: string | null }>();
-        if (!job) continue;
-        const ins = await db
-          .prepare(`INSERT OR IGNORE INTO message_webhook_events (company_id, job_id, event_uid, status, raw_json, processed, created_at) VALUES (?1,?2,?3,?4,?5,1,?6)`)
-          .bind(comp.company_id, job.id, uid, st.status ?? "unknown", JSON.stringify(st), now)
-          .run();
-        if (!ins.meta?.changes) continue; // reentrega do webhook (idempotência)
-        updated++;
-        const status = st.status ?? "";
-        if (status === "failed") {
-          // Uma entrega já confirmada não pode regredir por webhook fora de ordem.
-          if (job.status !== "sent") continue;
-          const transition = await db.prepare(
-            `UPDATE message_jobs SET status='failed', last_error=?1, updated_at=?2
-             WHERE id=?3 AND company_id=?4 AND status='sent'`
-          ).bind(st.errors?.[0]?.title || "falha reportada pelo WhatsApp", now, job.id, comp.company_id).run();
-          if (!transition.meta?.changes) continue;
-          if (job.captured_at) {
-            await refundJobCharge(db, job.company_id, job.id, job.price_cents, "Falha de entrega pós-cobrança reportada pelo WhatsApp (estorno automático)");
-          } else if (job.capture_on === "delivered") {
-            await releaseJobReservation(db, job.company_id, job.id, job.price_cents);
-          }
-        } else if (status === "delivered") {
-          const transition = await db.prepare(
-            `UPDATE message_jobs SET status='delivered', delivered_at=?1, updated_at=?1
-             WHERE id=?2 AND company_id=?3 AND status='sent'`
-          ).bind(now, job.id, comp.company_id).run();
-          if (transition.meta?.changes && job.capture_on === "delivered" && !job.captured_at) {
-            await captureJobCharge(db, job.company_id, job.id, job.price_cents);
-            await maybeLowBalanceAlert(db, job.company_id);
-          }
-        } else if (status === "read") {
-          const transition = await db.prepare(
-            `UPDATE message_jobs SET status='read', read_at=?1, updated_at=?1
-             WHERE id=?2 AND company_id=?3 AND status IN ('sent','delivered')`
-          ).bind(now, job.id, comp.company_id).run();
-          if (transition.meta?.changes && job.capture_on === "delivered") {
-            const j2 = await db.prepare(`SELECT captured_at, price_cents FROM message_jobs WHERE id=?1`).bind(job.id).first<{ captured_at: string | null; price_cents: number }>();
-            if (!j2?.captured_at) await captureJobCharge(db, job.company_id, job.id, j2?.price_cents ?? job.price_cents);
-          }
-        } else if (status === "sent") {
-          await db.prepare(`UPDATE message_jobs SET status='sent', sent_at=COALESCE(sent_at,?1), updated_at=?1 WHERE id=?2 AND status='sending'`).bind(now, job.id).run();
-        }
-      }
-
-      // recebidas do cliente → notifica o painel (trilha crua p/ auditoria)
-      for (const m of v.messages ?? []) {
-        if (!m.id || !comp) continue;
-        events++;
-        const uid = `wa:in:${m.id}`;
-        const ins = await db
-          .prepare(`INSERT OR IGNORE INTO message_webhook_events (company_id, event_uid, status, raw_json, processed, created_at) VALUES (?1,?2,'received',?3,1,?4)`)
-          .bind(comp.company_id, uid, JSON.stringify({ from: m.from, body: m.text?.body ?? `[${m.type}]`, at: now }), now)
-          .run();
-        if (ins.meta?.changes) {
-          updated++;
-          const fromDigits = (m.from || "").replace(/\D/g, "");
-          const name = v.contacts?.[0]?.profile?.name ?? "Cliente";
-          await db.batch([
-            // Mensagem recebida NÃO equivale a consentimento para lembretes futuros.
-            db.prepare(`INSERT INTO customers (company_id, name, phone, whatsapp_optin) VALUES (?1,?2,?3,0) ON CONFLICT(company_id, phone) DO UPDATE SET name = COALESCE(NULLIF(customers.name,''), excluded.name)`).bind(comp.company_id, name, fromDigits),
-            notifyIfNoRecent(db, comp.company_id, "message", "Nova mensagem recebida no WhatsApp da barbearia", `${name}: ${String(m.text?.body ?? "").slice(0, 140)}`),
-          ]);
-        }
-      }
-    }
-  }
-  return { events, updated };
-}
+// Webhook real: somente Evolution API. Histórico Meta é mantido no D1.
 
 export function maskPhone(p: string): string {
   return p.length > 7 ? `${p.slice(0, 5)}••••${p.slice(-2)}` : "•••";
@@ -653,7 +602,7 @@ function isoZ(d: Date): string {
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-/** Envio imediato de teste/manual — cobra a mesma tarifa vigente (idempotente). */
+/** Envio imediato de teste/manual: Evolution gratuita; simulação só no ambiente de testes. */
 export async function sendImmediate(
   env: Env,
   companyId: number,
@@ -664,6 +613,8 @@ export async function sendImmediate(
   const now = new Date();
   const idem = `send-${opts.kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const connection = await getConnection(db, companyId);
+  if (!connection || connection.status !== "connected")
+    return {ok:false,error:"Evolution API não conectada a esta barbearia."};
   const price = connection?.provider === "evolution" ? { price_cents: 0, cost_cents: 0 } : await resolvePricing(db, companyId, "utility");
   const company = await db.prepare(`SELECT demo FROM companies WHERE id = ?1`).bind(companyId).first<{ demo: number }>();
   const ins = await db
@@ -685,7 +636,7 @@ export async function sendImmediate(
       price.cost_cents,
       idem,
       company?.demo ?? 0,
-      nowIso(),connection?.provider ?? "meta_cloud"
+      nowIso(),connection?.provider ?? "evolution"
     )
     .run();
   const jobId = ins.meta.last_row_id as number;

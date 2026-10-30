@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { clsx } from "clsx";
+import { createPortal } from "react-dom";
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 
 /* ───────────── Toast ───────────── */
@@ -85,7 +86,7 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
     return () => { window.removeEventListener("keydown", h); document.body.style.overflow = ""; };
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="modal-backdrop fixed inset-0 z-[90] flex items-end justify-center p-0 sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={clsx("animate-scale-in max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-line bg-panel shadow-card sm:rounded-2xl", wide ? "sm:max-w-3xl" : "sm:max-w-lg")}>
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-panel px-5 py-3.5 backdrop-blur">
@@ -94,7 +95,8 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
         </div>
         <div className="p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
