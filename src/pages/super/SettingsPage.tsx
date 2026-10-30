@@ -9,14 +9,8 @@ import { SalesContactSettings } from "./SalesContactSettings";
 import { SalesPlansSettings } from "./SalesPlansSettings";
 
 const LABELS: Record<string, { label: string; hint?: string; kind: "cents" | "int" | "enum" }> = {
-  msg_price_cents: { label: "Preço padrão por mensagem", hint: "Enquanto não houver regra própria de precificação; recomendado R$ 0,10 para começar.", kind: "cents" },
-  msg_cost_cents: { label: "Custo estimado do provedor", hint: "Usado só para mostrar margem; o custo real vem do Meta Billing no reconciliar.", kind: "cents" },
-  capture_on: { label: "Momento da cobrança", hint: "'sent' cobra quando o provedor aceita (padrão Tigu: justo e mais simples). 'delivered' espera confirmação de entrega — mais rígido, pode não chegar nunca se o cliente estiver off-line.", kind: "enum" },
   msg_max_attempts: { label: "Tentativas por envio", kind: "int", hint: "Depois disso o job vira 'failed' e o valor reservado é liberado automaticamente." },
   retry_backoff_sec: { label: "Backoff entre tentativas (s)", kind: "int" },
-  topup_min_cents: { label: "Recarga mínima", kind: "cents" },
-  topup_max_cents: { label: "Recarga máxima", kind: "cents" },
-  low_balance_alert_cents: { label: "Alerta de saldo baixo", kind: "cents", hint: "Abaixo disso a barbearia recebe notificação no painel." },
   reminder_lead_min: { label: "Lembrete padrão (min antes)", kind: "int", hint: "Sobrescritível por barbearia em Configurações." },
 };
 
