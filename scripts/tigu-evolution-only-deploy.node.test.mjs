@@ -49,4 +49,7 @@ test("script remoto não cria recursos, não migra SQL e preserva bindings",()=>
  assert.doesNotMatch(code,/exec\([^\n]+migrations.*apply/);
  assert.match(code,/exportAndCheckStaging/);
  assert.match(code,/staging_preserved:true/);
+ assert.match(code,/TIGU_EVOLUTION_LIVE:"1"/);
+ assert.match(code,/template\.triggers\.crons=\["\* \* \* \* \*"\]/);
+ assert.match(code,/EVOLUTION_API_URL:"https:\/\/evolution\.crjornada\.com"/);
 });
