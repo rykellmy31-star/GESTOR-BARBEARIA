@@ -1855,3 +1855,63 @@ describe("WhatsApp: confirmação presencial por link individual", () => {
     expect(after.body.confirmed_by_customer).toBe(false);
   });
 });
+
+// Regressão: a interface pública e a reserva manual devem repassar o opt-in.
+// Antes, ambas omitiam whatsappOptin, e nenhum job de confirmação era criado.
+describe("confirmação WhatsApp após reservar — autorização separada do LGPD", () => {
+  it("não cria mensagem sem aceite; com aceite cria job para site e painel", async () => {
+    const tenant = (await db.prepare("SELECT id FROM companies WHERE slug='alfa'")
+      .first<{id:number}>())!;
+    await db.prepare("UPDATE whatsapp_connections SET status='connected' WHERE company_id=?1 AND provider='mock'")
+      .bind(tenant.id).run();
+    await db.prepare(`INSERT OR IGNORE INTO whatsapp_templates
+      (company_id,code,language,category,status,body_text,active)
+      VALUES (?1,'tigu_confirmacao','pt_BR','utility','approved','Olá {{1}}! Seu horário foi registrado.',1)`)
+      .bind(tenant.id).run();
+    const day = nextWorkday(12);
+    const slots = (await api(`/api/c/alfa/availability?barberId=1&serviceId=1&day=${day}`))
+      .body.slots.filter((s:any)=>s.available);
+    expect(slots.length).toBeGreaterThan(3);
+    const create = async (offset:number, optedIn:boolean, fromAdmin:boolean) => {
+      const payload = {
+        barberId:1, serviceId:1, startsAt:slots[offset].t,
+        name:"Teste Confirmação " + offset, phone:"557599999" + String(1200+offset),
+        whatsappOptin:optedIn, consent:true,
+        idempotencyKey:crypto.randomUUID()
+      };
+      const endpoint=fromAdmin ? "/api/c/alfa/admin/bookings" : "/api/c/alfa/bookings";
+      return api(endpoint,{method:"POST",body:JSON.stringify(payload)},fromAdmin?cookieA:undefined);
+    };
+
+    const without=await create(0,false,false);
+    expect(without.status).toBe(201);
+    expect(without.body.messaging.confirmation.status).toBe("skipped");
+    expect(without.body.messaging.confirmation.reason).toContain("opt-in");
+    const noId=without.body.booking.id;
+    const noRow=await db.prepare("SELECT whatsapp_optin FROM bookings WHERE id=?1")
+      .bind(noId).first<{whatsapp_optin:number}>();
+    expect(noRow?.whatsapp_optin).toBe(0);
+    const noJob=await db.prepare("SELECT COUNT(*) n FROM message_jobs WHERE booking_id=?1 AND kind='confirmation'")
+      .bind(noId).first<{n:number}>();
+    expect(noJob?.n).toBe(0);
+
+    const publicYes=await create(1,true,false);
+    expect(publicYes.status).toBe(201);
+    expect(publicYes.body.booking.whatsapp_optin).toBe(1);
+    expect(["scheduled","blocked_funds"]).toContain(publicYes.body.messaging.confirmation.status);
+    const job=await db.prepare("SELECT COUNT(*) n FROM message_jobs WHERE booking_id=?1 AND kind='confirmation'")
+      .bind(publicYes.body.booking.id).first<{n:number}>();
+    expect(job?.n).toBe(1);
+
+    const ownerYes=await create(2,true,true);
+    expect(ownerYes.status).toBe(201);
+    expect(ownerYes.body.messaging.confirmation).toBeDefined();
+    expect(["scheduled","blocked_funds"]).toContain(ownerYes.body.messaging.confirmation.status);
+    const ownerRow=await db.prepare("SELECT whatsapp_optin FROM bookings WHERE id=?1")
+      .bind(ownerYes.body.id).first<{whatsapp_optin:number}>();
+    expect(ownerRow?.whatsapp_optin).toBe(1);
+    const ownerJob=await db.prepare("SELECT COUNT(*) n FROM message_jobs WHERE booking_id=?1 AND kind='confirmation'")
+      .bind(ownerYes.body.id).first<{n:number}>();
+    expect(ownerJob?.n).toBe(1);
+  });
+});
