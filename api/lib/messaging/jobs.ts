@@ -541,17 +541,13 @@ async function maybeLowBalanceAlert(db: D1Database, companyId: number): Promise<
     .prepare(
       `INSERT INTO notifications (company_id, audience, title, body, kind)
        SELECT ?1,'admin','Saldo baixo de créditos','Restam R$ ' || printf('%.2f', MAX(0,?2)/100.0) || ' livres para envio de WhatsApp. Faça uma recarga para não perder lembretes.','billing'
-       WHERE NOT EXISTS (SELECT 1 FROM notificati// A recepção externa é exclusivamente /api/webhooks/evolution/.
-// Histórico antigo de entrega permanece no D1, sem ingestão da Meta.
-
-age", "Nova mensagem recebida no WhatsApp da barbearia", `${name}: ${String(m.text?.body ?? "").slice(0, 140)}`),
-          ]);
-        }
-      }
-    }
-  }
-  return { events, updated };
+       WHERE NOT EXISTS (SELECT 1 FROM notifications WHERE company_id=?1 AND kind='billing' AND created_at > strftime('%Y-%m-%dT%H:%M:%SZ','now','-12 hours'))`
+    )
+    .bind(companyId, w.balance_cents - w.reserved_cents)
+    .run();
 }
+
+// Webhook real: somente Evolution API. Histórico Meta é mantido no D1.
 
 export function maskPhone(p: string): string {
   return p.length > 7 ? `${p.slice(0, 5)}••••${p.slice(-2)}` : "•••";
