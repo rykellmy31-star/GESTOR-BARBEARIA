@@ -62,3 +62,12 @@ Se os segredos estiverem listados, verificar se foram salvos e **implantados no 
 Após `configured=true`, cada barbearia administra apenas a sua instância `tigu-company-<id>`. Quando desconectada, pode usar **Gerar / atualizar QR** para escanear novamente no WhatsApp, sem retornar à Cloudflare. O recurso não interfere nos pagamentos dos profissionais, bancos, reservas ou histórico de mensagens.
 
 Diagnóstico autenticado habilitado para a versão oficial: não modifica D1, R2, segredos nem permissões de conexão.
+
+## Personalização de lembretes e nomes das instâncias — 30/10/2026
+
+- Cada proprietário controla **WhatsApp → Automações desta barbearia → Avisar quanto tempo antes**, de **5 a 1440 minutos**. Esse valor fica armazenado nas `company_settings` do seu `company_id` e não altera a confirmação, plano de mensagens nem dados das outras empresas.
+- Ao salvar um novo prazo, os lembretes Evolution **ainda pendentes** e com novo horário futuro são reposicionados. Nunca reenvia mensagens já enviadas. Quando lembretes estão desativados, o disparador volta a validar antes do envio e pula os lembretes.
+- Exemplo de texto automático: `Olá {{1}}! 💈 Passando para lembrar do seu horário na {{5}}, dia {{4}}. Pedimos que chegue com 10 minutos de antecedência.` Variáveis: `{{1}}` é cliente, `{{4}}` é data e hora completas em fuso local, e `{{5}}` é nome da barbearia; o painel apresenta uma prévia com dados fictícios em vez de mostrar chaves ao cliente.
+- **Confirmação anterior preservada.** Somente o lembrete original de fábrica é atualizado automaticamente no momento da leitura/envio, não modifica texto personalizado de outro proprietário.
+- Instâncias **novas** ganham identificador descritivo da barbearia, com ID único obrigatório (ex.: `tigu-barbearia-oceano-c7`). Se já havia instância `tigu-company-7`, mantém o mesmo nome e a conexão existente, sem renomear ou desconectar o WhatsApp. Os webhooks aceitam ambos formatos e conferem o vínculo no D1 por empresa.
+- O botão **Gerar / atualizar QR** permanece disponível para reconectar instâncias que perderam sessão. O servidor Evolution e os segredos continuam globais apenas na Cloudflare. Nenhuma migração, mudança em pagamentos ou criação de nova infraestrutura.
