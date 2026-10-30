@@ -115,7 +115,7 @@ export function evolutionQR(data: any): string | null {
 // original de fábrica (nunca sobrescrever uma mensagem personalizada).
 export const LEGACY_TIGU_REMINDER = "Olá {{1}}! Passando para lembrar do seu horário na barbearia.";
 export const DEFAULT_TIGU_REMINDER =
-  "Olá {{1}}! 💈\\n\\nPassando para lembrar do seu horário na {{5}}, dia {{4}}.\\nPedimos que chegue com 10 minutos de antecedência. Até breve!";
+  "Olá {{1}}! 💈\n\nPassando para lembrar do seu horário na {{5}}, dia {{4}}.\nPedimos que chegue com 10 minutos de antecedência. Até breve!";
 
 export function effectiveReminderText(code: string, body: string): string {
   return code === "tigu_lembrete" && body === LEGACY_TIGU_REMINDER
