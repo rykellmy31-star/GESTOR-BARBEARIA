@@ -5,6 +5,7 @@
 // ============================================================================
 import { Hono } from "hono";
 import { evolutionRouter } from "./evolution";
+import { effectiveReminderText } from "../lib/messaging/evolution";
 import { z } from "zod";
 import type { Env } from "../types";
 import { err, json, nowIso, uniqueSlug, slugify, brl, normalizePhone } from "../lib/utils";
@@ -921,7 +922,10 @@ adminRouter.put("/whatsapp/reminder-settings", async (c) => {
 adminRouter.get("/whatsapp", async (c) => {
   const db = P(c); const id = cid(c);
   const conn = await getConnection(db, id);
-  const { results: templates } = await db.prepare(`SELECT code, language, category, status, body_text, variables_n, use_case, active, updated_at FROM whatsapp_templates WHERE company_id=?1 ORDER BY use_case, code`).bind(id).all();
+  const { results: rawTemplates } = await db.prepare(`SELECT code, language, category, status, body_text, variables_n, use_case, active, updated_at FROM whatsapp_templates WHERE company_id=?1 ORDER BY use_case, code`).bind(id).all<{ code:string; body_text:string }>();
+  // Compatibilidade: apresentar o texto melhorado apenas se a unidade ainda usa o modelo original.
+  // Quem já personalizou não tem seu texto alterado.
+  const templates = rawTemplates.map((t) => ({ ...t, body_text: effectiveReminderText(t.code, t.body_text) }));
   const { results: jobs } = await db.prepare(
     `SELECT j.id, j.kind, j.status, j.to_phone, j.template_code, j.scheduled_at, j.sent_at, j.delivered_at, j.captured_at, j.refunded_at, j.attempts, j.last_error, j.price_cents, j.cost_cents, j.provider, j.demo,
             CASE WHEN j.status='sending' AND j.provider_msg_id=''
