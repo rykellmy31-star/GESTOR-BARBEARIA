@@ -19,6 +19,7 @@ import { loadSalesContact, saveSalesContact, salesContactSchema } from "../lib/m
 import { changePlan, listPublicPlans, planCodeSchema, planEditSchema } from "../lib/plans";
 import { leadUpdateSchema, listSalesLeads, updateSalesLead, salesRetentionSchema, getSalesRetentionDays, setSalesRetentionDays, deleteSalesLead, purgeExpiredSalesLeads, purgeOldSalesRateLimits } from "../lib/sales-leads";
 import { processDueJobs } from "../lib/messaging/jobs";
+import { getEvolutionRow } from "../lib/messaging/evolution";
 import { globalMessageListFilter, parseGlobalMessageCursor, parseOptionalMessageCompanyId } from "../lib/messaging/super-message-filter";
 import { randomHex } from "../lib/utils";
 import { platformBillingMode } from "../lib/platform-billing-mode";
@@ -107,13 +108,13 @@ superRouter.get("/companies/:id", async (c) => {
   const [settings, members, conn, wallet, jobs, subscription] = await Promise.all([
     db.prepare(`SELECT data FROM company_settings WHERE company_id=?1`).bind(id).first<{ data: string }>(),
     db.prepare(`SELECT m.id, m.role, m.active, u.id AS user_id, u.name, u.email, u.last_login_at FROM company_memberships m JOIN users u ON u.id=m.user_id WHERE m.company_id=?1`).bind(id).all(),
-    db.prepare(`SELECT 'evolution' AS provider,status,display_phone,instance_name,last_error,updated_at AS last_check_at FROM evolution_connections WHERE company_id=?1 AND enabled=1`).bind(id).first(),
+    getEvolutionRow(db,id),
     getWallet(db, id),
     db.prepare(`SELECT id, kind, status, price_cents, cost_cents, captured_at, refunded_at, created_at FROM message_jobs WHERE company_id=?1 ORDER BY id DESC LIMIT 25`).bind(id).all(),
     db.prepare("SELECT plan_code,status,started_at,period_end FROM subscriptions WHERE company_id=?1").bind(id).first(),
   ]);
   c.header("Cache-Control", "no-store");
-  return json(c, { company: co, billing_mode: platformBillingMode(c.env), subscription, settings: safeParse(settings?.data), members: members.results, connection: conn ?? null, wallet, jobs: jobs.results });
+  return json(c, { company: co, billing_mode: platformBillingMode(c.env), subscription, settings: safeParse(settings?.data), members: members.results, connection: conn?.enabled===1 ? {provider:"evolution",status:conn.status,display_phone:conn.display_phone,instance_name:conn.instance_name,last_error:conn.last_error,last_check_at:conn.updated_at} : null, wallet, jobs: jobs.results });
 });
 /** O Super Admin pode emitir uma nova senha de acesso do proprietário.
  * Nunca recupera hashes, nem altera contas vinculadas a múltiplas empresas
