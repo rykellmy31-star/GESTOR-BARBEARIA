@@ -40,3 +40,5 @@ A publicação no domínio oficial só poderá prosseguir se os testes completos
 **Publicação controlada:** o envio do código Evolution-only ao Worker oficial é protegido por validação completa, backup verificado e preservação do D1/R2 e dos segredos existentes. Não habilita o servidor externo Evolution automaticamente.
 
 A versão Evolution-only substitui os endpoints e formulários Meta sem executar migrações adicionais no D1 já homologado.
+
+Atualização visual: os avisos de risco não são exibidos no painel. A carteira de créditos e as telas de recarga/precificação foram retiradas da navegação do TIGU, preservando o histórico financeiro no D1 para auditoria e conciliações.
