@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, Loader2, MessageSquare, RefreshCw, Send, Settings2 } from "lucide-react";
+import { Loader2, MessageSquare, RefreshCw, Send, Settings2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Badge, Button, Field, Input, Modal, Select, Spinner, useToast } from "@/components/ui";
@@ -52,15 +52,9 @@ export function MessagesPage() {
   return <div className="space-y-5">
     <div>
       <h1 className="font-display text-2xl text-zinc-50">WhatsApp — Evolution API</h1>
-      <p className="mt-1 text-xs text-zinc-400">A única integração de WhatsApp do TIGU. Cada barbearia conecta seu número via QR Code. Sem cobrança de créditos TIGU por mensagem Evolution.</p>
+      <p className="mt-1 text-xs text-zinc-400">A única integração de WhatsApp do TIGU. Cada barbearia conecta seu número via QR Code. Envios de agendamento pela Evolution.</p>
     </div>
     <EvolutionConnectionPanel onChange={refresh} />
-
-    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs text-amber-100">
-      <div className="flex items-start gap-2"><AlertTriangle size={16} className="shrink-0"/>
-        <span>Os envios reais dependem do servidor Evolution API e de uma conexão ativa. O QR Code não funcionará enquanto a instalação estiver pendente. WhatsApp Web/Baileys é uma integração não oficial e pode sofrer desconexões ou restrições do WhatsApp.</span>
-      </div>
-    </div>
 
     <div className="rounded-2xl border border-line bg-panel p-5">
       <h2 className="flex items-center gap-2 font-display text-base text-zinc-100"><Settings2 size={16}/> Automações desta barbearia</h2>
@@ -105,7 +99,6 @@ export function MessagesPage() {
           <Button className="btn-gold w-full justify-center py-2 text-sm" disabled={test.to.replace(/\D/g,"").length<10||sendTest.isPending||d.connection.status!=="connected"||d.connection.provider!=="evolution"} onClick={()=>sendTest.mutate()}>
             <Send size={14}/>{sendTest.isPending?"enviando…":"Enviar teste"}
           </Button>
-          <p className="text-xs text-zinc-500">Mensagens Evolution: R$ 0,00 de créditos TIGU. O servidor e a conexão podem ter custos externos.</p>
         </div>
       </div>
       <div className="rounded-2xl border border-line bg-panel p-5">
