@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { evolutionInstanceName, evolutionQR, evolutionReady, evolutionState, renderEvolutionText, evolutionRequest, evolutionProvider } from "../api/lib/messaging/evolution";
+import { evolutionInstanceName, evolutionQR, evolutionReady, evolutionLiveAllowed, evolutionState, renderEvolutionText, evolutionRequest, evolutionProvider } from "../api/lib/messaging/evolution";
 import { evolutionWebhookRouter } from "../api/routes/evolution-webhook";
 
 const config = {
@@ -18,6 +18,14 @@ describe("Evolution API - preparação sem instalação", () => {
     expect(evolutionReady({...config, EVOLUTION_API_URL:"https://evolution.example.com/api"})).toBe(false);
     expect(evolutionReady({...config, PUBLIC_URL:"https://agendamentos.example.com/?token=x"})).toBe(false);
     expect(evolutionReady(config)).toBe(true);
+  });
+
+  it("separa habilitacao do WhatsApp real das protecoes de homologacao financeiras", () => {
+    expect(evolutionLiveAllowed({...config,TIGU_STAGING:"1"})).toBe(false);
+    expect(evolutionLiveAllowed({...config,TIGU_STAGING:"1",TIGU_EVOLUTION_LIVE:"1"})).toBe(true);
+    expect(evolutionLiveAllowed({...config,TIGU_STAGING:"1",TIGU_EVOLUTION_LIVE:"0"})).toBe(false);
+    expect(evolutionLiveAllowed({...config,TIGU_STAGING:"1",TIGU_EVOLUTION_LIVE:"1",EVOLUTION_API_KEY:""})).toBe(false);
+    expect(evolutionLiveAllowed({...config,TIGU_STAGING:"0"})).toBe(true);
   });
 
   it("usa um identificador estável por empresa e recusa identificador inválido", () => {
@@ -74,7 +82,16 @@ describe("Evolution API - comunicação segura com provedor v2", () => {
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe("https://evolution.example.com/message/sendText/tigu-company-77");
     expect((init as RequestInit).headers).toMatchObject({apikey:config.EVOLUTION_API_KEY});
+    expect((init as RequestInit).redirect).toBe("manual");
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({number:"5575999990000",text:"Olá Cliente! Seu horário: 14:00"});
+  });
+
+  it("bloqueia rede no domínio oficial se ainda faltar segredo", async () => {
+    const spy = vi.spyOn(globalThis,"fetch");
+    const r = await evolutionRequest({...config,TIGU_STAGING:"1",TIGU_EVOLUTION_LIVE:"1",EVOLUTION_WEBHOOK_SECRET:""},
+      "GET","/instance/connectionState/tigu-company-1");
+    expect(r.status).toBe(503);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("não afirma envio sem ID de mensagem retornado pela Evolution", async () => {
