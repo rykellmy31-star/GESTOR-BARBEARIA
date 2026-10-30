@@ -18,7 +18,7 @@ type Status = {
     production_site_ready: boolean;
   };
   payment: { access_token_set: boolean; webhook_secret_set: boolean; public_url_set: boolean; enabled_in_environment: boolean };
-  whatsapp: { app_id_set: boolean; app_secret_set: boolean; webhook_verify_token_set: boolean; encryption_key_set: boolean; embedded_signup_set: boolean; provider_disabled_in_staging: boolean };
+  whatsapp: { provider:"evolution"; url_set:boolean; api_key_set:boolean; webhook_secret_set:boolean; callback_public_url_set:boolean; provider_disabled_in_staging:boolean };
 };
 
 function FieldStatus({ label, configured }: { label: string; configured: boolean }) {
@@ -31,7 +31,7 @@ function FieldStatus({ label, configured }: { label: string; configured: boolean
 export function SuperIntegrations() {
   const q = useQuery({ queryKey: ["super-integrations"], queryFn: () => api.get<Status>("/super/integrations/status") });
   return <div className="space-y-5">
-    <H title="Integrações da plataforma" sub="Mercado Pago (recargas e planos) e Meta WhatsApp Cloud API. Os valores secretos nunca são mostrados neste painel." />
+    <H title="Integrações da plataforma" sub="Mercado Pago e Evolution API para WhatsApp. Nenhuma credencial secreta é exibida neste painel." />
     {q.isLoading ? <Spinner /> : q.isError || !q.data ?
       <p role="alert" className="text-amber-300">Não foi possível consultar as configurações. Confira a publicação do Worker.</p> :
       <>
@@ -74,15 +74,14 @@ export function SuperIntegrations() {
           <a className="mt-3 inline-block text-sm text-[var(--c-gold)] underline" href="https://dash.cloudflare.com/" target="_blank" rel="noreferrer">Abrir Cloudflare para configurar credenciais</a>
         </section>
         <section className="rounded-2xl border border-[#26262f] bg-[#16161c] p-5">
-          <h2 className="text-lg font-semibold text-white">WhatsApp — Meta Cloud API</h2>
-          <p className="mt-2 text-sm text-zinc-400">Configuração da aplicação e do webhook global. A conexão do número de cada barbearia continua sendo feita separadamente.</p>
-          <FieldStatus label="WHATSAPP_APP_ID" configured={q.data.whatsapp.app_id_set} />
-          <FieldStatus label="WHATSAPP_APP_SECRET" configured={q.data.whatsapp.app_secret_set} />
-          <FieldStatus label="WHATSAPP_WEBHOOK_VERIFY_TOKEN" configured={q.data.whatsapp.webhook_verify_token_set} />
-          <FieldStatus label="MSG_ENC_KEY (criptografia de tokens)" configured={q.data.whatsapp.encryption_key_set} />
-          <FieldStatus label="WHATSAPP_EMBEDDED_CONFIG_ID (conexão assistida)" configured={q.data.whatsapp.embedded_signup_set} />
-          <p className="mt-3 text-sm text-zinc-400">Salve os segredos no Worker usando Cloudflare → Settings → Variables and Secrets; não cole tokens em mensagens, commits ou campos comuns de texto.</p>
-          <a className="mt-3 inline-block text-sm text-[var(--c-gold)] underline" href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer">Abrir Meta for Developers</a>
+          <h2 className="text-lg font-semibold text-white">WhatsApp — Evolution API</h2>
+          <p className="mt-2 text-sm text-zinc-400">Servidor externo Evolution v2, conexão QR Code individual por barbearia e webhook autenticado.</p>
+          <FieldStatus label="EVOLUTION_API_URL (HTTPS)" configured={q.data.whatsapp.url_set} />
+          <FieldStatus label="EVOLUTION_API_KEY (Secret)" configured={q.data.whatsapp.api_key_set} />
+          <FieldStatus label="EVOLUTION_WEBHOOK_SECRET (Secret)" configured={q.data.whatsapp.webhook_secret_set} />
+          <FieldStatus label="PUBLIC_URL (callback HTTPS)" configured={q.data.whatsapp.callback_public_url_set} />
+          <p className="mt-3 text-sm text-zinc-400">Sem servidor e segredos configurados não há conexão real por QR Code. As credenciais devem ficar exclusivamente em Secrets do Worker; não cole tokens no navegador nem no GitHub.</p>
+          <p className="mt-2 text-xs text-amber-300">Aviso: Evolution via WhatsApp Web/Baileys não é API oficial e pode sofrer desconexões ou bloqueios.</p>
         </section>
         <p className="text-xs text-zinc-500">Esta tela verifica presença das credenciais, não valida cobranças ou envios reais. Após salvar os segredos na Cloudflare, atualize o painel. Nenhuma cobrança ou mensagem é disparada aqui.</p>
       </>
