@@ -6,7 +6,7 @@ import {TARGET,inspectOfficialInventory} from "./tigu-official-release-once.mjs"
 const UUID="78228a5b-4e4c-4710-b89c-664ef15f8da3";
 const expected=readdirSync(resolve(import.meta.dirname,"../migrations"))
   .filter(x=>/^\d+.*\.sql$/.test(x)).sort();
-const existing=expected.slice(0,-2);
+const existing=expected.slice(0,-7);
 const settings={bindings:[
   {type:"d1",name:"DB",id:UUID},
   {type:"r2_bucket",name:"MEDIA",bucket_name:TARGET.bucket},
@@ -25,11 +25,16 @@ const good=[
   [{hostname:TARGET.hostname,service:TARGET.worker,enabled:true}],
   settings,existing,expected
 ];
-test("liberar somente migrações aditivas 0103 e 0104 no banco existente",()=>{
+test("liberar somente 7 migrações conhecidas sem apagar dados antigos",()=>{
   assert.equal(expected.length,27);
   const r=inspectOfficialInventory(...good);
-  assert.deepEqual(r.pendingMigrations,["0103_manual_platform_subscriptions.sql","0104_evolution_whatsapp.sql"]);
-  assert.equal(r.appliedMigrationCount,25);
+  assert.deepEqual(r.pendingMigrations,[
+    "0021_seller_mercadopago_oauth.sql","0099_seller_mercadopago_oauth.sql",
+    "0100_seller_pix.sql","0101_barber_service_duration.sql",
+    "0102_booking_checkin_cancel_reason.sql","0103_manual_platform_subscriptions.sql",
+    "0104_evolution_whatsapp.sql"
+  ]);
+  assert.equal(r.appliedMigrationCount,20);
   assert.equal(r.existingSecretNames.includes("MP_ACCESS_TOKEN"),true);
 });
 test("recusar troca de domínio, banco, bucket e Worker",()=>{
