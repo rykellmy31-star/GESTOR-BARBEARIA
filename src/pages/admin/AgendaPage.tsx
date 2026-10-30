@@ -328,7 +328,7 @@ function ManualModal({ barbers, onClose, onDone, prefill }: any) {
   const toast = useToast();
   const [f, setF] = useState({ barberId: prefill?.barberId ?? barbers[0]?.id ?? 0,
     serviceId: 0, day: prefill?.day ?? new Date().toISOString().slice(0, 10),
-    hhmm: prefill?.hhmm ?? "09:00", name: "", phone: "", notes: "", status: "confirmado" });
+    hhmm: prefill?.hhmm ?? "09:00", name: "", phone: "", notes: "", status: "confirmado", whatsappOptin: false });
   const [quick,setQuick]=useState(Boolean(prefill));
   const [quickMinutes,setQuickMinutes]=useState(Math.min(180,prefill?.availableMinutes??15));
   const services = useQuery({ queryKey: ["admin-services", siteBase()], queryFn: () => api.get<any>("/admin/services").then((d: any) => d.services.filter((s: any) => s.active)) });
@@ -338,7 +338,7 @@ function ManualModal({ barbers, onClose, onDone, prefill }: any) {
     try {
       const res = await api.post("/admin/bookings", {
         barberId: f.barberId, serviceId: f.serviceId, name: f.name, phone: f.phone.replace(/\D/g, ""),
-        notes: f.notes, status: f.status, notify: true,
+        notes: f.notes, status: f.status, notify: true, whatsappOptin: f.whatsappOptin,
         startsAt: localToUtcIso(tz, f.day, f.hhmm),
         ...(quick?{fitInDurationMin:quickMinutes}:{})
       });
@@ -375,6 +375,16 @@ function ManualModal({ barbers, onClose, onDone, prefill }: any) {
         <Field label="Cliente" required><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="nome" /></Field>
         <Field label="Telefone/WhatsApp"><Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="(75) 9…" /></Field>
         <Field label="Observações"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-line bg-ink-soft px-3 py-3 text-sm text-zinc-200">
+          <input type="checkbox" checked={f.whatsappOptin}
+            onChange={e=>setF({ ...f, whatsappOptin: e.target.checked })} />
+          <span>
+            <strong>Cliente autorizou avisos de confirmação e lembretes pelo WhatsApp.</strong>
+            <span className="mt-1 block text-xs text-zinc-500">
+              Marque somente se o cliente já autorizou este tipo de contato. Sem autorização, a reserva será criada sem mensagem.
+            </span>
+          </span>
+        </label>
         <Button className="w-full justify-center" disabled={!f.name || !f.serviceId || !f.barberId || (quick && (!Number.isInteger(quickMinutes)||quickMinutes<5||quickMinutes%5!==0||(prefill&&quickMinutes>prefill.availableMinutes)))} onClick={create}>Criar na agenda (regras validadas no servidor)</Button>
       </div>
     </Modal>
