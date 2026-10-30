@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   publicar-oficial:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/release/tigu-manual-oficial-20261029' && github.event.head_commit.message == 'TIGU_OFFICIAL_RELEASE_DEPLOY_ONCE' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/release/tigu-manual-oficial-20261029' && github.event.head_commit.message == 'TIGU_OFFICIAL_RELEASE_DEPLOY_RETRY' }}
     runs-on: ubuntu-latest
     timeout-minutes: 27
     steps:
