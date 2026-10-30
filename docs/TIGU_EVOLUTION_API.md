@@ -36,3 +36,5 @@ A publicação oficial permanece condicionada ao backup validado, histórico D1 
 
 ## Gatilho de publicação controlada
 A publicação no domínio oficial só poderá prosseguir se os testes completos aprovarem e o D1 existente tiver exportação SQL verificada em SQLite temporário; caso contrário, o GitHub Actions bloqueia o deploy. Nenhum segredo será escrito no repositório, e o modo de homologação da conexão WhatsApp será preservado.
+
+**Publicação controlada:** o envio do código Evolution-only ao Worker oficial é protegido por validação completa, backup verificado e preservação do D1/R2 e dos segredos existentes. Não habilita o servidor externo Evolution automaticamente.
