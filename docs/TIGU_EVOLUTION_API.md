@@ -73,3 +73,8 @@ Diagnóstico autenticado habilitado para a versão oficial: não modifica D1, R2
 - O botão **Gerar / atualizar QR** permanece disponível para reconectar instâncias que perderam sessão. O servidor Evolution e os segredos continuam globais apenas na Cloudflare. Nenhuma migração, mudança em pagamentos ou criação de nova infraestrutura.
 
 Publicação oficial da personalização WhatsApp: opção de prazo por barbearia, lembrete com nome e data e instâncias legíveis por estabelecimento, mantendo sessão e nome antigos já conectados. CI aprovada (350 testes); sem migrações nem alterações nos pagamentos.
+
+## Confirmação e reagendamento pelo WhatsApp — outubro/2026
+A conexão Evolution/Baileys não oferece entrega confiável de botões interativos nativos. Para não enviar mensagens invisíveis, a confirmação do TIGU inclui dois links clicáveis de acesso individual à reserva ("Confirmar agendamento" e "Não dá, reagendar"). A página /c/:slug/whatsapp-agendamento apresenta os botões reais.
+O link contém um token aleatório que já era emitido na criação da reserva. O GET da página não altera nada; uma chamada POST autenticada pelo token é necessária para confirmar, com deduplicação por agendamento e versão. A barbearia é avisada. O reagendamento usa a disponibilidade e as políticas já existentes. Não usa número de telefone isoladamente como autorização e nunca cruza barbearias.
+Não há migração D1. Os pagamentos, agendamentos antigos e números WhatsApp permanecem como estavam.
