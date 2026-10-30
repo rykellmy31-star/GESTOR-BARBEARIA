@@ -18,23 +18,11 @@ export interface Env {
   /** Secret privado do Turnstile para validar tokens no servidor. */
   SALES_TURNSTILE_SECRET?: string;
 
-  // ── WhatsApp (Meta Cloud API) — APP-level; credenciais por empresa vêm do DB ──
-  /** URL pública da plataforma (usada em callbacks/links), ex.: https://tigu.com.br */
+  // WhatsApp: exclusivamente Evolution API v2 (sem Graph API, token Meta ou WABA).
+  /** HTTPS público do TIGU para receber webhooks. */
   PUBLIC_URL?: string;
-  /** Token de verificação do webhook (hub.verify_token) */
-  WHATSAPP_WEBHOOK_VERIFY_TOKEN?: string;
-  /** App secret p/ validar x-hub-signature-256 dos webhooks */
-  WHATSAPP_APP_SECRET?: string;
-  /** Versão da Graph API (fixar para previsibilidade) */
-  GRAPH_API_VERSION?: string;
-  /** Embedded Signup config id (opcional; sem ele a UI orienta o fluxo manual) */
-  WHATSAPP_EMBEDDED_CONFIG_ID?: string;
-  /** App id/secret do META app (para Exchange Code do Embedded Signup) */
-  WHATSAPP_APP_ID?: string;
-  WHATSAPP_APP_SECRET_FOR_OAUTH?: string;
-  /** Liga o provedor 'mock' (NUNCA habilitar em produção) */
+  /** Mock interno de testes, não é outra API e não aparece ao cliente. */
   WHATSAPP_MOCK?: string;
-  /** Evolution API v2: secrets globais, nunca expostos no frontend. */
   EVOLUTION_API_URL?: string;
   EVOLUTION_API_KEY?: string;
   EVOLUTION_WEBHOOK_SECRET?: string;
