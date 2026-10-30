@@ -72,7 +72,9 @@ export function inspectOfficialInventory(dbs,media,workers,domains,settings,hist
   const unknown=history.filter(x=>!expectedNames.includes(x));
   if(unknown.length||pending.length!==2||pending[0]!=="0103_manual_platform_subscriptions.sql"||
     pending[1]!=="0104_evolution_whatsapp.sql"||history.length!==25)
-    throw Error("Migrações no banco existente divergentes; publicar somente após análise, sem importar SQL.");
+    throw Error("Migrações D1 divergentes: aplicadas="+history.length+
+      ", pendentes="+pending.join(",")+", desconhecidas="+unknown.join(",")+
+      ". Nenhum SQL foi aplicado.");
   return {dbId:db.uuid,existingVars:vars,existingSecretNames:secretNames,
     existingBindingTypes:raw.map(x=>x.type),pendingMigrations:pending,
     appliedMigrationCount:history.length,
