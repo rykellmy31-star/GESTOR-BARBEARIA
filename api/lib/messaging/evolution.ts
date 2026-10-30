@@ -22,21 +22,43 @@ export interface EvolutionEnv {
   TIGU_EVOLUTION_LIVE?: string;
 }
 
-export function evolutionReady(env: EvolutionEnv): boolean {
-  if (!env.EVOLUTION_API_URL || !env.EVOLUTION_API_KEY || !env.EVOLUTION_WEBHOOK_SECRET || env.EVOLUTION_WEBHOOK_SECRET.length < 32 || !env.PUBLIC_URL) return false;
+/**
+ * Diagnóstico sem valores, destinado somente ao painel autenticado do proprietário.
+ * Nunca devolve URLs ou chaves ao navegador. Centraliza os mesmos requisitos de
+ * segurança usados pelo Worker para autorizar criar instâncias e gerar QR.
+ */
+export function evolutionConfigurationProblem(env: EvolutionEnv): string | null {
+  if (!env.EVOLUTION_API_URL?.trim()) return "Falta EVOLUTION_API_URL (variável do Worker).";
+  if (!env.EVOLUTION_API_KEY?.trim()) return "Falta EVOLUTION_API_KEY (segredo do Worker).";
+  if (!env.EVOLUTION_WEBHOOK_SECRET?.trim()) return "Falta EVOLUTION_WEBHOOK_SECRET (segredo do Worker).";
+  if (env.EVOLUTION_WEBHOOK_SECRET.length < 32)
+    return "EVOLUTION_WEBHOOK_SECRET está com menos de 32 caracteres; substitua por um segredo mais longo.";
+  if (!env.PUBLIC_URL?.trim()) return "Falta PUBLIC_URL (variável do Worker).";
   try {
     const api = new URL(env.EVOLUTION_API_URL);
     const publicUrl = new URL(env.PUBLIC_URL);
-    return api.protocol === "https:" && publicUrl.protocol === "https:"
-      && !!api.hostname && !!publicUrl.hostname
-      && api.pathname === "/" && publicUrl.pathname === "/"
-      && !api.username && !api.password && !api.search && !api.hash
-      && !publicUrl.username && !publicUrl.password && !publicUrl.search && !publicUrl.hash;
-  } catch { return false; }
+    if (api.protocol !== "https:" || publicUrl.protocol !== "https:" ||
+        !api.hostname || !publicUrl.hostname ||
+        api.pathname !== "/" || publicUrl.pathname !== "/" ||
+        api.username || api.password || api.search || api.hash ||
+        publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash ||
+        api.port || publicUrl.port) {
+      return "EVOLUTION_API_URL ou PUBLIC_URL inválida: informe apenas a origem HTTPS.";
+    }
+  } catch {
+    return "EVOLUTION_API_URL ou PUBLIC_URL inválida: informe apenas a origem HTTPS.";
+  }
+  if (env.TIGU_STAGING === "1" && env.TIGU_EVOLUTION_LIVE !== "1")
+    return "TIGU_EVOLUTION_LIVE não está habilitada no Worker que atende o domínio oficial.";
+  return null;
+}
+
+export function evolutionReady(env: EvolutionEnv): boolean {
+  return evolutionConfigurationProblem({ ...env, TIGU_STAGING: "0" }) === null;
 }
 
 export function evolutionLiveAllowed(env: EvolutionEnv): boolean {
-  return evolutionReady(env) && (env.TIGU_STAGING !== "1" || env.TIGU_EVOLUTION_LIVE === "1");
+  return evolutionConfigurationProblem(env) === null;
 }
 
 export function evolutionInstanceName(companyId: number): string {
